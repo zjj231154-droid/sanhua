@@ -1,0 +1,76 @@
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import App from './App'
+
+describe('AI 创作工作台 Demo', () => {
+  it('使用演示账号进入工作台并打开产品精修', () => {
+    render(<App demoRetouch />)
+
+    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '进入演示工作台' }))
+
+    expect(screen.getByRole('heading', { name: '今天想创作什么？' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /进入产品精修/ }))
+
+    expect(screen.getByRole('heading', { name: '产品精修' })).toBeInTheDocument()
+    expect(screen.getByText('先确认小样，再放心批量')).toBeInTheDocument()
+  })
+
+  it('选择样片后可生成演示小样', async () => {
+    render(<App initialAuthenticated initialPage="retouch" demoRetouch />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 冰美式' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成小样' }))
+
+    expect(screen.getByRole('button', { name: '正在生成小样…' })).toBeDisabled()
+    const comparison = await screen.findByRole('region', { name: '小样比较' }, { timeout: 2000 })
+    expect(comparison).toHaveTextContent('小样已生成')
+    expect(comparison).toHaveTextContent('演示结果')
+  })
+
+  it('可以收起并重新展开精修助手', () => {
+    render(<App initialAuthenticated initialPage="retouch" demoRetouch />)
+
+    fireEvent.click(screen.getByRole('button', { name: '收起精修助手' }))
+    expect(screen.getByRole('button', { name: '展开精修助手' })).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(screen.getByRole('button', { name: '展开精修助手' }))
+    expect(screen.getByRole('button', { name: '收起精修助手' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('可以在日咖和夜酒模式之间切换', () => {
+    const { container } = render(<App initialAuthenticated />)
+
+    fireEvent.click(screen.getByRole('button', { name: '切换为夜酒模式' }))
+    expect(screen.getByText('夜酒空间')).toBeInTheDocument()
+    expect(container.querySelector('.app-shell')).toHaveClass('time-night')
+
+    fireEvent.click(screen.getByRole('button', { name: '切换为日咖模式' }))
+    expect(screen.getByText('日咖空间')).toBeInTheDocument()
+    expect(container.querySelector('.app-shell')).toHaveClass('time-day')
+  })
+
+  it('每日爆款视频入口可以打开茶馆短剧案例', () => {
+    render(<App initialAuthenticated />)
+
+    fireEvent.click(screen.getByRole('button', { name: '查看每日爆款视频内容' }))
+    expect(screen.getByRole('heading', { name: '短剧脚本' })).toBeInTheDocument()
+    expect(screen.getAllByText('《00后掌柜整顿老茶馆》')).toHaveLength(2)
+  })
+
+  it('品牌创作展示茶文化文创案例', () => {
+    render(<App initialAuthenticated />)
+
+    fireEvent.click(screen.getByRole('button', { name: '品牌创作' }))
+    expect(screen.getAllByText('茶山云雾香器')).toHaveLength(2)
+    expect(screen.getByText('叁花茶文化礼赠')).toBeInTheDocument()
+  })
+
+  it('右上角退出按钮可以返回登录页', () => {
+    render(<App initialAuthenticated />)
+
+    expect(screen.getByLabelText('当前设计师')).toHaveTextContent('林设计')
+    fireEvent.click(screen.getByRole('button', { name: '退出演示账号' }))
+    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument()
+  })
+})

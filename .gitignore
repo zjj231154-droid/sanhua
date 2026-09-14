@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.edge-qa-profile/
+*.log
+.env.local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.zip
+.skill-review/
+qa/
+/*-preview.png
+/demo-login*.png
+storage/
