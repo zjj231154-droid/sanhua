@@ -1,5 +1,5 @@
 const USEGOODAI_BASE_URL = 'https://api.usegoodai.com'
-export const DEFAULT_REASONING_MODEL = 'gpt-5.6-luna'
+export const DEFAULT_REASONING_MODEL = 'gpt-5.5'
 export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 export const providerFrom = (context, preferred) => {
   const useGoodKey = String(context.env?.USEGOODAI_API_KEY || '').trim()
