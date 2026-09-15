@@ -491,6 +491,16 @@ const MERCH_MATERIALS = {
   '礼盒包装': ['特种纸：适合烫金、压凹凸', '灰板裱纸：结构稳定，可量产', '竹木盒：温润，有礼赠感'],
 }
 
+function materialHintsFor(product) {
+  const value = product.toLowerCase()
+  if (/杯|瓶|壶|盘|碟/.test(product)) return MERCH_MATERIALS['马克杯 / 茶杯']
+  if (/纸|本|卡|票|包装/.test(product)) return ['特种纸：适合烫金、压凹凸', '灰板裱纸：结构稳定，可量产', '棉浆纸：细腻、适合高品质印刷', 'PET：轻透耐用，适合透明工艺']
+  if (/布|袋|巾|衣/.test(product)) return MERCH_MATERIALS['帆布袋']
+  if (/扇|竹/.test(product)) return ['竹骨 + 宣纸：传统且可量产', '竹骨 + 绢布：色彩细腻，有礼赠感', '木质扇骨 + 丝绸：更具收藏质感']
+  if (/金属|徽章|胸针/.test(product)) return ['金属烤漆：细节稳定，适合图形', '仿珐琅：色彩精致，有收藏感', '黄铜蚀刻：纹样细节清晰，可量产']
+  return ['亚克力：通透轻盈，适合图形素材', '陶瓷：雅致、有器物感', '木质：温润自然，适合国风设计', '金属珐琅：精致耐用，有收藏感']
+}
+
 function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, image, error, onPlan, onGenerate }) {
   const [step, setStep] = useState(1)
   const [product, setProduct] = useState('')
@@ -499,7 +509,7 @@ function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, 
   const [brief, setBrief] = useState('')
   const [upload, setUpload] = useState(null)
   const asset = upload || selectedAsset
-  const materials = MERCH_MATERIALS[product] || ['亚克力：通透轻盈，适合图形素材', '陶瓷：雅致、有器物感', '木质：温润自然，适合国风设计', '金属珐琅：精致耐用，有收藏感']
+  const materials = MERCH_MATERIALS[product] || materialHintsFor(product)
   const selectUpload = event => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -512,9 +522,9 @@ function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, 
   return <div className="brand-agent-card glass-card brand-merch-workflow">
     <div><span className="kicker">中式文创周边设计 · 五步工作流</span><p>每一步完成后才能进入下一步。提示词规划由 UseGoodAI 推理模型完成，确认后才调用图片模型。</p></div>
     <ol className="merch-steps" aria-label="文创设计步骤">{['产品', '材质', '尺寸', '素材', '提示词'].map((label, index) => <li className={step === index + 1 ? 'is-active' : step > index + 1 ? 'is-done' : ''} key={label}>{index + 1}. {label}</li>)}</ol>
-    {step === 1 && <section><strong>想做哪一种中式文创周边？</strong><div className="merch-options">{Object.keys(MERCH_MATERIALS).map(item => <button key={item} className={product === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => setProduct(item)}>{item}</button>)}</div><button className="primary-button" disabled={!product} onClick={() => setStep(2)}>下一步：选择材质</button></section>}
-    {step === 2 && <section><strong>{product}适合以下可量产材质</strong><div className="merch-options merch-options--stack">{materials.map(item => <button key={item} className={material === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => setMaterial(item)}>{item}</button>)}</div><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(1)}>上一步</button><button className="primary-button" disabled={!material} onClick={() => setStep(3)}>下一步：确认尺寸</button></div></section>}
-    {step === 3 && <section><strong>填写真实产品尺寸</strong><input value={size} onChange={event => setSize(event.target.value)} placeholder="例如 90 × 90 mm" aria-label="文创产品尺寸" /><p>尺寸会写入效果图提案的 REAL SIZE 标注。</p><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(2)}>上一步</button><button className="primary-button" disabled={!size.trim()} onClick={() => setStep(4)}>下一步：选择素材</button></div></section>}
+    {step === 1 && <section><strong>想做哪一种中式文创周边？</strong><div className="merch-options">{Object.keys(MERCH_MATERIALS).map(item => <button key={item} className={product === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { setProduct(item); setMaterial('') }}>{item}</button>)}</div><label className="merch-custom-field">或自行填写产品类型<input value={Object.keys(MERCH_MATERIALS).includes(product) ? '' : product} onChange={event => { setProduct(event.target.value); setMaterial('') }} placeholder="例如：香牌、折扇、丝巾、手机壳" aria-label="自定义文创产品类型" /></label>{product && <p className="selection-summary">当前产品：{product}。下一步会据此更新可量产材质建议。</p>}<button className="primary-button" disabled={!product.trim()} onClick={() => setStep(2)}>下一步：选择材质</button></section>}
+    {step === 2 && <section><strong>{product}适合以下可量产材质</strong><div className="merch-options merch-options--stack">{materials.map(item => <button key={item} className={material === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => setMaterial(item)}>{item}</button>)}</div><label className="merch-custom-field">或自行填写材质与工艺<input value={materials.includes(material) ? '' : material} onChange={event => setMaterial(event.target.value)} placeholder="例如：竹骨 + 绢布，UV 彩印" aria-label="自定义文创材质" /></label>{material && <p className="selection-summary">当前材质：{material}。最终提示词会据此写入真实质感和生产工艺。</p>}<div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(1)}>上一步</button><button className="primary-button" disabled={!material.trim()} onClick={() => setStep(3)}>下一步：确认尺寸</button></div></section>}
+    {step === 3 && <section><strong>填写真实产品尺寸</strong><input value={size} onChange={event => setSize(event.target.value)} placeholder="例如 90 × 90 mm" aria-label="文创产品尺寸" />{size && <p className="selection-summary">当前尺寸：{size}。最终效果图会标注对应的 REAL SIZE。</p>}<p>尺寸会写入效果图提案的 REAL SIZE 标注。</p><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(2)}>上一步</button><button className="primary-button" disabled={!size.trim()} onClick={() => setStep(4)}>下一步：选择素材</button></div></section>}
     {step === 4 && <section><strong>选择或上传视觉素材</strong><div className="asset-picker"><div>{assets.map(item => <button key={item.id} className={asset?.id === item.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => { setUpload(null); onSelectAsset(item) }}><img src={item.url} alt={item.name} /><small>{item.name}</small></button>)}</div></div><label className="secondary-button merch-upload">上传图片<input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectUpload} /></label>{asset && <p className="asset-selected">已选择：{asset.name}</p>}<textarea value={brief} onChange={event => setBrief(event.target.value)} aria-label="文创补充要求" placeholder="可补充文案、风格、必须保留或禁止出现的元素" /><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(3)}>上一步</button><button className="primary-button" disabled={!asset || busy} onClick={() => { createPlan(); setStep(5) }}>{busy ? '正在生成提示词…' : '生成最终提示词'}</button></div></section>}
     {step === 5 && <section><strong>UseGoodAI 推理输出 · 可执行提示词</strong>{plan ? <div className="brand-plan"><p>{plan}</p></div> : <p role="status">正在由推理模型整理产品、材质、尺寸与素材约束…</p>}<div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => setStep(4)}>返回修改</button><button className="primary-button" disabled={busy || !plan} onClick={onGenerate}>{busy ? '正在生成效果图…' : '确认并生成效果图'}</button></div>{image && <img className="brand-generated-image" src={image} alt="中式文创效果图" />}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
   </div>
