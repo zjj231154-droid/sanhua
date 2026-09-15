@@ -9,6 +9,14 @@ async function request(route, data) {
   if (!res.ok) throw new Error(value.error || '本地服务连接失败')
   return value
 }
+async function cloudRequest(data) {
+  const res = await fetch('/api/tokenspace', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+  const raw = await res.text()
+  let value
+  try { value = JSON.parse(raw) } catch { throw new Error('云端服务返回了无效响应') }
+  if (!res.ok) throw new Error(typeof value.error === 'string' ? value.error : JSON.stringify(value.error || value))
+  return value
+}
 export default function LiveRetouch() {
   const cloudMode = typeof window !== 'undefined' && window.location.hostname.endsWith('.pages.dev')
   const [image, setImage] = useState('')
@@ -55,6 +63,7 @@ export default function LiveRetouch() {
   const [size, setSize] = useState('保留原图比例，PNG')
   const [decor, setDecor] = useState('不新增道具')
   const [job, setJob] = useState(null)
+  const [cloudResult, setCloudResult] = useState('')
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   const [connection, setConnection] = useState('检查 Codex 连接…')
@@ -79,20 +88,36 @@ export default function LiveRetouch() {
     if (!file) return
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 15 * 1024 * 1024) return setError('请选择 15 MB 以内的 PNG、JPG 或 WebP')
     const reader = new FileReader()
-    reader.onload = () => { setImage(reader.result); setJob(null); setError(''); localStorage.removeItem('retouch-job') }
+    reader.onload = () => { setImage(reader.result); setCloudResult(''); setJob(null); setError(''); localStorage.removeItem('retouch-job') }
     reader.readAsDataURL(file)
   }
   async function submit(confirm = false) {
     setSending(true); setError('')
     try {
       let source = image
-      if (!confirm && !image.startsWith('data:')) {
+      if (!image.startsWith('data:')) {
         const response = await fetch(image)
         if (!response.ok) throw new Error('无法读取原图，请重新上传')
         const blob = await response.blob()
         source = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
       }
-      const result = confirm ? await request(`/${job.id}/confirm`, {}) : await request('', { image: source, referenceImage: templateImage, requirements: `用途：商品精修\n尺寸：${size}\n场景：${scene}\n装饰：${decor}\n文字：保留原文，不新增\n要求：${requirements}\n模版关键词：${templateKeywords || '未设置'}\n参考模版：${templateName || '未设置'}，仅参考光线、色调和构图，保留商品主体。` })
+      const editPrompt = `用途：商品精修\n尺寸：${size}\n场景：${scene}\n装饰：${decor}\n文字：保留原文，不新增\n要求：${requirements}\n模版关键词：${templateKeywords || '未设置'}\n参考模版：${templateName || '未设置'}，仅参考光线、色调和构图，保留商品主体。`
+      if (cloudMode) {
+        if (!confirm) {
+          const planned = await cloudRequest({ type: 'prompt', prompt: `请把以下商品修图要求整理为简洁、可执行的中文生图计划，只输出计划正文：\n${editPrompt}` })
+          const plan = planned.data?.choices?.[0]?.message?.content || editPrompt
+          setJob({ id: 'cloud', status: 'awaiting_confirmation', plan })
+        } else {
+          const edited = await cloudRequest({ type: 'edit', model: 'gpt-image-2', prompt: `${job?.plan || ''}\n${editPrompt}`, images: [source, templateImage].filter(Boolean) })
+          const output = edited.data?.data?.[0]
+          const resultUrl = output?.b64_json ? `data:image/png;base64,${output.b64_json}` : output?.url
+          if (!resultUrl) throw new Error('生图服务未返回可用图片')
+          setCloudResult(resultUrl)
+          setJob({ ...job, status: 'done' })
+        }
+        return
+      }
+      const result = confirm ? await request(`/${job.id}/confirm`, {}) : await request('', { image: source, referenceImage: templateImage, requirements: editPrompt })
       setJob(result); localStorage.setItem('retouch-job', result.id)
     } catch (err) { setError(err.message) }
     finally { setSending(false) }
@@ -122,7 +147,8 @@ export default function LiveRetouch() {
         {(error || job?.error) && <p className="retouch-error" role="alert">{error || job.error}</p>}
         <section ref={galleryRef} className="photo-grid live-photo-grid" tabIndex={0} title="滚轮上下滚动 · Shift + 滚轮左右滚动" aria-label="产品精修图片与结果，可上下左右滚动">
           <button className="upload-card" disabled={busy} onClick={() => fileInput.current.click()}><span><ImagePlus size={24} /></span><strong>添加产品照片</strong><small>PNG / JPG / WebP · 最大 15 MB</small></button>
-          {image && !job?.results?.length && <article className="photo-card"><div className="real-photo"><img src={image} alt="待精修原图" /><span className="photo-badge">原图</span></div><div className="photo-info"><span><strong>产品原图</strong><small>{status}</small></span><button aria-label="编辑精修要求" onClick={() => setAssistantOpen(true)}><Sparkles size={17} /></button></div></article>}
+          {image && !job?.results?.length && !cloudResult && <article className="photo-card"><div className="real-photo"><img src={image} alt="待精修原图" /><span className="photo-badge">原图</span></div><div className="photo-info"><span><strong>产品原图</strong><small>{status}</small></span><button aria-label="编辑精修要求" onClick={() => setAssistantOpen(true)}><Sparkles size={17} /></button></div></article>}
+          {cloudResult && <article className="photo-card result-card"><div className="real-photo"><img src={cloudResult} alt="云端精修结果" /><span className="photo-badge">精修完成</span></div><div className="photo-info"><span><strong>精修结果</strong><a href={cloudResult} download="sanhua-retouched.png">下载图片</a></span><button aria-label="继续编辑此结果" disabled={busy} onClick={() => { setImage(cloudResult); setCloudResult(''); setJob(null); setAssistantOpen(true) }}><ArrowUpRight size={17} /></button></div></article>}
           {job?.results?.map(name => { const url = `/api/retouch/${job.id}/output/${encodeURIComponent(name)}`; return <article className="photo-card result-card" key={name}><div className="real-photo"><img src={url} alt="精修结果" /><span className="photo-badge">精修完成</span></div><div className="photo-info"><span><strong>精修结果</strong><a href={url} download={name}>下载原尺寸图片</a></span><button aria-label="继续编辑此结果" disabled={busy} onClick={() => { setImage(url); setJob(null); setAssistantOpen(true); localStorage.removeItem('retouch-job') }}><ArrowUpRight size={17} /></button></div></article> })}
           {['冰美式', '暮色特调', '桂花拿铁', '山茶气泡饮'].map((name, index) => <article className="photo-card" key={name}><div className={`photo-visual photo-visual--${['amber','rose','cream','green'][index]}`} role="img" aria-label={`${name}案例图片`}><span className="photo-badge">案例参考</span></div><div className="photo-info"><span><strong>{name}</strong><small>咖啡店商品摄影 · 精修案例</small></span></div></article>)}
         </section>

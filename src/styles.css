@@ -1211,6 +1211,28 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .time-day .case-facts { background: rgba(92,63,43,.12); }
 .time-day .case-facts > span { background: rgba(255,252,246,.56); }
 .time-day .case-facts small { color: #806f63; }
+.brand-agent-card { margin: 14px 0 0; padding: 18px; display: grid; gap: 12px; border-radius: 22px; }
+.brand-agent-card p { margin: 6px 0 0; color: var(--workbench-muted); font-size: 11px; line-height: 1.6; }
+.brand-agent-card textarea { width: 100%; min-height: 76px; resize: vertical; padding: 11px 12px; border: 1px solid var(--glass-line); border-radius: 14px; color: inherit; background: rgba(255,255,255,.08); font: inherit; font-size: 12px; }
+.brand-agent-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.brand-plan { padding: 12px; border-radius: 14px; background: rgba(255,255,255,.08); }
+.brand-plan strong { font-size: 12px; }
+.brand-plan p { white-space: pre-wrap; }
+.brand-generated-image { width: min(100%, 420px); max-height: 360px; object-fit: contain; border-radius: 16px; }
+.time-day .brand-agent-card textarea { color: #35251d; background: rgba(255,252,246,.7); }
+
+/* 云端资产库 */
+.asset-library-page { height: calc(100vh - 92px); overflow: auto; }
+.asset-toolbar { margin-bottom: 16px; }
+.asset-toolbar > div { display: flex; gap: 8px; align-items: center; overflow-x: auto; }
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; padding-bottom: 28px; }
+.asset-card { min-width: 0; overflow: hidden; border-radius: 24px; }
+.asset-card > img { width: 100%; aspect-ratio: 4 / 3; display: block; object-fit: cover; background: rgba(255,255,255,.12); }
+.asset-card > div { padding: 12px 14px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.asset-card > div > span { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.asset-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.asset-card small { color: var(--workbench-muted); font-size: 10px; }
+.asset-card .secondary-button { flex-shrink: 0; padding: 8px 10px; }
 
 /* 夜酒模式可读性：提高文字亮度，不抬高背景 */
 .app-shell.time-night { --workbench-cream: #fff8ec; --workbench-muted: #d1c2b4; }
@@ -1258,4 +1280,5 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   .top-actions .demo-tag,
   .top-actions > .icon-button:not(.logout-button) { display: none; }
   .top-profile { margin-left: 0; border-left: 0; }
+  .asset-grid { grid-template-columns: 1fr; }
 }

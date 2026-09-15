@@ -48,6 +48,17 @@ const DEMO_PHOTOS = [
   { id: 'bottle', name: '山茶气泡饮', meta: '4000 × 6000 · 25.4 MB', tone: 'green', status: '待处理' },
 ]
 
+const CLOUD_ASSETS = [
+  ...Array.from({ length: 7 }, (_, index) => ({ id: `coffee-${index + 1}`, name: `咖啡场景 ${index + 1}`, category: 'retouch', group: '咖啡店场景', url: `/cloud-assets/retouch/coffee-scene/coffee-${String(index + 1).padStart(2, '0')}.jpg` })),
+  ...Array.from({ length: 12 }, (_, index) => ({ id: `teahouse-${index + 1}`, name: `茶馆场景 ${index + 1}`, category: 'retouch', group: '茶馆场景', url: `/cloud-assets/retouch/teahouse-scene/teahouse-${String(index + 1).padStart(2, '0')}.jpg` })),
+  { id: 'brand-1', name: '茉语轻岚', category: 'brand', group: '品牌文创', url: '/cloud-assets/brand/identity/brand-01.jpg' },
+  { id: 'brand-2', name: '叁花茶馆贴纸', category: 'brand', group: '品牌文创', url: '/cloud-assets/brand/identity/brand-02.png' },
+  { id: 'brand-3', name: '叁花热水袋图案', category: 'brand', group: '品牌文创', url: '/cloud-assets/brand/identity/brand-03.png' },
+  { id: 'brand-4', name: '叁花 Logo', category: 'brand', group: '品牌文创', url: '/cloud-assets/brand/identity/brand-04.png' },
+  { id: 'brand-5', name: '叁花原创物料', category: 'brand', group: '品牌文创', url: '/cloud-assets/brand/identity/brand-05.png' },
+  { id: 'brand-6', name: '线上茶叶包装', category: 'brand', group: '品牌文创', url: '/cloud-assets/brand/identity/brand-06.png' },
+]
+
 const CREATION_CARDS = [
   {
     id: 'retouch',
@@ -483,11 +494,36 @@ const CREATIVE_CASES = {
 function CreativeCasesPage({ type }) {
   const [editor, setEditor] = useState(null)
   const [toolbarTab, setToolbarTab] = useState(0)
+  const [brandPrompt, setBrandPrompt] = useState('为叁花茶馆设计一张日光茶饮品牌海报，保留叁花 Logo，突出茶汤与留白。')
+  const [brandPlan, setBrandPlan] = useState('')
+  const [brandImage, setBrandImage] = useState('')
+  const [brandBusy, setBrandBusy] = useState(false)
+  const [brandError, setBrandError] = useState('')
   const [drafts, setDrafts] = useState(() => { try { const saved = JSON.parse(localStorage.getItem('script-drafts') || '[]'); return Array.isArray(saved) ? saved : [] } catch { return [] } })
   const config = CREATIVE_CASES[type]
   const [activeId, setActiveId] = useState(config.cases[0].id)
   const activeCase = config.cases.find(item => item.id === activeId)
   const Icon = config.icon
+  async function createBrandPlan() {
+    setBrandBusy(true); setBrandError('')
+    try {
+      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', requirements: brandPrompt, assets: [] }) })
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '设计助手暂不可用')
+      setBrandPlan(value.plan || '')
+    } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
+  }
+  async function generateBrandImage() {
+    setBrandBusy(true); setBrandError('')
+    try {
+      const response = await fetch('/api/tokenspace', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'image', model: 'gpt-image-2', prompt: brandPlan || brandPrompt, size: '1024x1024' }) })
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '品牌图片生成失败')
+      const output = value.data?.data?.[0]
+      setBrandImage(output?.b64_json ? `data:image/png;base64,${output.b64_json}` : output?.url || '')
+      if (!output?.b64_json && !output?.url) throw new Error('模型未返回图片')
+    } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
+  }
 
   return (
     <div className="showcase-page">
@@ -498,6 +534,7 @@ function CreativeCasesPage({ type }) {
       <div className="showcase-layout">
         <main className="showcase-main">
           <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成'] : ['素材上传', '产品案例', '效果渲染']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
+          {type === 'brand' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">DESIGN ASSISTANT · gpt-image-2-prompt-engine</span><p>输入物料用途、尺寸和必须出现的文字，先生成 3 个方向和结构化图片提示词，再确认执行。</p></div><textarea value={brandPrompt} onChange={event => setBrandPrompt(event.target.value)} aria-label="品牌创作需求" /><div className="brand-agent-actions"><button className="secondary-button" disabled={brandBusy || !brandPrompt.trim()} onClick={createBrandPlan}>{brandBusy ? '正在规划…' : '生成创意方向'}</button>{brandPlan && <button className="primary-button" disabled={brandBusy} onClick={generateBrandImage}>{brandBusy ? '正在生成…' : '确认并生成小样'}</button>}</div>{brandPlan && <div className="brand-plan"><strong>设计助手计划</strong><p>{brandPlan}</p></div>}{brandImage && <img className="brand-generated-image" src={brandImage} alt="品牌创作生成结果" />}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 2 && <p role="status">{type === 'script' ? '视频生成入口已预留，生成服务尚未接入。' : '效果渲染入口已预留，生成服务尚未接入。'}</p>}
           <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}案例`}>
             {type === 'script' && drafts.map(draft => <button className="case-card" key={draft.id} onClick={() => setEditor(draft)}><span className="case-copy"><small>本机草稿 · 点击编辑</small><strong>{draft.title}</strong><em>{draft.summary}</em><span>{draft.kind}</span></span></button>)}
@@ -521,6 +558,18 @@ function CreativeCasesPage({ type }) {
       {editor && <ScriptEditor initial={editor} onClose={() => setEditor(null)} onSave={values => { const item = { ...values, id: editor.id || crypto.randomUUID() }; const next = [item, ...drafts.filter(draft => draft.id !== item.id)]; localStorage.setItem('script-drafts', JSON.stringify(next)); setDrafts(next) }} />}
     </div>
   )
+}
+
+function AssetLibraryPage({ onNavigate }) {
+  const [category, setCategory] = useState('all')
+  const visible = category === 'all' ? CLOUD_ASSETS : CLOUD_ASSETS.filter(asset => asset.category === category)
+  return <div className="page-content asset-library-page">
+    <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>本地测试素材已分类上传，可直接用于产品精修与品牌创作。</p></div><span className="connection-note">Pages 云端资产 · {CLOUD_ASSETS.length} 项</span></header>
+    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['all', '全部'], ['retouch', '产品精修'], ['brand', '品牌文创']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><small>{visible.length} 项素材</small></div>
+    <section className="asset-grid" aria-label="云端资产列表">
+      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><img src={asset.url} alt={asset.name} loading="lazy" /><div><span><strong>{asset.name}</strong><small>{asset.group}</small></span><button className="secondary-button" onClick={() => onNavigate(asset.category === 'retouch' ? 'retouch' : 'brand')}>{asset.category === 'retouch' ? '用于精修' : '用于创作'}</button></div></article>)}
+    </section>
+  </div>
 }
 
 function PlaceholderPage({ type }) {
@@ -573,7 +622,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
           {page === 'retouch' && (demoRetouch ? <RetouchPage /> : <LiveRetouch />)}
           {page === 'brand' && <CreativeCasesPage type="brand" />}
           {page === 'script' && <CreativeCasesPage type="script" />}
-          {page === 'assets' && <PlaceholderPage type={page} />}
+          {page === 'assets' && <AssetLibraryPage onNavigate={setPage} />}
           {page === 'settings' && <ApiSettings />}
         </div>
       </div>
