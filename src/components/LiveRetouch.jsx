@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Upload, ImagePlus, Sparkles, PanelRightClose, PanelRightOpen, Layers3, LoaderCircle, ArrowUpRight } from 'lucide-react'
+import { CLOUD_ASSETS } from '../data/cloudAssets'
 
 async function request(route, data) {
   const res = await fetch(`/api/retouch${route}`, data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : undefined)
@@ -24,6 +25,9 @@ export default function LiveRetouch() {
   const fileInput = useRef(null)
   const batchInput = useRef(null)
   const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+  const [assetPickerMode, setAssetPickerMode] = useState('single')
+  const [selectedCloudAssets, setSelectedCloudAssets] = useState([])
   const [templateKeywords, setTemplateKeywords] = useState('')
   const [templateImage, setTemplateImage] = useState('')
   const [templateName, setTemplateName] = useState('')
@@ -68,6 +72,15 @@ export default function LiveRetouch() {
   const [sending, setSending] = useState(false)
   const [connection, setConnection] = useState('检查 Codex 连接…')
   const busy = sending || ['planning', 'editing'].includes(job?.status)
+  function openAssetPicker(mode = 'single') { setAssetPickerMode(mode); setAssetPickerOpen(true) }
+  function toggleCloudAsset(asset) {
+    if (assetPickerMode === 'single') { setSelectedCloudAssets([asset]); return }
+    setSelectedCloudAssets(current => current.some(item => item.id === asset.id) ? current.filter(item => item.id !== asset.id) : [...current, asset])
+  }
+  function applyCloudAssets() {
+    if (!selectedCloudAssets.length) return
+    setImage(selectedCloudAssets[0].url); setCloudResult(''); setJob(null); setError(''); localStorage.removeItem('retouch-job'); setAssetPickerOpen(false)
+  }
   useEffect(() => {
     if (cloudMode) {
       setConnection('TokenSpace 云端精修已连接')
@@ -129,7 +142,8 @@ export default function LiveRetouch() {
     <input hidden ref={batchInput} type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={upload} disabled={busy} />
     <div className={assistantOpen ? 'retouch-layout' : 'retouch-layout is-assistant-closed'}>
       <main className="canvas-area">
-        <div className="canvas-toolbar"><div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto' }}><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => fileInput.current.click()}><Upload size={16} />添加图片</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => batchInput.current.click()}><Layers3 size={16} />批量修图</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy || job?.status === 'awaiting_confirmation'} aria-expanded={templatesOpen} onClick={() => setTemplatesOpen(value => !value)}><Sparkles size={16} />修图模版</button></div><Layers3 size={17} /></div>
+        <div className="canvas-toolbar"><div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto' }}><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('single')}><Upload size={16} />添加图片</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('batch')}><Layers3 size={16} />批量修图</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy || job?.status === 'awaiting_confirmation'} aria-expanded={templatesOpen} onClick={() => setTemplatesOpen(value => !value)}><Sparkles size={16} />修图模版</button></div><Layers3 size={17} /></div>
+        {assetPickerOpen && <div className="asset-picker-modal" role="dialog" aria-label="从云端素材库选择图片"><div className="asset-picker-dialog"><div className="asset-picker-heading"><div><strong>从云端素材库选择</strong><small>{assetPickerMode === 'batch' ? '可多选图片，确认后进入批量修图' : '选择一张图片进入精修助手'}</small></div><button className="assistant-toggle" onClick={() => setAssetPickerOpen(false)} aria-label="关闭素材选择">×</button></div><div className="asset-picker-grid">{CLOUD_ASSETS.filter(asset => asset.category === 'retouch').map(asset => <button key={asset.id} className={selectedCloudAssets.some(item => item.id === asset.id) ? 'asset-select-card is-selected' : 'asset-select-card'} onClick={() => toggleCloudAsset(asset)}><img src={asset.url} alt={asset.name} /><span>{asset.name}</span><small>{asset.group}</small></button>)}</div><div className="asset-picker-footer"><span>已选 {selectedCloudAssets.length} 张</span><button className="primary-button" disabled={!selectedCloudAssets.length} onClick={applyCloudAssets}>使用选中素材</button></div></div></div>}
         {templatesOpen && <div className="assistant-message" aria-label="修图模版"><p>选择模版，将自动填入精修助手。</p>{[
           ['咖啡日光', '保留原图咖啡店场景，柔和自然日光', '提亮咖啡主体与杯身，保留拉花、杯型、商标和真实质感。'],
           ['夜酒氛围', '保留原图咖啡酒吧场景，暖色夜间灯光', '突出酒液通透感与冰块细节，保留杯型、标签与文字。'],
@@ -146,7 +160,7 @@ export default function LiveRetouch() {
         <div className="retouch-feedback" role="status" aria-live="polite">{busy && <LoaderCircle size={15} className="spin-icon" />}{image ? status : cloudMode ? '上传产品照片，云端精修将通过 TokenSpace 处理' : '上传产品照片，在精修助手中编辑要求'}{job?.status === 'done' && ' · 结果已更新到下方卡片'}</div>
         {(error || job?.error) && <p className="retouch-error" role="alert">{error || job.error}</p>}
         <section ref={galleryRef} className="photo-grid live-photo-grid" tabIndex={0} title="滚轮上下滚动 · Shift + 滚轮左右滚动" aria-label="产品精修图片与结果，可上下左右滚动">
-          <button className="upload-card" disabled={busy} onClick={() => fileInput.current.click()}><span><ImagePlus size={24} /></span><strong>添加产品照片</strong><small>PNG / JPG / WebP · 最大 15 MB</small></button>
+          <button className="upload-card" disabled={busy} onClick={() => openAssetPicker('single')}><span><ImagePlus size={24} /></span><strong>从云端资产库选择产品照片</strong><small>选择已整理的咖啡店或茶馆场景素材</small></button>
           {image && !job?.results?.length && !cloudResult && <article className="photo-card"><div className="real-photo"><img src={image} alt="待精修原图" /><span className="photo-badge">原图</span></div><div className="photo-info"><span><strong>产品原图</strong><small>{status}</small></span><button aria-label="编辑精修要求" onClick={() => setAssistantOpen(true)}><Sparkles size={17} /></button></div></article>}
           {cloudResult && <article className="photo-card result-card"><div className="real-photo"><img src={cloudResult} alt="云端精修结果" /><span className="photo-badge">精修完成</span></div><div className="photo-info"><span><strong>精修结果</strong><a href={cloudResult} download="sanhua-retouched.png">下载图片</a></span><button aria-label="继续编辑此结果" disabled={busy} onClick={() => { setImage(cloudResult); setCloudResult(''); setJob(null); setAssistantOpen(true) }}><ArrowUpRight size={17} /></button></div></article>}
           {job?.results?.map(name => { const url = `/api/retouch/${job.id}/output/${encodeURIComponent(name)}`; return <article className="photo-card result-card" key={name}><div className="real-photo"><img src={url} alt="精修结果" /><span className="photo-badge">精修完成</span></div><div className="photo-info"><span><strong>精修结果</strong><a href={url} download={name}>下载原尺寸图片</a></span><button aria-label="继续编辑此结果" disabled={busy} onClick={() => { setImage(url); setJob(null); setAssistantOpen(true); localStorage.removeItem('retouch-job') }}><ArrowUpRight size={17} /></button></div></article> })}

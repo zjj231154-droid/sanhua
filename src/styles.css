@@ -1227,6 +1227,23 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .brand-plan p { white-space: pre-wrap; }
 .brand-generated-image { width: min(100%, 420px); max-height: 360px; object-fit: contain; border-radius: 16px; }
 .time-day .brand-agent-card textarea { color: #35251d; background: rgba(255,252,246,.7); }
+.asset-picker-modal { position: fixed; z-index: 30; inset: 0; padding: 24px; display: grid; place-items: center; background: rgba(22,15,11,.48); backdrop-filter: blur(8px); }
+.asset-picker-dialog { width: min(900px, 100%); max-height: min(760px, 90vh); padding: 18px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--glass-line); border-radius: 24px; color: #f5e8d7; background: #2c211b; box-shadow: 0 28px 70px rgba(0,0,0,.35); }
+.asset-picker-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding-bottom: 14px; }
+.asset-picker-heading > div { display: grid; gap: 5px; }
+.asset-picker-heading strong { font-size: 16px; }
+.asset-picker-heading small { color: #c5b1a1; font-size: 11px; }
+.asset-picker-grid { min-height: 0; padding: 2px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; overflow-y: auto; overscroll-behavior: contain; }
+.asset-select-card { padding: 0; overflow: hidden; border: 1px solid rgba(245,224,197,.14); border-radius: 14px; color: inherit; background: rgba(255,255,255,.06); text-align: left; cursor: pointer; }
+.asset-select-card img { width: 100%; aspect-ratio: 4 / 3; display: block; object-fit: cover; }
+.asset-select-card span, .asset-select-card small { display: block; padding-inline: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-select-card span { padding-top: 8px; font-size: 11px; }
+.asset-select-card small { padding-top: 4px; padding-bottom: 9px; color: #c5b1a1; font-size: 9px; }
+.asset-select-card.is-selected { box-shadow: 0 0 0 2px #d5af7d; }
+.asset-picker-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 14px; color: #c5b1a1; font-size: 11px; }
+.showcase-main, .case-grid, .asset-library-page, .page-content { overscroll-behavior: contain; scrollbar-gutter: stable; }
+.showcase-main { overflow: auto; }
+.showcase-main > .case-grid { flex: 1; }
 
 /* 云端资产库 */
 .asset-library-page { height: calc(100vh - 92px); overflow: auto; }
@@ -1288,4 +1305,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   .top-actions > .icon-button:not(.logout-button) { display: none; }
   .top-profile { margin-left: 0; border-left: 0; }
   .asset-grid { grid-template-columns: 1fr; }
+  .asset-picker-modal { padding: 10px; }
+  .asset-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
