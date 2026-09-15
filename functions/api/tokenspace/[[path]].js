@@ -8,7 +8,7 @@ export async function onRequestGet(context) {
   const path = Array.isArray(context.params.path) ? context.params.path.join('/') : context.params.path
   if (path !== 'test') return json(405, { error: 'METHOD_NOT_ALLOWED' })
   const model = context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
-  const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai', payload: { model, messages: [{ role: 'user', content: 'Reply with exactly: connection successful' }] } })
+  const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai-reasoning', payload: { model, messages: [{ role: 'user', content: 'Reply with exactly: connection successful' }] } })
   return result.response || json(200, { success: true, provider: 'usegoodai' })
 }
 export async function onRequestPost(context) {
@@ -31,6 +31,6 @@ export async function onRequestPost(context) {
   }
   const endpoint = type === 'image' ? 'images/generations' : type === 'video' ? 'videos/generations' : 'chat/completions'
   const payload = type === 'prompt' ? { model, messages: [{ role: 'user', content: prompt }] } : { model, prompt, size: input.size || '1024x1024', response_format: 'b64_json' }
-  const result = await tokenSpaceRequest(context, endpoint, { model, payload, provider: 'usegoodai' })
+  const result = await tokenSpaceRequest(context, endpoint, { model, payload, provider: type === 'prompt' ? 'usegoodai-reasoning' : 'usegoodai' })
   return result.response || json(200, { type, data: result.data })
 }

@@ -3,9 +3,11 @@ export const DEFAULT_REASONING_MODEL = 'gpt-5.5'
 export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 export const providerFrom = (context, preferred) => {
   const useGoodKey = String(context.env?.USEGOODAI_API_KEY || '').trim()
+  const reasoningKey = String(context.env?.USEGOODAI_REASONING_API_KEY || '').trim() || useGoodKey
   const tokenSpace = { name: 'tokenspace-legacy', apiKey: String(context.env?.TOKENSPACE_API_KEY || '').trim(), baseUrl: 'https://tokenspace.io' }
   const useGood = { name: 'usegoodai', apiKey: useGoodKey, baseUrl: USEGOODAI_BASE_URL }
-  return preferred === 'tokenspace' ? tokenSpace : preferred === 'usegoodai' ? useGood : useGoodKey ? useGood : tokenSpace
+  const useGoodReasoning = { name: 'usegoodai-reasoning', apiKey: reasoningKey, baseUrl: USEGOODAI_BASE_URL }
+  return preferred === 'tokenspace' ? tokenSpace : preferred === 'usegoodai-reasoning' ? useGoodReasoning : preferred === 'usegoodai' ? useGood : useGoodKey ? useGood : tokenSpace
 }
 export const apiKeyFrom = context => providerFrom(context).apiKey
 export async function tokenSpaceRequest(context, endpoint, { model, payload, form, provider: preferred } = {}) {

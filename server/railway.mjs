@@ -13,6 +13,7 @@ const apiRoutes = {
   '/api/v1/agent-runs': () => import('../functions/api/v1/agent-runs.js'),
   '/api/v1/tasks': () => import('../functions/api/v1/tasks.js'),
   '/api/debug/tokenspace': () => import('../functions/api/debug/tokenspace.js'),
+  '/api/debug/usegoodai-models': () => import('../functions/api/debug/usegoodai-models.js'),
 }
 
 const send = async (res, response) => {
