@@ -3,7 +3,9 @@ import { Upload, ImagePlus, Sparkles, PanelRightClose, PanelRightOpen, Layers3, 
 
 async function request(route, data) {
   const res = await fetch(`/api/retouch${route}`, data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : undefined)
-  const value = await res.json()
+  const raw = await res.text()
+  let value
+  try { value = JSON.parse(raw) } catch { throw new Error(res.ok ? '服务返回了无效响应，请刷新后重试。' : '线上版本暂未部署本地精修服务。') }
   if (!res.ok) throw new Error(value.error || '本地服务连接失败')
   return value
 }

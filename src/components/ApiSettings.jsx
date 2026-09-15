@@ -16,12 +16,14 @@ export default function ApiSettings() {
     return value
   }
   useEffect(() => { if (!cloudMode) call().then(setConfig).catch(error => setMessage(error.message)) }, [cloudMode])
-  useEffect(() => { if (cloudMode) fetch('/api/debug/tokenspace').then(response => response.json()).then(setCloudStatus).catch(() => setCloudStatus(null)) }, [cloudMode])
+  useEffect(() => { if (cloudMode) fetch('/api/debug/tokenspace').then(async response => { const text = await response.text(); return JSON.parse(text) }).then(setCloudStatus).catch(() => setCloudStatus(null)) }, [cloudMode])
   async function testCloud() {
     setBusy(true); setMessage('')
     try {
       const res = await fetch('/api/tokenspace/test')
-      const value = await res.json()
+      const raw = await res.text()
+      let value
+      try { value = JSON.parse(raw) } catch { throw new Error('云端服务返回了无效响应，请刷新后重试。') }
       if (!res.ok) throw new Error(`${value.upstream || '服务'} HTTP ${value.status || res.status}: ${value.error || '请求失败'}`)
       setMessage('云端 TokenSpace 连接成功。')
     } catch (error) { setMessage(error.message) }
