@@ -28,6 +28,7 @@ export default function LiveRetouch() {
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   const [assetPickerMode, setAssetPickerMode] = useState('single')
   const [selectedCloudAssets, setSelectedCloudAssets] = useState([])
+  const [retouchTab, setRetouchTab] = useState('one-click')
   const [templateKeywords, setTemplateKeywords] = useState('')
   const [templateImage, setTemplateImage] = useState('')
   const [templateName, setTemplateName] = useState('')
@@ -142,6 +143,8 @@ export default function LiveRetouch() {
     <input hidden ref={batchInput} type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={upload} disabled={busy} />
     <div className={assistantOpen ? 'retouch-layout' : 'retouch-layout is-assistant-closed'}>
       <main className="canvas-area">
+        <div className="section-tabs" role="tablist" aria-label="产品精修功能"><button className={retouchTab === 'one-click' ? 'primary-button' : 'secondary-button'} role="tab" aria-selected={retouchTab === 'one-click'} onClick={() => setRetouchTab('one-click')}>一键修图</button><button className={retouchTab === 'gallery' ? 'primary-button' : 'secondary-button'} role="tab" aria-selected={retouchTab === 'gallery'} onClick={() => setRetouchTab('gallery')}>图库</button></div>
+        {retouchTab === 'gallery' && <div className="gallery-scope-note">产品精修图库 · 仅显示 retouch 资产与精修结果</div>}
         <div className="canvas-toolbar"><div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto' }}><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('single')}><Upload size={16} />添加图片</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('batch')}><Layers3 size={16} />批量修图</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy || job?.status === 'awaiting_confirmation'} aria-expanded={templatesOpen} onClick={() => setTemplatesOpen(value => !value)}><Sparkles size={16} />修图模版</button></div><Layers3 size={17} /></div>
         {assetPickerOpen && <div className="asset-picker-modal" role="dialog" aria-label="从云端素材库选择图片"><div className="asset-picker-dialog"><div className="asset-picker-heading"><div><strong>从云端素材库选择</strong><small>{assetPickerMode === 'batch' ? '可多选图片，确认后进入批量修图' : '选择一张图片进入精修助手'}</small></div><button className="assistant-toggle" onClick={() => setAssetPickerOpen(false)} aria-label="关闭素材选择">×</button></div><div className="asset-picker-grid">{CLOUD_ASSETS.filter(asset => asset.category === 'retouch').map(asset => <button key={asset.id} className={selectedCloudAssets.some(item => item.id === asset.id) ? 'asset-select-card is-selected' : 'asset-select-card'} onClick={() => toggleCloudAsset(asset)}><img src={asset.url} alt={asset.name} /><span>{asset.name}</span><small>{asset.group}</small></button>)}</div><div className="asset-picker-footer"><span>已选 {selectedCloudAssets.length} 张</span><button className="primary-button" disabled={!selectedCloudAssets.length} onClick={applyCloudAssets}>使用选中素材</button></div></div></div>}
         {templatesOpen && <div className="assistant-message" aria-label="修图模版"><p>选择模版，将自动填入精修助手。</p>{[
