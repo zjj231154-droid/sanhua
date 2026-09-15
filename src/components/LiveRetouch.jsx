@@ -3,7 +3,7 @@ import { Upload, ImagePlus, Sparkles, PanelRightClose, PanelRightOpen, Layers3, 
 
 async function request(route, data) {
   const res = await fetch(`/api/retouch${route}`, data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : undefined)
-  const raw = await res.text()
+  const raw = typeof res.text === 'function' ? await res.text() : JSON.stringify(await res.json())
   let value
   try { value = JSON.parse(raw) } catch { throw new Error(res.ok ? '服务返回了无效响应，请刷新后重试。' : '线上版本暂未部署本地精修服务。') }
   if (!res.ok) throw new Error(value.error || '本地服务连接失败')
@@ -95,7 +95,7 @@ export default function LiveRetouch() {
     setSending(true); setError('')
     try {
       let source = image
-      if (!image.startsWith('data:')) {
+      if ((!confirm || cloudMode) && !image.startsWith('data:')) {
         const response = await fetch(image)
         if (!response.ok) throw new Error('无法读取原图，请重新上传')
         const blob = await response.blob()
