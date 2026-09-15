@@ -1,4 +1,4 @@
-export const BASE_URL = 'https://api.tokenspace.tech'
+export const BASE_URL = 'https://tokenspace.io'
 export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 export const apiKeyFrom = context => String(context.env?.TOKENSPACE_API_KEY || '').trim()
 export async function tokenSpaceRequest(context, endpoint, { model, payload, form } = {}) {

@@ -37,7 +37,7 @@ export default function ApiSettings() {
     } catch (error) { setMessage(error.message) }
     finally { setBusy(false) }
   }
-  return <section className="page-content api-settings"><h1>管理设置</h1><h2>图片精修 API</h2><p>服务：TokenSpace · https://api.tokenspace.tech</p><p>支持文生图与图片编辑，图片请求最长等待 30 分钟。测试连接仅验证模型列表与鉴权。</p>
+  return <section className="page-content api-settings"><h1>管理设置</h1><h2>图片精修 API</h2><p>服务：TokenSpace · https://tokenspace.io</p><p>支持文生图与图片编辑，图片请求最长等待 30 分钟。测试连接通过 Cloudflare 服务端验证鉴权。</p>
     <form onSubmit={event => { event.preventDefault(); if (!cloudMode) save(false) }}><fieldset disabled={busy}>
       {cloudMode ? <p className="api-cloud-notice">{cloudStatus?.configured ? 'TokenSpace API 密钥已由 Cloudflare Secret 管理' : '未检测到 Cloudflare TOKENSPACE_API_KEY'}{cloudStatus && ` · ${cloudStatus.keyLength} 位 · ${cloudStatus.startsWithSk ? 'sk- 格式' : '非 sk- 格式'}`}</p> : <label>API Key<input type="password" autoComplete="new-password" value={key} onChange={e => setKey(e.target.value)} placeholder="仅本地开发模式使用" /></label>}
       <label>图片编辑模型<input list="image-model-options" value={config.model} onChange={e => setConfig({ ...config, model: e.target.value })} placeholder="输入中转站支持的图片编辑模型 ID" /></label>
