@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import RippleDistortion from './components/RippleDistortion/RippleDistortion'
 import LiveRetouch from './components/LiveRetouch'
+import ImageViewer from './components/ImageViewer'
 import { CLOUD_ASSETS } from './data/cloudAssets'
 
 const NAV_ITEMS = [
@@ -235,8 +236,8 @@ function HomePage({ onNavigate }) {
 
         <section className="glass-card task-panel dashboard-tasks">
           <div className="section-heading"><div><span className="kicker">TASKS</span><h2>需要确认</h2></div><span className="task-count">3</span></div>
-          <div className="task-item"><span className="task-symbol"><FileImage size={18} /></span><span><strong>5 张精修小样</strong><small>等待确认</small></span></div>
-          <div className="task-item"><span className="task-symbol task-symbol--clay"><BookOpenText size={18} /></span><span><strong>脚本第一集</strong><small>等待审阅</small></span></div>
+          <button className="task-item task-link" onClick={() => onNavigate('retouch')}><span className="task-symbol"><FileImage size={18} /></span><span><strong>5 张精修小样</strong><small>等待确认</small></span><ArrowUpRight size={15} /></button>
+          <button className="task-item task-link" onClick={() => onNavigate('script')}><span className="task-symbol task-symbol--clay"><BookOpenText size={18} /></span><span><strong>脚本第一集</strong><small>等待审阅</small></span><ArrowUpRight size={15} /></button>
           <button className="task-item task-link" aria-label="查看每日爆款视频内容" onClick={() => onNavigate('script')}><span className="task-symbol"><Sparkles size={18} /></span><span><strong>每日爆款视频内容</strong><small>点击查看</small></span><ArrowUpRight size={15} /></button>
         </section>
       </aside>
@@ -257,7 +258,7 @@ function HomePage({ onNavigate }) {
       <section className="glass-card recent-panel home-recent">
           <div className="section-heading">
             <div><span className="kicker">PICK UP WHERE YOU LEFT OFF</span><h2>继续创作</h2></div>
-            <button className="text-button">查看全部 <ArrowUpRight size={15} /></button>
+            <button className="text-button" onClick={() => onNavigate('assets')}>查看全部 <ArrowUpRight size={15} /></button>
           </div>
           <div className="recent-list">
             <button className="recent-item" onClick={() => onNavigate('retouch')}>
@@ -266,7 +267,7 @@ function HomePage({ onNavigate }) {
               <span className="status status--waiting">待确认</span>
               <ArrowUpRight size={17} />
             </button>
-            <button className="recent-item">
+            <button className="recent-item" onClick={() => onNavigate('brand')}>
               <span className="thumb thumb--poster"><i>秋<br />日</i></span>
               <span className="recent-copy"><strong>秋日茶会系列海报</strong><small>品牌创作 · 社媒物料</small><em><Clock3 size={13} /> 昨天自动保存</em></span>
               <span className="status status--draft">草稿</span>
@@ -501,7 +502,7 @@ function materialHintsFor(product) {
   return ['亚克力：通透轻盈，适合图形素材', '陶瓷：雅致、有器物感', '木质：温润自然，适合国风设计', '金属珐琅：精致耐用，有收藏感']
 }
 
-function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, image, error, onPlan, onGenerate }) {
+function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, image, error, onPlan, onGenerate, onViewImage }) {
   const [step, setStep] = useState(1)
   const [product, setProduct] = useState('')
   const [material, setMaterial] = useState('')
@@ -526,7 +527,7 @@ function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, 
     {step === 2 && <section><strong>{product}适合以下可量产材质</strong><div className="merch-options merch-options--stack">{materials.map(item => <button key={item} className={material === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => setMaterial(item)}>{item}</button>)}</div><label className="merch-custom-field">或自行填写材质与工艺<input value={materials.includes(material) ? '' : material} onChange={event => setMaterial(event.target.value)} placeholder="例如：竹骨 + 绢布，UV 彩印" aria-label="自定义文创材质" /></label>{material && <p className="selection-summary">当前材质：{material}。最终提示词会据此写入真实质感和生产工艺。</p>}<div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(1)}>上一步</button><button className="primary-button" disabled={!material.trim()} onClick={() => setStep(3)}>下一步：确认尺寸</button></div></section>}
     {step === 3 && <section><strong>填写真实产品尺寸</strong><input value={size} onChange={event => setSize(event.target.value)} placeholder="例如 90 × 90 mm" aria-label="文创产品尺寸" />{size && <p className="selection-summary">当前尺寸：{size}。最终效果图会标注对应的 REAL SIZE。</p>}<p>尺寸会写入效果图提案的 REAL SIZE 标注。</p><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(2)}>上一步</button><button className="primary-button" disabled={!size.trim()} onClick={() => setStep(4)}>下一步：选择素材</button></div></section>}
     {step === 4 && <section><strong>选择或上传视觉素材</strong><div className="asset-picker"><div>{assets.map(item => <button key={item.id} className={asset?.id === item.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => { setUpload(null); onSelectAsset(item) }}><img src={item.url} alt={item.name} /><small>{item.name}</small></button>)}</div></div><label className="secondary-button merch-upload">上传图片<input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectUpload} /></label>{asset && <p className="asset-selected">已选择：{asset.name}</p>}<textarea value={brief} onChange={event => setBrief(event.target.value)} aria-label="文创补充要求" placeholder="可补充文案、风格、必须保留或禁止出现的元素" /><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(3)}>上一步</button><button className="primary-button" disabled={!asset || busy} onClick={() => { createPlan(); setStep(5) }}>{busy ? '正在生成提示词…' : '生成最终提示词'}</button></div></section>}
-    {step === 5 && <section><strong>UseGoodAI 推理输出 · 可执行提示词</strong>{plan ? <div className="brand-plan"><p>{plan}</p></div> : <p role="status">正在由推理模型整理产品、材质、尺寸与素材约束…</p>}<div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => setStep(4)}>返回修改</button><button className="primary-button" disabled={busy || !plan} onClick={onGenerate}>{busy ? '正在生成效果图…' : '确认并生成效果图'}</button></div>{image && <img className="brand-generated-image" src={image} alt="中式文创效果图" />}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
+    {step === 5 && <section><strong>UseGoodAI 推理输出 · 可执行提示词</strong>{plan ? <div className="brand-plan"><p>{plan}</p></div> : <p role="status">正在由推理模型整理产品、材质、尺寸与素材约束…</p>}<div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => setStep(4)}>返回修改</button><button className="primary-button" disabled={busy || !plan} onClick={onGenerate}>{busy ? '正在生成效果图…' : '确认并生成效果图'}</button></div>{image && <button className="brand-generated-preview" onClick={() => onViewImage(image)}><img className="brand-generated-image" src={image} alt="中式文创效果图，点击查看大图" /><small>点击放大查看</small></button>}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
   </div>
 }
 
@@ -538,6 +539,7 @@ function CreativeCasesPage({ type }) {
   const [brandImage, setBrandImage] = useState('')
   const [brandBusy, setBrandBusy] = useState(false)
   const [brandError, setBrandError] = useState('')
+  const [viewerImage, setViewerImage] = useState('')
   const [selectedAsset, setSelectedAsset] = useState(null)
   const [scriptPrompt, setScriptPrompt] = useState('围绕茶馆真实空间写一个 3 分钟短剧开场：一位年轻掌柜用一杯新茶解决老顾客之间的误会。')
   const [scriptPlan, setScriptPlan] = useState('')
@@ -585,7 +587,7 @@ function CreativeCasesPage({ type }) {
       <div className="showcase-layout">
         <main className="showcase-main">
           <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成'] : ['素材创作', '产品库']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
-          {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} />}
+          {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} />}
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} aria-label="短剧脚本需求" /><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={async () => { setBrandBusy(true); setBrandError(''); try { const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '编导助手暂不可用'); setScriptPlan(value.plan || '') } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) } }}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button>{scriptPlan && <div className="brand-plan"><strong>可拍摄脚本计划</strong><p>{scriptPlan}</p></div>}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
           {toolbarTab === 2 && <p role="status">{type === 'script' ? '视频生成入口已预留，生成服务尚未接入。' : '效果渲染入口已预留，生成服务尚未接入。'}</p>}
@@ -609,6 +611,7 @@ function CreativeCasesPage({ type }) {
         </aside>}
       </div>
       {editor && <ScriptEditor initial={editor} onClose={() => setEditor(null)} onSave={values => { const item = { ...values, id: editor.id || crypto.randomUUID() }; const next = [item, ...drafts.filter(draft => draft.id !== item.id)]; localStorage.setItem('script-drafts', JSON.stringify(next)); setDrafts(next) }} />}
+      {viewerImage && <ImageViewer src={viewerImage} alt="中式文创效果图" onClose={() => setViewerImage('')} />}
     </div>
   )
 }
