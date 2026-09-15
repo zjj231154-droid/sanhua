@@ -1232,6 +1232,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .product-library-panel article img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; background: rgba(0,0,0,.12); }
 .product-library-panel article div { padding: 12px; display: grid; gap: 4px; }
 .product-library-panel article small { color: var(--workbench-muted); }
+.library-case-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
+.library-case-list article { overflow: hidden; border: 1px solid var(--glass-line); border-radius: 16px; background: rgba(255,255,255,.07); }
+.library-case-list .case-visual { min-height: 120px; aspect-ratio: 16 / 9; }
+.library-case-list article > div { padding: 10px 12px; display: grid; gap: 4px; }
+.library-case-list article small { font-size: 10px; }
+.legacy-case-cache { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .empty-state { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 8px; color: var(--workbench-muted); text-align: center; }
 .empty-state strong { color: inherit; }
 .time-day .brand-agent-card textarea { color: #35251d; background: rgba(255,252,246,.7); }
