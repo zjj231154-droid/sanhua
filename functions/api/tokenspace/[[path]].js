@@ -5,13 +5,15 @@ const dataUrlToBlob = value => {
   return new Blob([Uint8Array.from(atob(match[2]), char => char.charCodeAt(0))], { type: match[1] })
 }
 export async function onRequestGet(context) {
-  if (context.params.path !== 'test') return json(405, { error: 'METHOD_NOT_ALLOWED' })
+  const path = Array.isArray(context.params.path) ? context.params.path.join('/') : context.params.path
+  if (path !== 'test') return json(405, { error: 'METHOD_NOT_ALLOWED' })
   const model = 'gpt-5.6-luna'
   const result = await tokenSpaceRequest(context, 'chat/completions', { model, payload: { model, messages: [{ role: 'user', content: 'Reply with exactly: connection successful' }] } })
   return result.response || json(200, { success: true, provider: 'tokenspace' })
 }
 export async function onRequestPost(context) {
-  if (context.params.path) return json(404, { error: 'NOT_FOUND' })
+  const path = Array.isArray(context.params.path) ? context.params.path.join('/') : context.params.path
+  if (path) return json(404, { error: 'NOT_FOUND' })
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const type = ['prompt', 'image', 'edit', 'video'].includes(input.type) ? input.type : 'prompt'
