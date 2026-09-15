@@ -1239,6 +1239,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .section-tabs { display: flex; gap: 8px; padding: 12px 14px 0; }
 .section-tabs .primary-button, .section-tabs .secondary-button { min-height: 34px; padding: 8px 14px; }
 .gallery-scope-note { padding: 9px 14px 0; color: var(--workbench-muted); font-size: 11px; }
+.integrated-retouch .is-library-layout { grid-template-columns: minmax(0, 1fr); }
+.integrated-retouch .assistant-panel.is-library { display: none; }
+.gallery-toolbar { justify-content: space-between; }
+.gallery-asset-card { position: relative; cursor: pointer; transition: box-shadow .15s ease, transform .15s ease; }
+.gallery-asset-card.is-selected { box-shadow: 0 0 0 2px #c76848, 0 16px 34px rgba(66,36,24,.2); }
+.gallery-checkbox { position: absolute; top: 10px; right: 10px; min-width: 24px; min-height: 24px; padding: 4px 6px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: rgba(36,25,19,.78); font-size: 10px; font-weight: 700; }
+.gallery-asset-card:not(.is-selected) .gallery-checkbox { width: 24px; padding: 0; border: 2px solid #fff; background: rgba(36,25,19,.32); }
+.gallery-selection-bar { position: sticky; bottom: 12px; z-index: 5; margin: 12px 14px 0; padding: 10px 14px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; border: 1px solid var(--glass-line); border-radius: 14px; color: inherit; background: var(--glass-bg-strong); box-shadow: 0 10px 28px rgba(45,28,20,.18); }
+.gallery-selection-bar span { margin-right: auto; font-size: 12px; font-weight: 700; }
 .asset-picker-dialog { width: min(900px, 100%); max-height: min(760px, 90vh); padding: 18px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--glass-line); border-radius: 24px; color: #f5e8d7; background: #2c211b; box-shadow: 0 28px 70px rgba(0,0,0,.35); }
 .asset-picker-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding-bottom: 14px; }
 .asset-picker-heading > div { display: grid; gap: 5px; }
