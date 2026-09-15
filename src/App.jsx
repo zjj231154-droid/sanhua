@@ -39,6 +39,7 @@ const NAV_ITEMS = [
   { id: 'retouch', label: '产品精修', icon: WandSparkles },
   { id: 'brand', label: '品牌创作', icon: Palette },
   { id: 'script', label: '短剧脚本', icon: BookOpenText },
+  { id: 'assets', label: '资产库', icon: FolderOpen },
 ]
 
 const DEMO_PHOTOS = [
@@ -562,13 +563,14 @@ function CreativeCasesPage({ type }) {
 }
 
 function AssetLibraryPage({ onNavigate }) {
-  const [category, setCategory] = useState('all')
-  const visible = category === 'all' ? CLOUD_ASSETS : CLOUD_ASSETS.filter(asset => asset.category === category)
+  const [category, setCategory] = useState('coffee')
+  const matches = asset => category === 'coffee' ? asset.id.startsWith('coffee-') : category === 'brand' ? asset.category === 'brand' : asset.category === 'script'
+  const visible = CLOUD_ASSETS.filter(matches)
   return <div className="page-content asset-library-page">
-    <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>本地测试素材已分类上传，可直接用于产品精修与品牌创作。</p></div><span className="connection-note">Pages 云端资产 · {CLOUD_ASSETS.length} 项</span></header>
-    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['all', '全部'], ['retouch', '产品精修'], ['brand', '品牌文创']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><small>{visible.length} 项素材</small></div>
+    <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创和短剧场景素材。</p></div><span className="connection-note">云端资产 · {CLOUD_ASSETS.length} 项</span></header>
+    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['coffee', '咖啡店'], ['brand', '茶馆文创'], ['script', '短剧']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><small>{visible.length} 项素材</small></div>
     <section className="asset-grid" aria-label="云端资产列表">
-      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><img src={asset.url} alt={asset.name} loading="lazy" /><div><span><strong>{asset.name}</strong><small>{asset.group}</small></span><button className="secondary-button" onClick={() => onNavigate(asset.category === 'retouch' ? 'retouch' : 'brand')}>{asset.category === 'retouch' ? '用于精修' : '用于创作'}</button></div></article>)}
+      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><img src={asset.url} alt={asset.name} loading="lazy" /><div><span><strong>{asset.name}</strong><small>{asset.group}</small></span><button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' ? '用于创作' : '用于精修'}</button></div></article>)}
     </section>
   </div>
 }
@@ -606,7 +608,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   }, [])
   const previewParams = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
   const previewPage = previewParams.get('preview')
-  const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'settings'].includes(previewPage) ? previewPage : null
+  const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'assets', 'settings'].includes(previewPage) ? previewPage : null
   const [authenticated, setAuthenticated] = useState(initialAuthenticated || Boolean(validPreviewPage))
   const [page, setPage] = useState(validPreviewPage || initialPage)
   const [timeMode, setTimeMode] = useState(previewParams.get('theme') === 'night' ? 'night' : 'day')
@@ -623,6 +625,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
           {page === 'retouch' && (demoRetouch ? <RetouchPage /> : <LiveRetouch />)}
           {page === 'brand' && <CreativeCasesPage type="brand" />}
           {page === 'script' && <CreativeCasesPage type="script" />}
+          {page === 'assets' && <AssetLibraryPage onNavigate={setPage} />}
           {page === 'settings' && <ApiSettings />}
         </div>
       </div>
