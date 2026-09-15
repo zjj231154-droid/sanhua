@@ -1,4 +1,4 @@
-import { json, tokenSpaceRequest } from '../../_lib/tokenspace.js'
+import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL } from '../../_lib/tokenspace.js'
 import { registryFor } from '../../_lib/skills.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 const allowed = new Set(['retouch', 'brand', 'script'])
@@ -14,10 +14,11 @@ export async function onRequestPost(context) {
   const workspace = String(input.workspace || '')
   const skill = registryFor(workspace)
   if (!allowed.has(workspace) || !skill || skill.status !== 'enabled') return json(400, { error: 'SKILL_NOT_AVAILABLE', workspace })
-  const task = await saveTask(context, { id: crypto.randomUUID(), workspace, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model: input.model || 'gpt-5.6-luna', createdAt: new Date().toISOString() })
+  const model = input.model || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
+  const task = await saveTask(context, { id: crypto.randomUUID(), workspace, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model, createdAt: new Date().toISOString() })
   const prompt = textFor(workspace, input)
-  const result = await tokenSpaceRequest(context, 'chat/completions', { model: input.model || 'gpt-5.6-luna', provider: 'tokenspace', payload: { model: input.model || 'gpt-5.6-luna', messages: [{ role: 'system', content: prompt }, { role: 'user', content: requirementsText(input) }], temperature: 0.35 } })
-  if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'TokenSpace 请求失败' }); return result.response }
+  const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai', payload: { model, messages: [{ role: 'system', content: prompt }, { role: 'user', content: requirementsText(input) }], temperature: 0.35 } })
+  if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'UseGoodAI 请求失败' }); return result.response }
   const content = result.data?.choices?.[0]?.message?.content || ''
   await updateTask(context, task.id, { status: 'waiting_user', progress: 15, stage: '等待用户确认', plan: content })
   return json(202, { id: task.id, status: 'waiting_user', workspace, skill, plan: content, input: { assetCount: Array.isArray(input.assets) ? input.assets.length : 0 } })

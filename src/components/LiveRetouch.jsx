@@ -85,7 +85,7 @@ export default function LiveRetouch() {
   }
   useEffect(() => {
     if (cloudMode) {
-      setConnection('TokenSpace 云端精修已连接')
+      setConnection('UseGoodAI 云端精修已连接')
       localStorage.removeItem('retouch-job')
       return
     }
@@ -161,7 +161,7 @@ export default function LiveRetouch() {
             <button className="primary-button" onClick={() => { setTemplatesOpen(false); setAssistantOpen(true) }}>应用模版</button>
           </fieldset>
         </div>}
-        <div className="retouch-feedback" role="status" aria-live="polite">{busy && <LoaderCircle size={15} className="spin-icon" />}{image ? status : cloudMode ? '上传产品照片，云端精修将通过 TokenSpace 处理' : '上传产品照片，在精修助手中编辑要求'}{job?.status === 'done' && ' · 结果已更新到下方卡片'}</div>
+        <div className="retouch-feedback" role="status" aria-live="polite">{busy && <LoaderCircle size={15} className="spin-icon" />}{image ? status : cloudMode ? '上传产品照片，云端精修将通过 UseGoodAI 处理' : '上传产品照片，在精修助手中编辑要求'}{job?.status === 'done' && ' · 结果已更新到下方卡片'}</div>
         {(error || job?.error) && <p className="retouch-error" role="alert">{error || job.error}</p>}
         <section ref={galleryRef} className="photo-grid live-photo-grid" tabIndex={0} title="滚轮上下滚动 · Shift + 滚轮左右滚动" aria-label="产品精修图片与结果，可上下左右滚动">
           <button className="upload-card" disabled={busy} onClick={() => openAssetPicker('single')}><span><ImagePlus size={24} /></span><strong>从云端资产库选择产品照片</strong><small>选择已整理的咖啡店或茶馆场景素材</small></button>
@@ -188,7 +188,7 @@ export default function LiveRetouch() {
         </div>
         <div className="assistant-footer live-controls" hidden={!assistantOpen}>
         {job?.status === 'awaiting_confirmation' ? <><button className="primary-button" disabled={busy} onClick={() => submit(true)}>确认计划并开始精修</button><button className="secondary-button" onClick={() => { setJob(null); localStorage.removeItem('retouch-job') }}>修改要求</button></> : <button className="primary-button" disabled={!image || busy || !requirements.trim()} onClick={() => submit()}>生成精修计划</button>}
-        <small>{cloudMode ? '图片将通过 Cloudflare 服务端发送至 TokenSpace；密钥不会进入浏览器。' : '图片保存在本机任务目录。按管理设置使用 Codex 或中转 API，确认计划后才编辑图片。'}</small>
+        <small>{cloudMode ? '图片将通过服务端发送至 UseGoodAI；密钥不会进入浏览器。' : '图片保存在本机任务目录。按管理设置使用 Codex 或中转 API，确认计划后才编辑图片。'}</small>
         </div>
       </aside>
     </div>
