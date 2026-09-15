@@ -482,6 +482,44 @@ const CREATIVE_CASES = {
   },
 }
 
+const MERCH_MATERIALS = {
+  '冰箱贴': ['亚克力：通透轻盈，适合插画和图形', '木质：温润自然，适合国风纹样', '陶瓷：雅致有器物感，适合山水书法', '金属珐琅：精致耐用，有收藏感'],
+  '杯垫': ['原色纸浆板：天然纤维和吸水纹理', '吸水陶瓷：器物感强，适合茶文化', '木质：温润、有自然木纹', '软木：轻便实用、成本友好'],
+  '书签': ['黄铜蚀刻：细节稳定，有收藏感', '木质：温润、适合激光雕刻', '厚卡纸：印刷表现细腻', 'PET：轻透现代，适合图形素材'],
+  '帆布袋': ['棉帆布：耐用，适合丝网或数码印花', '棉麻：天然、东方感更强', '厚磅涤棉：颜色稳定，适合批量生产'],
+  '马克杯 / 茶杯': ['陶瓷釉面：适合热转印或釉上彩', '磨砂陶瓷：质感克制，适合新中式', '不锈钢保温杯：适合 UV 彩印'],
+  '礼盒包装': ['特种纸：适合烫金、压凹凸', '灰板裱纸：结构稳定，可量产', '竹木盒：温润，有礼赠感'],
+}
+
+function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, image, error, onPlan, onGenerate }) {
+  const [step, setStep] = useState(1)
+  const [product, setProduct] = useState('')
+  const [material, setMaterial] = useState('')
+  const [size, setSize] = useState('')
+  const [brief, setBrief] = useState('')
+  const [upload, setUpload] = useState(null)
+  const asset = upload || selectedAsset
+  const materials = MERCH_MATERIALS[product] || ['亚克力：通透轻盈，适合图形素材', '陶瓷：雅致、有器物感', '木质：温润自然，适合国风设计', '金属珐琅：精致耐用，有收藏感']
+  const selectUpload = event => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 15 * 1024 * 1024) return
+    const reader = new FileReader()
+    reader.onload = () => { const item = { id: `upload-${Date.now()}`, name: file.name, url: reader.result, category: 'brand', local: true }; setUpload(item); onSelectAsset(item) }
+    reader.readAsDataURL(file)
+  }
+  const createPlan = () => onPlan(`中式文创周边设计需求\n产品类型：${product}\n可量产材质：${material}\n真实尺寸：${size}\n创作补充：${brief || '按品牌素材的核心视觉进行适配'}\n引用素材：${asset?.name || '未选择'}`)
+  return <div className="brand-agent-card glass-card brand-merch-workflow">
+    <div><span className="kicker">中式文创周边设计 · 五步工作流</span><p>每一步完成后才能进入下一步。提示词规划由 UseGoodAI 推理模型完成，确认后才调用图片模型。</p></div>
+    <ol className="merch-steps" aria-label="文创设计步骤">{['产品', '材质', '尺寸', '素材', '提示词'].map((label, index) => <li className={step === index + 1 ? 'is-active' : step > index + 1 ? 'is-done' : ''} key={label}>{index + 1}. {label}</li>)}</ol>
+    {step === 1 && <section><strong>想做哪一种中式文创周边？</strong><div className="merch-options">{Object.keys(MERCH_MATERIALS).map(item => <button key={item} className={product === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => setProduct(item)}>{item}</button>)}</div><button className="primary-button" disabled={!product} onClick={() => setStep(2)}>下一步：选择材质</button></section>}
+    {step === 2 && <section><strong>{product}适合以下可量产材质</strong><div className="merch-options merch-options--stack">{materials.map(item => <button key={item} className={material === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => setMaterial(item)}>{item}</button>)}</div><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(1)}>上一步</button><button className="primary-button" disabled={!material} onClick={() => setStep(3)}>下一步：确认尺寸</button></div></section>}
+    {step === 3 && <section><strong>填写真实产品尺寸</strong><input value={size} onChange={event => setSize(event.target.value)} placeholder="例如 90 × 90 mm" aria-label="文创产品尺寸" /><p>尺寸会写入效果图提案的 REAL SIZE 标注。</p><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(2)}>上一步</button><button className="primary-button" disabled={!size.trim()} onClick={() => setStep(4)}>下一步：选择素材</button></div></section>}
+    {step === 4 && <section><strong>选择或上传视觉素材</strong><div className="asset-picker"><div>{assets.map(item => <button key={item.id} className={asset?.id === item.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => { setUpload(null); onSelectAsset(item) }}><img src={item.url} alt={item.name} /><small>{item.name}</small></button>)}</div></div><label className="secondary-button merch-upload">上传图片<input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectUpload} /></label>{asset && <p className="asset-selected">已选择：{asset.name}</p>}<textarea value={brief} onChange={event => setBrief(event.target.value)} aria-label="文创补充要求" placeholder="可补充文案、风格、必须保留或禁止出现的元素" /><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(3)}>上一步</button><button className="primary-button" disabled={!asset || busy} onClick={() => { createPlan(); setStep(5) }}>{busy ? '正在生成提示词…' : '生成最终提示词'}</button></div></section>}
+    {step === 5 && <section><strong>UseGoodAI 推理输出 · 可执行提示词</strong>{plan ? <div className="brand-plan"><p>{plan}</p></div> : <p role="status">正在由推理模型整理产品、材质、尺寸与素材约束…</p>}<div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => setStep(4)}>返回修改</button><button className="primary-button" disabled={busy || !plan} onClick={onGenerate}>{busy ? '正在生成效果图…' : '确认并生成效果图'}</button></div>{image && <img className="brand-generated-image" src={image} alt="中式文创效果图" />}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
+  </div>
+}
+
 function CreativeCasesPage({ type }) {
   const [editor, setEditor] = useState(null)
   const [toolbarTab, setToolbarTab] = useState(0)
@@ -503,10 +541,10 @@ function CreativeCasesPage({ type }) {
     const blob = await response.blob()
     return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
   }
-  async function createBrandPlan() {
-    setBrandBusy(true); setBrandError('')
+  async function createBrandPlan(requirements = brandPrompt) {
+    setBrandBusy(true); setBrandError(''); setBrandPlan(''); setBrandImage('')
     try {
-      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', requirements: `${brandPrompt}\n引用素材：${selectedAsset?.name || '未选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) })
+      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', requirements, assets: selectedAsset ? [selectedAsset.id] : [] }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '设计助手暂不可用')
       setBrandPlan(value.plan || '')
@@ -516,7 +554,9 @@ function CreativeCasesPage({ type }) {
     setBrandBusy(true); setBrandError('')
     try {
       const source = selectedAsset ? await assetDataUrl(selectedAsset.url) : ''
-      const body = source ? { type: 'edit', model: 'gpt-image-2', prompt: brandPlan || brandPrompt, images: [source] } : { type: 'image', model: 'gpt-image-2', prompt: brandPlan || brandPrompt, size: '1024x1024' }
+      if (!brandPlan) throw new Error('请先由推理模型生成最终提示词，再确认生图')
+      const finalPrompt = brandPlan.includes('FINAL_IMAGE_PROMPT:') ? brandPlan.split('FINAL_IMAGE_PROMPT:').slice(1).join('FINAL_IMAGE_PROMPT:').trim() : brandPlan
+      const body = source ? { type: 'edit', model: 'gpt-image-2', prompt: finalPrompt, images: [source] } : { type: 'image', model: 'gpt-image-2', prompt: finalPrompt, size: '1024x1024' }
       const response = await fetch('/api/tokenspace', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '品牌图片生成失败')
@@ -535,7 +575,7 @@ function CreativeCasesPage({ type }) {
       <div className="showcase-layout">
         <main className="showcase-main">
           <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成'] : ['素材创作', '产品库']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
-          {type === 'brand' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">DESIGN ASSISTANT · gpt-image-2-prompt-engine</span><p>输入物料用途、尺寸和必须出现的文字，先生成 3 个方向和结构化图片提示词，再确认执行。VI 约束未配置。</p></div><div className="asset-picker"><strong>仅引用品牌资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'brand').map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={brandPrompt} onChange={event => setBrandPrompt(event.target.value)} aria-label="品牌创作需求" /><div className="brand-agent-actions"><button className="secondary-button" disabled={brandBusy || !brandPrompt.trim()} onClick={createBrandPlan}>{brandBusy ? '正在规划…' : '生成创意方向'}</button>{brandPlan && <button className="primary-button" disabled={brandBusy} onClick={generateBrandImage}>{brandBusy ? '正在生成…' : '确认并生成小样'}</button>}</div>{brandPlan && <div className="brand-plan"><strong>设计助手计划</strong><p>{brandPlan}</p></div>}{brandImage && <img className="brand-generated-image" src={brandImage} alt="品牌创作生成结果" />}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
+          {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} />}
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} aria-label="短剧脚本需求" /><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={async () => { setBrandBusy(true); setBrandError(''); try { const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '编导助手暂不可用'); setScriptPlan(value.plan || '') } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) } }}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button>{scriptPlan && <div className="brand-plan"><strong>可拍摄脚本计划</strong><p>{scriptPlan}</p></div>}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
           {toolbarTab === 2 && <p role="status">{type === 'script' ? '视频生成入口已预留，生成服务尚未接入。' : '效果渲染入口已预留，生成服务尚未接入。'}</p>}

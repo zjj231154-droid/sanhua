@@ -1213,6 +1213,21 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .time-day .case-facts small { color: #806f63; }
 .brand-agent-card { margin: 14px 0 0; padding: 18px; display: grid; gap: 12px; border-radius: 22px; }
 .brand-agent-card p { margin: 6px 0 0; color: var(--workbench-muted); font-size: 11px; line-height: 1.6; }
+.brand-merch-workflow { max-width: 920px; }
+.merch-steps { display: flex; gap: 8px; padding: 0; margin: 2px 0 4px; list-style: none; overflow-x: auto; }
+.merch-steps li { flex: 0 0 auto; padding: 6px 10px; border-radius: 999px; color: var(--workbench-muted); background: rgba(255,255,255,.08); font-size: 11px; }
+.merch-steps li.is-active { color: #fff8ed; background: var(--brand-deep); }
+.merch-steps li.is-done { color: var(--brand-deep); background: rgba(200,161,104,.28); }
+.brand-merch-workflow section { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--glass-line); border-radius: 16px; background: rgba(255,255,255,.05); }
+.brand-merch-workflow section > strong { font-size: 14px; }
+.brand-merch-workflow input, .brand-merch-workflow textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--glass-line); border-radius: 12px; color: inherit; background: rgba(255,255,255,.1); font: inherit; }
+.brand-merch-workflow textarea { min-height: 80px; resize: vertical; }
+.merch-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.merch-options--stack { display: grid; }
+.merch-options .is-selected { border-color: var(--brand-deep); box-shadow: 0 0 0 2px rgba(126,49,34,.2); }
+.merch-upload { position: relative; width: max-content; overflow: hidden; }
+.merch-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.asset-selected { margin: 0 !important; color: var(--brand-deep) !important; }
 .brand-agent-card textarea { width: 100%; min-height: 76px; resize: vertical; padding: 11px 12px; border: 1px solid var(--glass-line); border-radius: 14px; color: inherit; background: rgba(255,255,255,.08); font: inherit; font-size: 12px; }
 .brand-agent-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .asset-picker { display: grid; gap: 8px; }
