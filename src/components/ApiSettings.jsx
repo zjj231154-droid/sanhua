@@ -7,7 +7,9 @@ export default function ApiSettings() {
   const [models, setModels] = useState([])
   async function call(suffix = '', data) {
     const res = await fetch(`/api/retouch/settings${suffix}`, data === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-    const value = await res.json()
+    const raw = await res.text()
+    let value
+    try { value = JSON.parse(raw) } catch { throw new Error(res.ok ? '服务返回了无效响应' : '线上版本暂未部署本地精修服务；TokenSpace 云端接口需要在 Cloudflare 中配置 TOKENSPACE_API_KEY') }
     if (!res.ok) throw new Error(value.error || '请求失败')
     return value
   }
