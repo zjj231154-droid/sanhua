@@ -1,13 +1,15 @@
 const TOKENSPACE_BASE_URL = 'https://tokenspace.io'
 const USEGOODAI_BASE_URL = 'https://api.usegoodai.com'
 export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
-export const providerFrom = context => {
+export const providerFrom = (context, preferred) => {
   const useGoodKey = String(context.env?.USEGOODAI_API_KEY || '').trim()
-  return useGoodKey ? { name: 'usegoodai', apiKey: useGoodKey, baseUrl: USEGOODAI_BASE_URL } : { name: 'tokenspace', apiKey: String(context.env?.TOKENSPACE_API_KEY || '').trim(), baseUrl: TOKENSPACE_BASE_URL }
+  const tokenSpace = { name: 'tokenspace', apiKey: String(context.env?.TOKENSPACE_API_KEY || '').trim(), baseUrl: TOKENSPACE_BASE_URL }
+  const useGood = { name: 'usegoodai', apiKey: useGoodKey, baseUrl: USEGOODAI_BASE_URL }
+  return preferred === 'tokenspace' ? tokenSpace : preferred === 'usegoodai' ? useGood : useGoodKey ? useGood : tokenSpace
 }
 export const apiKeyFrom = context => providerFrom(context).apiKey
-export async function tokenSpaceRequest(context, endpoint, { model, payload, form } = {}) {
-  const provider = providerFrom(context)
+export async function tokenSpaceRequest(context, endpoint, { model, payload, form, provider: preferred } = {}) {
+  const provider = providerFrom(context, preferred)
   if (!provider.apiKey) return { response: json(503, { error: 'API_KEY_NOT_CONFIGURED' }) }
   console.log({ provider: provider.name, apiKeyConfigured: true, apiKeyLength: provider.apiKey.length, endpoint, model })
   try {
