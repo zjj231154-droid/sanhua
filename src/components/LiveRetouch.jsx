@@ -10,6 +10,7 @@ async function request(route, data) {
   return value
 }
 export default function LiveRetouch() {
+  const cloudMode = typeof window !== 'undefined' && window.location.hostname.endsWith('.pages.dev')
   const [image, setImage] = useState('')
   const [assistantOpen, setAssistantOpen] = useState(true)
   const fileInput = useRef(null)
@@ -59,10 +60,15 @@ export default function LiveRetouch() {
   const [connection, setConnection] = useState('检查 Codex 连接…')
   const busy = sending || ['planning', 'editing'].includes(job?.status)
   useEffect(() => {
+    if (cloudMode) {
+      setConnection('TokenSpace 云端精修已连接')
+      localStorage.removeItem('retouch-job')
+      return
+    }
     request('/status').then(value => setConnection(value.engine === 'api' ? '中转 API 已配置' : '本地 Codex 已连接 · image-edit-agent')).catch(() => setConnection('服务未连接，请检查管理设置'))
     const id = localStorage.getItem('retouch-job')
     if (id) request(`/${id}`).then(value => { setJob(value); setImage(`/api/retouch/${id}/input`) }).catch(() => localStorage.removeItem('retouch-job'))
-  }, [])
+  }, [cloudMode])
   useEffect(() => {
     if (!['planning', 'editing'].includes(job?.status)) return
     const timer = setInterval(() => request(`/${job.id}`).then(value => { setJob(value); setError('') }).catch(err => setError(err.message)), 2500)
@@ -112,7 +118,7 @@ export default function LiveRetouch() {
             <button className="primary-button" onClick={() => { setTemplatesOpen(false); setAssistantOpen(true) }}>应用模版</button>
           </fieldset>
         </div>}
-        <div className="retouch-feedback" role="status" aria-live="polite">{busy && <LoaderCircle size={15} className="spin-icon" />}{image ? status : '上传产品照片，在精修助手中编辑要求'}{job?.status === 'done' && ' · 结果已更新到下方卡片'}</div>
+        <div className="retouch-feedback" role="status" aria-live="polite">{busy && <LoaderCircle size={15} className="spin-icon" />}{image ? status : cloudMode ? '上传产品照片，云端精修将通过 TokenSpace 处理' : '上传产品照片，在精修助手中编辑要求'}{job?.status === 'done' && ' · 结果已更新到下方卡片'}</div>
         {(error || job?.error) && <p className="retouch-error" role="alert">{error || job.error}</p>}
         <section ref={galleryRef} className="photo-grid live-photo-grid" tabIndex={0} title="滚轮上下滚动 · Shift + 滚轮左右滚动" aria-label="产品精修图片与结果，可上下左右滚动">
           <button className="upload-card" disabled={busy} onClick={() => fileInput.current.click()}><span><ImagePlus size={24} /></span><strong>添加产品照片</strong><small>PNG / JPG / WebP · 最大 15 MB</small></button>
@@ -136,7 +142,7 @@ export default function LiveRetouch() {
         </div>
         <div className="assistant-footer live-controls" hidden={!assistantOpen}>
         {job?.status === 'awaiting_confirmation' ? <><button className="primary-button" disabled={busy} onClick={() => submit(true)}>确认计划并开始精修</button><button className="secondary-button" onClick={() => { setJob(null); localStorage.removeItem('retouch-job') }}>修改要求</button></> : <button className="primary-button" disabled={!image || busy || !requirements.trim()} onClick={() => submit()}>生成精修计划</button>}
-        <small>图片保存在本机任务目录。按管理设置使用 Codex 或中转 API，确认计划后才编辑图片。</small>
+        <small>{cloudMode ? '图片将通过 Cloudflare 服务端发送至 TokenSpace；密钥不会进入浏览器。' : '图片保存在本机任务目录。按管理设置使用 Codex 或中转 API，确认计划后才编辑图片。'}</small>
         </div>
       </aside>
     </div>
