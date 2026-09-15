@@ -4,7 +4,7 @@ const allowed = new Set(['retouch', 'brand', 'script'])
 const textFor = (workspace, input = {}) => {
   const requirements = String(input.requirements || input.prompt || '').slice(0, 10000)
   if (workspace === 'brand') return `你是品牌创作设计助手，遵循 gpt-image-2-prompt-engine 的 Prompt as Code 方法。请把需求拆解为 Subject、Composition、Material、Typography、Lighting、Style、Constraints 七个维度，先给出 3 个可选创意方向，再给出一个可执行的 GPT-Image-2 图片提示词。必须保留用户指定的文字和 Logo，禁止乱码，不要声称已通过 VI 合规检查。需求：${requirements}`
-  if (workspace === 'script') return `你是茶馆短剧编导助手。只使用客户真实茶馆场景约束，先输出可确认的大纲、人物、冲突、分场位置、道具和待确认项，不要直接发布或生成视频。需求：${requirements}`
+  if (workspace === 'script') return `你是短剧制作工作台的编导助手，Skill short-drama-production v1.0.0。按“选题立项→故事规划→角色→分集目录→分集剧本→合规审查→资产/场次/镜头→提示词→交付”的阶段推进；本次先输出可确认的选题方向和故事规划，包含题材、受众、基调、开场钩子、人物关系、冲突、分场位置、道具、预计时长和待确认项。全部剧情必须发生在客户真实茶馆，不得虚构房间、设备或大规模场面；不要复制对标台词，不要直接发布或生成视频。需求：${requirements}`
   return `你是产品精修助手，遵循 image-edit-agent 1.1.0：先确认尺寸/比例、场景、装饰和保留项，再形成图片编辑计划。默认保护杯瓶轮廓、标签、Logo、文字和饮品质感，默认不新增道具。不要直接执行图片编辑。需求：${requirements}`
 }
 export async function onRequestPost(context) {

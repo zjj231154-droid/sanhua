@@ -8,8 +8,8 @@ const REGISTRY = {
     allowedTools: ['text.generate', 'image.generate', 'image.edit'], contentHash: 'F73A3E806954DCE454477F4E62DA7EDA2D212CCE97B23E3CDE95955835A7E328'
   },
   'script-writer-demo': {
-    skillId: 'script-writer-demo', displayName: '茶馆短剧编导', workspace: 'script', version: '0.1.0', status: 'demo',
-    allowedTools: ['text.generate'], contentHash: 'demo'
+    skillId: 'short-drama-production', displayName: '短剧制作工作台', workspace: 'script', version: '1.0.0', status: 'enabled',
+    allowedTools: ['text.generate', 'script.plan', 'script.write', 'script.review', 'shot.plan'], contentHash: 'F0ABE85D76C1CC927E28F7A320C9AE3B424E8B21ADF20B5DE56CBCE6FEBD83BD'
   },
 }
 export function skillFor(workspace) {
