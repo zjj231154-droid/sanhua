@@ -499,15 +499,23 @@ function CreativeCasesPage({ type }) {
   const [brandImage, setBrandImage] = useState('')
   const [brandBusy, setBrandBusy] = useState(false)
   const [brandError, setBrandError] = useState('')
+  const [selectedAsset, setSelectedAsset] = useState(null)
+  const [scriptPrompt, setScriptPrompt] = useState('围绕茶馆真实空间写一个 3 分钟短剧开场：一位年轻掌柜用一杯新茶解决老顾客之间的误会。')
+  const [scriptPlan, setScriptPlan] = useState('')
   const [drafts, setDrafts] = useState(() => { try { const saved = JSON.parse(localStorage.getItem('script-drafts') || '[]'); return Array.isArray(saved) ? saved : [] } catch { return [] } })
   const config = CREATIVE_CASES[type]
   const [activeId, setActiveId] = useState(config.cases[0].id)
   const activeCase = config.cases.find(item => item.id === activeId)
   const Icon = config.icon
+  async function assetDataUrl(url) {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
+  }
   async function createBrandPlan() {
     setBrandBusy(true); setBrandError('')
     try {
-      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', requirements: brandPrompt, assets: [] }) })
+      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', requirements: `${brandPrompt}\n引用素材：${selectedAsset?.name || '未选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '设计助手暂不可用')
       setBrandPlan(value.plan || '')
@@ -516,7 +524,9 @@ function CreativeCasesPage({ type }) {
   async function generateBrandImage() {
     setBrandBusy(true); setBrandError('')
     try {
-      const response = await fetch('/api/tokenspace', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'image', model: 'gpt-image-2', prompt: brandPlan || brandPrompt, size: '1024x1024' }) })
+      const source = selectedAsset ? await assetDataUrl(selectedAsset.url) : ''
+      const body = source ? { type: 'edit', model: 'gpt-image-2', prompt: brandPlan || brandPrompt, images: [source] } : { type: 'image', model: 'gpt-image-2', prompt: brandPlan || brandPrompt, size: '1024x1024' }
+      const response = await fetch('/api/tokenspace', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '品牌图片生成失败')
       const output = value.data?.data?.[0]
@@ -534,7 +544,8 @@ function CreativeCasesPage({ type }) {
       <div className="showcase-layout">
         <main className="showcase-main">
           <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成'] : ['素材上传', '产品案例', '效果渲染']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
-          {type === 'brand' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">DESIGN ASSISTANT · gpt-image-2-prompt-engine</span><p>输入物料用途、尺寸和必须出现的文字，先生成 3 个方向和结构化图片提示词，再确认执行。</p></div><textarea value={brandPrompt} onChange={event => setBrandPrompt(event.target.value)} aria-label="品牌创作需求" /><div className="brand-agent-actions"><button className="secondary-button" disabled={brandBusy || !brandPrompt.trim()} onClick={createBrandPlan}>{brandBusy ? '正在规划…' : '生成创意方向'}</button>{brandPlan && <button className="primary-button" disabled={brandBusy} onClick={generateBrandImage}>{brandBusy ? '正在生成…' : '确认并生成小样'}</button>}</div>{brandPlan && <div className="brand-plan"><strong>设计助手计划</strong><p>{brandPlan}</p></div>}{brandImage && <img className="brand-generated-image" src={brandImage} alt="品牌创作生成结果" />}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
+          {type === 'brand' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">DESIGN ASSISTANT · gpt-image-2-prompt-engine</span><p>输入物料用途、尺寸和必须出现的文字，先生成 3 个方向和结构化图片提示词，再确认执行。</p></div><div className="asset-picker"><strong>引用素材库图片</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'brand' || asset.category === 'retouch').slice(0, 8).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={brandPrompt} onChange={event => setBrandPrompt(event.target.value)} aria-label="品牌创作需求" /><div className="brand-agent-actions"><button className="secondary-button" disabled={brandBusy || !brandPrompt.trim()} onClick={createBrandPlan}>{brandBusy ? '正在规划…' : '生成创意方向'}</button>{brandPlan && <button className="primary-button" disabled={brandBusy} onClick={generateBrandImage}>{brandBusy ? '正在生成…' : '确认并生成小样'}</button>}</div>{brandPlan && <div className="brand-plan"><strong>设计助手计划</strong><p>{brandPlan}</p></div>}{brandImage && <img className="brand-generated-image" src={brandImage} alt="品牌创作生成结果" />}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
+          {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从资产库选择茶馆照片，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>选择茶馆场景</strong><div>{CLOUD_ASSETS.filter(asset => asset.id.startsWith('teahouse')).slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} aria-label="短剧脚本需求" /><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={async () => { setBrandBusy(true); setBrandError(''); try { const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '编导助手暂不可用'); setScriptPlan(value.plan || '') } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) } }}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button>{scriptPlan && <div className="brand-plan"><strong>可拍摄脚本计划</strong><p>{scriptPlan}</p></div>}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 2 && <p role="status">{type === 'script' ? '视频生成入口已预留，生成服务尚未接入。' : '效果渲染入口已预留，生成服务尚未接入。'}</p>}
           <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}案例`}>
             {type === 'script' && drafts.map(draft => <button className="case-card" key={draft.id} onClick={() => setEditor(draft)}><span className="case-copy"><small>本机草稿 · 点击编辑</small><strong>{draft.title}</strong><em>{draft.summary}</em><span>{draft.kind}</span></span></button>)}
