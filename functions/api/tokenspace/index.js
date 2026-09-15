@@ -1,4 +1,4 @@
-import { json, tokenSpaceRequest } from '../../../_lib/tokenspace.js'
+import { json, tokenSpaceRequest } from '../../_lib/tokenspace.js'
 const dataUrlToBlob = value => {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
   if (!match) return null
