@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# 实际媒体通常很大，并可能涉及第三方权利；默认不提交。
+projects/**/media/
+projects/**/renders/
+projects/**/exports/video/

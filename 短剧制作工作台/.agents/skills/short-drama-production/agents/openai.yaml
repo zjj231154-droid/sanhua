@@ -1,0 +1,4 @@
+interface:
+  display_name: "短剧制作工作台"
+  short_description: "从短剧剧本到 AIGC 分镜、提示词、连续性与交付"
+  default_prompt: "使用 $short-drama-production 启动或继续我的短剧制作项目。"
