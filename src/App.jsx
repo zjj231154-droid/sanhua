@@ -14,6 +14,7 @@ import {
   Home,
   ImagePlus,
   Layers3,
+  ListChecks,
   LoaderCircle,
   LockKeyhole,
   LogOut,
@@ -29,6 +30,7 @@ import {
   Sparkles,
   Upload,
   WandSparkles,
+  X,
 } from 'lucide-react'
 import RippleDistortion from './components/RippleDistortion/RippleDistortion'
 import LiveRetouch from './components/LiveRetouch'
@@ -190,6 +192,34 @@ function Sidebar({ page, onNavigate }) {
   )
 }
 
+function TaskProgress() {
+  const [open, setOpen] = useState(false)
+  const [tasks, setTasks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const load = async () => {
+    try {
+      const response = await fetch('/api/v1/tasks')
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '任务状态暂不可用')
+      setTasks(Array.isArray(value.tasks) ? value.tasks.slice(0, 12) : [])
+      setError('')
+    } catch (err) { setError(err.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => {
+    load()
+    const timer = setInterval(load, 4000)
+    return () => clearInterval(timer)
+  }, [])
+  const active = tasks.filter(task => ['queued', 'running', 'waiting_user'].includes(task.status))
+  const status = task => task.status === 'completed' ? '已完成' : task.status === 'failed' ? '失败' : task.status === 'cancelled' ? '已取消' : task.status === 'waiting_user' ? '等待确认' : task.status === 'queued' ? '排队中' : '运行中'
+  return <div className="task-progress-menu">
+    <button className={open ? 'task-progress-button is-open' : 'task-progress-button'} aria-label="查看后台任务进度" aria-expanded={open} onClick={() => setOpen(value => !value)}><ListChecks size={18} /><span>任务进度</span><b>{active.length}</b></button>
+    {open && <section className="task-progress-popover" aria-label="后台任务进度"><header><div><strong>后台任务</strong><small>{active.length ? `${active.length} 个任务正在运行` : '当前没有运行中的任务'}</small></div><div><button className="icon-button" onClick={load} aria-label="刷新任务进度"><RefreshCw size={16} /></button><button className="icon-button" onClick={() => setOpen(false)} aria-label="关闭任务进度"><X size={17} /></button></div></header>{loading && <p className="task-progress-empty">正在读取任务…</p>}{error && <p className="task-progress-error">{error}</p>}{!loading && !error && !tasks.length && <p className="task-progress-empty">暂无后台任务。提交图片或脚本计划后，进度会在这里持续更新。</p>}<div className="task-progress-list">{tasks.map(task => <article key={task.id} className={`task-progress-item task-status--${task.status}`}><div><strong>{task.workspace === 'retouch' ? '产品精修' : task.workspace === 'brand' ? '品牌创作' : task.workspace === 'script' ? '短剧脚本' : '视频生成'}</strong><span>{status(task)} · {task.stage || '等待服务响应'}</span></div><b>{Number(task.progress || 0)}%</b><i><em style={{ width: `${Math.max(0, Math.min(100, Number(task.progress || 0)))}%` }} /></i><small>任务 {String(task.id).slice(0, 8)} · 更新于 {task.updatedAt ? new Date(task.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '刚刚'}</small></article>)}</div></section>}
+  </div>
+}
+
 function Topbar({ timeMode, onToggleTimeMode, onLogout }) {
   const isNight = timeMode === 'night'
   return (
@@ -200,6 +230,7 @@ function Topbar({ timeMode, onToggleTimeMode, onLogout }) {
         <ChevronDown size={16} />
       </button>
       <div className="top-actions">
+        <TaskProgress />
         <span className="demo-tag">演示数据</span>
         <button className="icon-button" aria-label="帮助"><CircleHelp size={19} /></button>
         <button className="icon-button notification-button" aria-label="消息"><MessageSquareText size={19} /><i /></button>
