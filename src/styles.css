@@ -146,6 +146,13 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .task-progress-item small { grid-column: 1 / -1; }
 .task-progress-empty, .task-progress-error { margin: 16px 0 4px; color: #766255; font-size: 14px; line-height: 1.6; }
 .task-progress-error { color: #b14d40; }
+.task-complete-toast { position: fixed; z-index: 130; right: 24px; bottom: 24px; width: min(360px, calc(100vw - 32px)); padding: 14px; display: flex; align-items: center; gap: 11px; border: 1px solid rgba(196,139,82,.48); border-radius: 15px; color: #fff7ea; background: #563526; box-shadow: 0 18px 45px rgba(50,28,16,.3); animation: task-toast-in .2s ease-out; }
+.task-complete-toast > svg { flex: 0 0 auto; color: #e9bd83; }
+.task-complete-toast span { display: grid; gap: 3px; min-width: 0; }
+.task-complete-toast strong { font-size: 15px; }
+.task-complete-toast small { color: rgba(255,247,234,.78); font-size: 13px; }
+.task-complete-toast button { width: 28px; height: 28px; margin-left: auto; display: grid; place-items: center; flex: 0 0 auto; border: 0; border-radius: 8px; color: inherit; background: rgba(255,255,255,.08); cursor: pointer; }
+@keyframes task-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 760px) { .task-progress-button span { display: none; } .task-progress-button { padding: 0 9px; } .task-progress-popover { position: fixed; top: 76px; right: 12px; left: 12px; width: auto; max-height: calc(100vh - 88px); } }
 .api-settings { margin: 16px; border-radius: 28px; max-height: calc(100vh - 115px); overflow: auto; color: var(--workbench-cream); }
 .api-settings form { max-width: 640px; }
