@@ -24,4 +24,18 @@ describe('four-image batch generation', () => {
     expect(JSON.parse(fetch.mock.calls[0][1].body).n).toBe(4)
     expect([...bucket.values.keys()].filter(key => key.includes('/outputs/'))).toHaveLength(4)
   })
+
+  it('uses image edits when source images are provided', async () => {
+    const bucket = new MemoryBucket()
+    const fetch = vi.fn(async (url, options) => {
+      expect(url).toContain('/v1/images/edits')
+      expect(options.body).toBeInstanceOf(FormData)
+      return new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgo=' }] }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const request = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', prompt: '提亮商品并保留标签', count: 1, images: ['data:image/png;base64,iVBORw0KGgo='] }) })
+    const response = await onRequestPost({ request, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
+    expect(response.status).toBe(201)
+    expect((await response.json()).assets).toHaveLength(1)
+  })
 })

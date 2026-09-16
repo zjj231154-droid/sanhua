@@ -201,12 +201,16 @@ export default function LiveRetouch() {
           setFinalPrompt(plan)
           setPromptDialogOpen(true)
         } else {
-          const edited = await cloudRequest({ type: 'edit', model: 'gpt-image-2', prompt: `${finalPrompt || job?.plan || ''}\n${editPrompt}`, images: [source, templateImage].filter(Boolean) })
-          const output = edited.data?.data?.[0]
-          const resultUrl = output?.b64_json ? `data:image/png;base64,${output.b64_json}` : output?.url
-          if (!resultUrl) throw new Error('生图服务未返回可用图片')
+          const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            workspace: 'retouch', model: 'gpt-image-2', prompt: `${finalPrompt || job?.plan || ''}\n${editPrompt}`,
+            images: [source, templateImage].filter(Boolean), count: 1, size: '1024x1024', title: '产品精修', sourceAssetIds: selectedAssetId ? [selectedAssetId] : [],
+          }) })
+          const value = await response.json()
+          if (!response.ok) throw new Error(value.error || '产品精修失败')
+          const resultUrl = value.assets?.[0]?.url
+          if (!resultUrl) throw new Error('模型结果未能完成资产归档')
           setCloudResult(resultUrl)
-          setJob({ ...job, status: 'done' })
+          setJob({ ...job, status: 'done', taskId: value.task?.id })
         }
         return
       }

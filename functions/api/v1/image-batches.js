@@ -10,6 +10,7 @@ export async function onRequestPost(context) {
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const workspace = workspaceFor(input.workspace)
   const prompt = String(input.prompt || '').trim().slice(0, 12000)
+  const images = Array.isArray(input.images) ? input.images.filter(value => typeof value === 'string').slice(0, 4) : []
   const count = Number(input.count || 4)
   if (!workspace) return json(400, { error: 'WORKSPACE_REQUIRED' })
   if (!prompt) return json(400, { error: 'PROMPT_REQUIRED' })
@@ -20,9 +21,27 @@ export async function onRequestPost(context) {
     stage: `模型处理中（0/${count}）`, heartbeatAt: new Date().toISOString(), requirements: prompt,
     finalPrompt: prompt, model, createdAt: new Date().toISOString(), requestedCount: count,
   })
-  const result = await tokenSpaceRequest(context, 'images/generations', {
-    model, provider: 'usegoodai', payload: { model, prompt, n: count, size: input.size || '1024x1024', response_format: 'b64_json' },
-  })
+  let result
+  if (images.length) {
+    const form = new FormData()
+    form.append('model', model)
+    form.append('prompt', prompt)
+    form.append('response_format', 'b64_json')
+    for (let index = 0; index < images.length; index += 1) {
+      const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(images[index])
+      if (!match) {
+        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '输入图片无效', error: 'INVALID_IMAGE_INPUT' })
+        return json(400, { error: '图片必须是 PNG、JPG 或 WebP 的 Data URL' })
+      }
+      const bytes = Uint8Array.from(atob(match[2]), char => char.charCodeAt(0))
+      form.append(images.length === 1 ? 'image' : 'image[]', new Blob([bytes], { type: match[1] }), `source-${index}.${match[1].split('/')[1]}`)
+    }
+    result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai' })
+  } else {
+    result = await tokenSpaceRequest(context, 'images/generations', {
+      model, provider: 'usegoodai', payload: { model, prompt, n: count, size: input.size || '1024x1024', response_format: 'b64_json' },
+    })
+  }
   if (result.response) {
     await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' })
     return result.response
