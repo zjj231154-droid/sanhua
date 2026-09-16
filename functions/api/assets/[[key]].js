@@ -1,4 +1,5 @@
 import { json } from '../../_lib/tokenspace.js'
+import { assetMetadataKey, assetUrl, putJson } from '../../_lib/asset-store.js'
 const safeKey = value => /^[a-zA-Z0-9/_-]{1,180}\.(png|jpe?g|webp)$/i.test(value || '')
 const readDataUrl = value => {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
@@ -14,9 +15,15 @@ export async function onRequestPost(context) {
   const image = readDataUrl(input.image)
   if (!image || image.bytes.byteLength > 15 * 1024 * 1024) return json(400, { error: '仅支持 15MB 以内的 PNG、JPG、WebP 图片' })
   const extension = image.type === 'image/png' ? 'png' : image.type === 'image/webp' ? 'webp' : 'jpg'
-  const key = `uploads/${crypto.randomUUID()}.${extension}`
-  await bucket.put(key, image.bytes, { httpMetadata: { contentType: image.type }, customMetadata: { originalName: String(input.name || '').slice(0, 160) } })
-  return json(201, { key, url: `/api/assets/${key}` })
+  const workspace = ['retouch', 'brand', 'script'].includes(input.workspace) ? input.workspace : null
+  if (!workspace) return json(400, { error: 'ASSET_WORKSPACE_REQUIRED' })
+  const id = crypto.randomUUID()
+  const key = `uploads/default/day-coffee-night-bar/${workspace}/${id}.${extension}`
+  const metadata = { id, tenantId: 'default', storeId: 'day-coffee-night-bar', assetSpace: workspace, folderType: 'source', category: 'uploaded', name: String(input.name || `素材.${extension}`).slice(0, 160), storageKey: key, thumbnailKey: key, mimeType: image.type, size: image.bytes.byteLength, isTemporary: false, createdAt: new Date().toISOString(), platformIndex: { assetId: id, syncStatus: 'synced' } }
+  await bucket.put(key, image.bytes, { httpMetadata: { contentType: image.type }, customMetadata: { assetId: id, originalName: metadata.name, workspace } })
+  await putJson(bucket, assetMetadataKey(id), metadata)
+  await putJson(bucket, `metadata/master-assets/${id}.json`, { assetId: id, tenantId: metadata.tenantId, storeId: metadata.storeId, assetSpace: workspace, syncStatus: 'synced', createdAt: metadata.createdAt })
+  return json(201, { id, key, url: assetUrl(key), asset: metadata })
 }
 export async function onRequestGet(context) {
   const bucket = bucketFrom(context)

@@ -11,6 +11,9 @@ const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const apiRoutes = {
   '/api/tokenspace': () => import('../functions/api/tokenspace/[[path]].js'),
   '/api/v1/agent-runs': () => import('../functions/api/v1/agent-runs.js'),
+  '/api/v1/image-batches': () => import('../functions/api/v1/image-batches.js'),
+  '/api/v1/assets': () => import('../functions/api/v1/assets.js'),
+  '/api/assets': () => import('../functions/api/assets/[[key]].js'),
   '/api/v1/tasks': () => import('../functions/api/v1/tasks.js'),
   '/api/debug/tokenspace': () => import('../functions/api/debug/tokenspace.js'),
   '/api/debug/usegoodai-models': () => import('../functions/api/debug/usegoodai-models.js'),

@@ -1,3 +1,5 @@
+import { assetsBucket, getJson, listJson, putJson, taskMetadataKey } from './asset-store.js'
+
 const memory = globalThis.__sanhuaTasks || (globalThis.__sanhuaTasks = new Map())
 
 const keyFor = id => `task:${id}`
@@ -8,6 +10,8 @@ export async function saveTask(context, task) {
   memory.set(task.id, value)
   const kv = binding(context)
   if (kv?.put) await kv.put(keyFor(task.id), JSON.stringify(value), { expirationTtl: 60 * 60 * 24 * 30 })
+  const bucket = assetsBucket(context)
+  if (bucket) await putJson(bucket, taskMetadataKey(task.id), value)
   return value
 }
 
@@ -17,11 +21,17 @@ export async function getTask(context, id) {
     const value = await kv.get(keyFor(id), 'json')
     if (value) return value
   }
+  const bucket = assetsBucket(context)
+  if (bucket) {
+    const value = await getJson(bucket, taskMetadataKey(id))
+    if (value) return value
+  }
   return memory.get(id) || null
 }
 
 export async function listTasks(context, filters = {}) {
-  const values = [...memory.values()]
+  const bucket = assetsBucket(context)
+  const values = bucket ? await listJson(bucket, 'metadata/tasks/') : [...memory.values()]
   return values.filter(task => !filters.workspace || task.workspace === filters.workspace)
     .filter(task => !filters.status || task.status === filters.status)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))

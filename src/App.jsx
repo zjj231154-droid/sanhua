@@ -537,6 +537,7 @@ function CreativeCasesPage({ type }) {
   const [brandPrompt, setBrandPrompt] = useState('为叁花茶馆设计一张日光茶饮品牌海报，保留叁花 Logo，突出茶汤与留白。')
   const [brandPlan, setBrandPlan] = useState('')
   const [brandImage, setBrandImage] = useState('')
+  const [brandAssets, setBrandAssets] = useState([])
   const [brandBusy, setBrandBusy] = useState(false)
   const [brandError, setBrandError] = useState('')
   const [viewerImage, setViewerImage] = useState('')
@@ -546,13 +547,18 @@ function CreativeCasesPage({ type }) {
   const [drafts, setDrafts] = useState(() => { try { const saved = JSON.parse(localStorage.getItem('script-drafts') || '[]'); return Array.isArray(saved) ? saved : [] } catch { return [] } })
   const config = CREATIVE_CASES[type]
   const [activeId, setActiveId] = useState(config.cases[0].id)
+  const refreshBrandAssets = async () => {
+    if (type !== 'brand') return
+    try {
+      const response = await fetch('/api/v1/assets?workspace=brand')
+      if (!response.ok) return
+      const value = await response.json()
+      setBrandAssets(Array.isArray(value.assets) ? value.assets : [])
+    } catch {}
+  }
+  useEffect(() => { refreshBrandAssets() }, [type])
   const activeCase = config.cases.find(item => item.id === activeId)
   const Icon = config.icon
-  async function assetDataUrl(url) {
-    const response = await fetch(url)
-    const blob = await response.blob()
-    return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
-  }
   async function createBrandPlan(requirements = brandPrompt) {
     setBrandBusy(true); setBrandError(''); setBrandPlan(''); setBrandImage('')
     try {
@@ -565,16 +571,16 @@ function CreativeCasesPage({ type }) {
   async function generateBrandImage() {
     setBrandBusy(true); setBrandError('')
     try {
-      const source = selectedAsset ? await assetDataUrl(selectedAsset.url) : ''
       if (!brandPlan) throw new Error('请先由推理模型生成最终提示词，再确认生图')
       const finalPrompt = brandPlan.includes('FINAL_IMAGE_PROMPT:') ? brandPlan.split('FINAL_IMAGE_PROMPT:').slice(1).join('FINAL_IMAGE_PROMPT:').trim() : brandPlan
-      const body = source ? { type: 'edit', model: 'gpt-image-2', prompt: finalPrompt, images: [source] } : { type: 'image', model: 'gpt-image-2', prompt: finalPrompt, size: '1024x1024' }
-      const response = await fetch('/api/tokenspace', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const body = { workspace: 'brand', model: 'gpt-image-2', prompt: finalPrompt, count: 1, size: '1024x1024', title: '品牌创作', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [] }
+      const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '品牌图片生成失败')
-      const output = value.data?.data?.[0]
-      setBrandImage(output?.b64_json ? `data:image/png;base64,${output.b64_json}` : output?.url || '')
-      if (!output?.b64_json && !output?.url) throw new Error('模型未返回图片')
+      const output = value.assets?.[0]
+      if (!output?.url) throw new Error('模型结果未能完成资产归档')
+      setBrandImage(output.url)
+      setBrandAssets(current => [output, ...current.filter(asset => asset.id !== output.id)])
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
 
@@ -591,7 +597,7 @@ function CreativeCasesPage({ type }) {
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} aria-label="短剧脚本需求" /><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={async () => { setBrandBusy(true); setBrandError(''); try { const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '编导助手暂不可用'); setScriptPlan(value.plan || '') } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) } }}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button>{scriptPlan && <div className="brand-plan"><strong>可拍摄脚本计划</strong><p>{scriptPlan}</p></div>}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
           {toolbarTab === 2 && <p role="status">{type === 'script' ? '视频生成入口已预留，生成服务尚未接入。' : '效果渲染入口已预留，生成服务尚未接入。'}</p>}
-          {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2>{brandImage && <article><img src={brandImage} alt="已自动保存的品牌成品" /><div><strong>已自动保存到品牌创作 / 产品库</strong><small>可继续调整、生成变体或下载</small></div></article>}<div className="library-case-list">{config.cases.map(item => <article key={item.id}><span className={`case-visual case-visual--${item.tone}`} /><div><strong>{item.title}</strong><small>{item.kind} · {item.status}</small></div></article>)}</div></section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
+          {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2>{brandAssets.map(asset => <article key={asset.id}><button className="brand-generated-preview" onClick={() => setViewerImage(asset.url)}><img src={asset.url} alt={asset.name} /><small>点击放大查看</small></button><div><strong>{asset.name}</strong><small>已保存至品牌创作 / 产品库 · {asset.id.slice(0, 8)}</small></div></article>)}{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}<div className="library-case-list">{config.cases.map(item => <article key={item.id}><span className={`case-visual case-visual--${item.tone}`} /><div><strong>{item.title}</strong><small>{item.kind} · {item.status}</small></div></article>)}</div></section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
             {type === 'script' && drafts.map(draft => <button className="case-card" key={draft.id} onClick={() => setEditor(draft)}><span className="case-copy"><small>本机草稿 · 点击编辑</small><strong>{draft.title}</strong><em>{draft.summary}</em><span>{draft.kind}</span></span></button>)}
             {config.cases.map(item => (
               <button key={item.id} className={activeId === item.id ? 'case-card is-active' : 'case-card'} onClick={() => setActiveId(item.id)}>

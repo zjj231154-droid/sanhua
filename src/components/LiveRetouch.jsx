@@ -106,6 +106,9 @@ export default function LiveRetouch() {
   const [preserve, setPreserve] = useState('杯型、标签、文字、饮品质感与品牌标识')
   const [recommendations, setRecommendations] = useState(() => ({ ...DEFAULT_ANALYSIS, size, scene, decor, requirements }))
   const [lockedFields, setLockedFields] = useState({})
+  const [editedFields, setEditedFields] = useState({})
+  const [selectedAssetId, setSelectedAssetId] = useState('')
+  const analysisRequest = useRef(0)
   const [analyzing, setAnalyzing] = useState(false)
   const [finalPrompt, setFinalPrompt] = useState('')
   const [promptDialogOpen, setPromptDialogOpen] = useState(false)
@@ -123,12 +126,14 @@ export default function LiveRetouch() {
   }
   const fields = { size, scene, decor, product, preserve, requirements }
   const setField = (name, value) => ({ size: setSize, scene: setScene, decor: setDecor, product: setProduct, preserve: setPreserve, requirements: setRequirements }[name])(value)
-  function applyAnalysis(next) {
+  function applyAnalysis(next, requestId) {
+    if (requestId !== analysisRequest.current) return
     setRecommendations(next)
-    ANALYSIS_FIELDS.forEach(([name]) => { if (!lockedFields[name]) setField(name, next[name]) })
+    ANALYSIS_FIELDS.forEach(([name]) => { if (!lockedFields[name] && !editedFields[name]) setField(name, next[name]) })
   }
-  async function analyzeImage(source) {
+  async function analyzeImage(source, assetId = selectedAssetId) {
     if (!cloudMode || !source) return
+    const requestId = ++analysisRequest.current
     setAnalyzing(true)
     try {
       let imageSource = source
@@ -142,7 +147,7 @@ export default function LiveRetouch() {
         type: 'analyze', image: imageSource,
         prompt: '你是商品修图视觉分析师。分析图片后，只返回 JSON 对象，必须有 size、scene、decor、product、preserve、requirements 六个中文字符串字段。size 写原图比例和输出建议；scene 写真实场景；decor 写可保留或可调整的装饰；product 写产品类型；preserve 写不可改变的产品、文字、标签和品牌元素；requirements 写可直接执行的精修要求。不要使用 Markdown，不要编造不可见元素。',
       })
-      applyAnalysis(readAnalysis(result))
+      applyAnalysis(readAnalysis(result), requestId)
       setError('')
     } catch (err) { setError(`图片识别未完成：${err.message}`) }
     finally { setAnalyzing(false) }
@@ -150,8 +155,9 @@ export default function LiveRetouch() {
   function applyCloudAssets() {
     if (!selectedCloudAssets.length) return
     const source = selectedCloudAssets[0].url
+    setSelectedAssetId(selectedCloudAssets[0].id); setEditedFields({})
     setImage(source); setCloudResult(''); setJob(null); setError(''); localStorage.removeItem('retouch-job'); setAssetPickerOpen(false)
-    void analyzeImage(source)
+    void analyzeImage(source, selectedCloudAssets[0].id)
   }
   useEffect(() => {
     if (cloudMode) {
@@ -173,7 +179,7 @@ export default function LiveRetouch() {
     if (!file) return
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 15 * 1024 * 1024) return setError('请选择 15 MB 以内的 PNG、JPG 或 WebP')
     const reader = new FileReader()
-    reader.onload = () => { setImage(reader.result); setCloudResult(''); setJob(null); setError(''); localStorage.removeItem('retouch-job'); void analyzeImage(reader.result) }
+    reader.onload = () => { const assetId = `upload-${Date.now()}`; setSelectedAssetId(assetId); setEditedFields({}); setImage(reader.result); setCloudResult(''); setJob(null); setError(''); localStorage.removeItem('retouch-job'); void analyzeImage(reader.result, assetId) }
     reader.readAsDataURL(file)
   }
   async function submit(confirm = false) {
@@ -250,7 +256,7 @@ export default function LiveRetouch() {
         <div className="assistant-body live-controls" hidden={!assistantOpen}>
         <div className="assistant-message"><p>{analyzing ? '正在根据当前素材识别商品、场景与可保留元素…' : '当前素材已生成可编辑的精修字段。锁定的字段在重新识别时不会被覆盖。'}</p>{image && cloudMode && <button className="text-button" disabled={analyzing || busy} onClick={() => void analyzeImage(image)}>重新识别当前素材</button>}</div>
         <fieldset disabled={busy || job?.status === 'awaiting_confirmation'}>
-          {ANALYSIS_FIELDS.map(([name, label]) => <RetouchField key={name} name={name} label={label} value={fields[name]} recommendation={recommendations[name] || DEFAULT_ANALYSIS[name]} locked={Boolean(lockedFields[name])} disabled={busy || job?.status === 'awaiting_confirmation'} onChange={value => setField(name, value)} onToggleLock={() => setLockedFields(current => ({ ...current, [name]: !current[name] }))} onReset={() => setField(name, recommendations[name] || DEFAULT_ANALYSIS[name])} />)}
+          {ANALYSIS_FIELDS.map(([name, label]) => <RetouchField key={name} name={name} label={label} value={fields[name]} recommendation={recommendations[name] || DEFAULT_ANALYSIS[name]} locked={Boolean(lockedFields[name])} disabled={busy || job?.status === 'awaiting_confirmation'} onChange={value => { setEditedFields(current => ({ ...current, [name]: true })); setField(name, value) }} onToggleLock={() => setLockedFields(current => ({ ...current, [name]: !current[name] }))} onReset={() => { setEditedFields(current => ({ ...current, [name]: false })); setField(name, recommendations[name] || DEFAULT_ANALYSIS[name]) }} />)}
         </fieldset>
         {job?.plan && <div className="live-plan"><h3>生图计划</h3><p>{job.plan}</p></div>}
         {job?.note && <details><summary>查看精修说明</summary><p>{job.note}</p></details>}
