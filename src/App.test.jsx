@@ -1,6 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('AI 创作工作台 Demo', () => {
   it('使用演示账号进入工作台并打开产品精修', () => {
@@ -72,5 +74,16 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByLabelText('当前设计师')).toHaveTextContent('林设计')
     fireEvent.click(screen.getByRole('button', { name: '退出演示账号' }))
     expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument()
+  })
+
+  it('资产库展示已归档的 AI 创作成果', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (url === '/api/v1/assets') return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
+      return { ok: true, json: async () => ({ tasks: [] }) }
+    }))
+    render(<App initialAuthenticated initialPage="assets" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 成果' }))
+    await waitFor(() => expect(screen.getByText('已归档精修结果')).toBeInTheDocument())
   })
 })

@@ -124,11 +124,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .scope-switcher small { color: var(--muted); font-size: 9px; }
 .scope-switcher strong { margin-top: 3px; font-size: 13px; }
 .top-actions { display: flex; align-items: center; gap: 10px; }
-.task-progress-menu { position: relative; }
+.task-progress-menu { position: relative; z-index: 140; }
 .task-progress-button { min-height: 38px; padding: 0 11px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(124,82,51,.18); border-radius: 11px; color: #5f3826; background: rgba(255,250,242,.58); cursor: pointer; font-size: 14px; font-weight: 700; }
 .task-progress-button:hover, .task-progress-button.is-open { border-color: #8a4631; background: #fff7ea; }
 .task-progress-button b { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: #fff9f0; background: #7b3328; font-size: 12px; }
-.task-progress-popover { position: absolute; z-index: 90; top: calc(100% + 10px); right: 0; width: min(430px, calc(100vw - 30px)); max-height: min(680px, calc(100vh - 95px)); padding: 16px; overflow: auto; border: 1px solid rgba(101,63,43,.2); border-radius: 18px; color: #3e291f; background: #fffaf1; box-shadow: 0 22px 55px rgba(53,31,20,.26); }
+.task-progress-popover { position: absolute; z-index: 140; top: calc(100% + 10px); right: 0; width: min(430px, calc(100vw - 30px)); max-height: min(680px, calc(100vh - 95px)); padding: 16px; overflow: auto; border: 1px solid rgba(101,63,43,.2); border-radius: 18px; color: #3e291f; background: #fffaf1; box-shadow: 0 22px 55px rgba(53,31,20,.26); }
 .task-progress-popover header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(101,63,43,.13); }
 .task-progress-popover header > div { display: flex; align-items: center; gap: 4px; }
 .task-progress-popover header > div:first-child { display: grid; gap: 3px; }

@@ -13,3 +13,16 @@ it('恢复计划后等待明确确认，才提交编辑请求', async () => {
   fireEvent.click(button)
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/retouch/saved-job/confirm', expect.objectContaining({ method: 'POST' })))
 })
+
+it('将已归档的云端精修结果显示在素材选择器中', async () => {
+  const fetch = vi.fn(async url => {
+    if (url === '/api/v1/assets?workspace=retouch') return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
+    return { ok: true, json: async () => ({ engine: 'api' }) }
+  })
+  vi.stubGlobal('fetch', fetch)
+
+  render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
+
+  expect(await screen.findByRole('button', { name: /已归档精修结果/ })).toBeInTheDocument()
+})

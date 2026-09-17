@@ -672,13 +672,31 @@ function CreativeCasesPage({ type }) {
 
 function AssetLibraryPage({ onNavigate }) {
   const [category, setCategory] = useState('coffee')
-  const matches = asset => category === 'coffee' ? asset.id.startsWith('coffee-') : category === 'brand' ? asset.category === 'brand' : asset.category === 'script'
-  const visible = CLOUD_ASSETS.filter(matches)
+  const [storedAssets, setStoredAssets] = useState([])
+  useEffect(() => {
+    let active = true
+    fetch('/api/v1/assets').then(async response => {
+      if (!response.ok) return
+      const value = await response.json()
+      if (!active) return
+      const assets = Array.isArray(value.assets) ? value.assets.filter(asset => asset.id && (asset.url || asset.thumbnailUrl)).map(asset => ({
+        ...asset,
+        url: asset.url || asset.thumbnailUrl,
+        category: asset.assetSpace === 'brand' ? 'brand-generated' : 'retouch-generated',
+        group: asset.assetSpace === 'brand' ? '品牌创作成果' : '云端精修结果',
+      })) : []
+      setStoredAssets(assets)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [])
+  const allAssets = [...storedAssets, ...CLOUD_ASSETS.filter(asset => !storedAssets.some(item => item.id === asset.id))]
+  const matches = asset => category === 'coffee' ? asset.id.startsWith('coffee-') : category === 'brand' ? asset.category === 'brand' : category === 'script' ? asset.category === 'script' : asset.category.endsWith('-generated')
+  const visible = allAssets.filter(matches)
   return <div className="page-content asset-library-page">
-    <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创和短剧场景素材。</p></div><span className="connection-note">云端资产 · {CLOUD_ASSETS.length} 项</span></header>
-    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['coffee', '咖啡店'], ['brand', '茶馆文创'], ['script', '短剧']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><small>{visible.length} 项素材</small></div>
+    <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创、短剧场景和 AI 创作成果。</p></div><span className="connection-note">云端资产 · {allAssets.length} 项</span></header>
+    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['coffee', '咖啡店'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><small>{visible.length} 项素材</small></div>
     <section className="asset-grid" aria-label="云端资产列表">
-      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><img src={asset.url} alt={asset.name} loading="lazy" /><div><span><strong>{asset.name}</strong><small>{asset.group}</small></span><button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' ? '用于创作' : '用于精修'}</button></div></article>)}
+      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><img src={asset.url} alt={asset.name} loading="lazy" /><div><span><strong>{asset.name}</strong><small>{asset.group}</small></span><button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></div></article>)}
     </section>
   </div>
 }
