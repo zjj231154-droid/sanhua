@@ -7,7 +7,7 @@ import { createRailwayVolumeBucket } from './railway-assets.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const dist = path.join(root, 'dist')
 const port = Number(process.env.PORT || 3000)
-const storageDirectory = String(process.env.SANHUA_STORAGE_DIR || '').trim()
+const storageDirectory = String(process.env.SANHUA_STORAGE_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim()
 const volumeBucket = storageDirectory ? createRailwayVolumeBucket(storageDirectory) : null
 const functionEnv = volumeBucket ? { ...process.env, SANHUA_ASSETS: volumeBucket } : process.env
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
