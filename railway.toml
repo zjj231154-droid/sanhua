@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm ci --cache /tmp/npm-cache --prefer-offline=false && npm run build"
+buildCommand = "rm -rf node_modules && npm ci --cache /tmp/npm-cache --prefer-offline=false && npm run build"
 
 [deploy]
 startCommand = "npm run start"
