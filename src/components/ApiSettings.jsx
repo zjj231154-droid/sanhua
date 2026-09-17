@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isCloudDeployment } from '../lib/deployment'
 export default function ApiSettings() {
   const [config, setConfig] = useState({ enabled: false, model: 'gpt-image-2', hasKey: false })
   const [key, setKey] = useState('')
@@ -6,7 +7,7 @@ export default function ApiSettings() {
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState([])
   const [cloudStatus, setCloudStatus] = useState(null)
-  const cloudMode = typeof window !== 'undefined' && window.location.hostname.endsWith('.pages.dev')
+  const cloudMode = isCloudDeployment()
   async function call(suffix = '', data) {
     const res = await fetch(`/api/retouch/settings${suffix}`, data === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
     const raw = await res.text()

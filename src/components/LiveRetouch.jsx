@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Upload, ImagePlus, Sparkles, PanelRightClose, PanelRightOpen, Layers3, LoaderCircle, ArrowUpRight } from 'lucide-react'
 import { CLOUD_ASSETS } from '../data/cloudAssets'
 import ImageViewer from './ImageViewer'
+import { isCloudDeployment } from '../lib/deployment'
 
 const ANALYSIS_FIELDS = [
   ['size', '尺寸与比例'],
@@ -53,7 +54,7 @@ async function cloudRequest(data) {
   return value
 }
 export default function LiveRetouch() {
-  const cloudMode = typeof window !== 'undefined' && window.location.hostname.endsWith('.pages.dev')
+  const cloudMode = isCloudDeployment()
   const [image, setImage] = useState('')
   const [assistantOpen, setAssistantOpen] = useState(true)
   const fileInput = useRef(null)
