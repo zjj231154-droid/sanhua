@@ -1,15 +1,11 @@
 import { json } from './tokenspace.js'
-import { r2S3BucketFor } from './r2-s3.js'
 
 const MAX_ASSET_BYTES = 20 * 1024 * 1024
 const dateParts = date => {
   const value = date || new Date()
   return [value.getUTCFullYear(), String(value.getUTCMonth() + 1).padStart(2, '0'), String(value.getUTCDate()).padStart(2, '0')]
 }
-export const assetsBucket = context => {
-  const nativeBucket = context.env?.SANHUA_ASSETS
-  return nativeBucket?.put && nativeBucket?.get && nativeBucket?.list ? nativeBucket : r2S3BucketFor(context.env)
-}
+export const assetsBucket = context => context.env?.SANHUA_ASSETS
 export const requiredBucket = context => assetsBucket(context) || null
 export const dataUrlBytes = value => {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
@@ -38,7 +34,7 @@ export async function listJson(bucket, prefix, limit = 200) {
 
 export async function archiveImageOutputs(context, { taskId, workspace, outputs, model, prompt, sourceAssetIds = [], title }) {
   const bucket = requiredBucket(context)
-  if (!bucket) return { error: json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请绑定 Cloudflare Pages 的 SANHUA_ASSETS，或在 Railway 配置 R2_ACCOUNT_ID、R2_ACCESS_KEY_ID、R2_SECRET_ACCESS_KEY、R2_BUCKET_NAME。' }) }
+  if (!bucket) return { error: json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' }) }
   const allowedWorkspace = ['retouch', 'brand'].includes(workspace) ? workspace : null
   if (!allowedWorkspace) return { error: json(400, { error: 'INVALID_ASSET_WORKSPACE' }) }
   const [year, month, day] = dateParts()

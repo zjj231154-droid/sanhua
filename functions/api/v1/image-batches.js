@@ -5,7 +5,7 @@ import { saveTask, updateTask } from '../../_lib/task-store.js'
 const workspaceFor = value => ['retouch', 'brand'].includes(value) ? value : null
 
 export async function onRequestPost(context) {
-  if (!assetsBucket(context)) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请绑定 Cloudflare Pages 的 SANHUA_ASSETS，或在 Railway 配置 R2_ACCOUNT_ID、R2_ACCESS_KEY_ID、R2_SECRET_ACCESS_KEY、R2_BUCKET_NAME。' })
+  if (!assetsBucket(context)) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' })
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const workspace = workspaceFor(input.workspace)

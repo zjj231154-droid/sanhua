@@ -2,10 +2,14 @@ import { createReadStream, existsSync, promises as fs } from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRailwayVolumeBucket } from './railway-assets.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const dist = path.join(root, 'dist')
 const port = Number(process.env.PORT || 3000)
+const storageDirectory = String(process.env.SANHUA_STORAGE_DIR || '').trim()
+const volumeBucket = storageDirectory ? createRailwayVolumeBucket(storageDirectory) : null
+const functionEnv = volumeBucket ? { ...process.env, SANHUA_ASSETS: volumeBucket } : process.env
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
 
 const apiRoutes = {
@@ -46,7 +50,7 @@ async function runApi(request, response, pathname) {
     for (const [key, value] of Object.entries(request.headers)) if (value) headers.set(key, Array.isArray(value) ? value.join(',') : value)
     const origin = `http://${request.headers.host || `localhost:${port}`}`
     const webRequest = new Request(`${origin}${request.url}`, { method: request.method, headers, body: body?.length ? body : undefined })
-    const result = await fn({ request: webRequest, env: process.env, params: { path: endpoint || undefined } })
+    const result = await fn({ request: webRequest, env: functionEnv, params: { path: endpoint || undefined } })
     await send(response, result)
   } catch (error) {
     console.error('[railway-api]', { path: pathname, message: error.message })
