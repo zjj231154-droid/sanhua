@@ -50,7 +50,8 @@ async function runApi(request, response, pathname) {
     for (const [key, value] of Object.entries(request.headers)) if (value) headers.set(key, Array.isArray(value) ? value.join(',') : value)
     const origin = `http://${request.headers.host || `localhost:${port}`}`
     const webRequest = new Request(`${origin}${request.url}`, { method: request.method, headers, body: body?.length ? body : undefined })
-    const result = await fn({ request: webRequest, env: functionEnv, params: { path: endpoint || undefined } })
+    const params = route === '/api/assets' ? { key: endpoint || undefined } : { path: endpoint || undefined }
+    const result = await fn({ request: webRequest, env: functionEnv, params })
     await send(response, result)
   } catch (error) {
     console.error('[railway-api]', { path: pathname, message: error.message })
