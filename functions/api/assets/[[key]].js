@@ -1,14 +1,13 @@
 import { json } from '../../_lib/tokenspace.js'
-import { assetMetadataKey, assetUrl, putJson } from '../../_lib/asset-store.js'
+import { assetMetadataKey, assetUrl, assetsBucket, putJson } from '../../_lib/asset-store.js'
 const safeKey = value => /^[a-zA-Z0-9/_-]{1,180}\.(png|jpe?g|webp)$/i.test(value || '')
 const readDataUrl = value => {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
   if (!match) return null
   return { type: match[1], bytes: Uint8Array.from(atob(match[2]), char => char.charCodeAt(0)) }
 }
-const bucketFrom = context => context.env?.SANHUA_ASSETS
 export async function onRequestPost(context) {
-  const bucket = bucketFrom(context)
+  const bucket = assetsBucket(context)
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
@@ -26,7 +25,7 @@ export async function onRequestPost(context) {
   return json(201, { id, key, url: assetUrl(key), asset: metadata })
 }
 export async function onRequestGet(context) {
-  const bucket = bucketFrom(context)
+  const bucket = assetsBucket(context)
   const key = Array.isArray(context.params.key) ? context.params.key.join('/') : context.params.key
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
   if (!safeKey(key)) return json(400, { error: '无效素材地址' })
