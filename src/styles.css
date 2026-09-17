@@ -129,6 +129,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .task-progress-button:hover, .task-progress-button.is-open { border-color: #8a4631; background: #fff7ea; }
 .task-progress-button b { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: #fff9f0; background: #7b3328; font-size: 12px; }
 .task-progress-popover { position: absolute; z-index: 140; top: calc(100% + 10px); right: 0; width: min(430px, calc(100vw - 30px)); max-height: min(680px, calc(100vh - 95px)); padding: 16px; overflow: auto; border: 1px solid rgba(101,63,43,.2); border-radius: 18px; color: #3e291f; background: #fffaf1; box-shadow: 0 22px 55px rgba(53,31,20,.26); }
+.task-progress-popover--portal { position: fixed; z-index: 1000; }
 .task-progress-popover header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(101,63,43,.13); }
 .task-progress-popover header > div { display: flex; align-items: center; gap: 4px; }
 .task-progress-popover header > div:first-child { display: grid; gap: 3px; }
@@ -153,7 +154,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .task-complete-toast small { color: rgba(255,247,234,.78); font-size: 13px; }
 .task-complete-toast button { width: 28px; height: 28px; margin-left: auto; display: grid; place-items: center; flex: 0 0 auto; border: 0; border-radius: 8px; color: inherit; background: rgba(255,255,255,.08); cursor: pointer; }
 @keyframes task-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-@media (max-width: 760px) { .task-progress-button span { display: none; } .task-progress-button { padding: 0 9px; } .task-progress-popover { position: fixed; top: 76px; right: 12px; left: 12px; width: auto; max-height: calc(100vh - 88px); } }
+@media (max-width: 760px) { .task-progress-button span { display: none; } .task-progress-button { padding: 0 9px; } .task-progress-popover { position: fixed; top: 76px; right: 12px; left: 12px; width: auto; max-height: calc(100vh - 88px); } .task-progress-popover--portal { top: 76px !important; right: 12px !important; left: 12px !important; } }
 .api-settings { margin: 16px; border-radius: 28px; max-height: calc(100vh - 115px); overflow: auto; color: var(--workbench-cream); }
 .api-settings form { max-width: 640px; }
 .api-settings fieldset { border: 0; padding: 0; }
