@@ -18,7 +18,8 @@ export async function onRequestPost(context) {
   if (!workspace) return json(400, { error: 'ASSET_WORKSPACE_REQUIRED' })
   const id = crypto.randomUUID()
   const key = `uploads/default/day-coffee-night-bar/${workspace}/${id}.${extension}`
-  const metadata = { id, tenantId: 'default', storeId: 'day-coffee-night-bar', assetSpace: workspace, folderType: 'source', category: 'uploaded', name: String(input.name || `素材.${extension}`).slice(0, 160), storageKey: key, thumbnailKey: key, mimeType: image.type, size: image.bytes.byteLength, isTemporary: false, createdAt: new Date().toISOString(), platformIndex: { assetId: id, syncStatus: 'synced' } }
+  const createdAt = new Date().toISOString()
+  const metadata = { id, tenantId: 'default', storeId: 'day-coffee-night-bar', assetSpace: workspace, folderType: 'source', category: 'uploaded', name: String(input.name || `素材.${extension}`).slice(0, 160), storageKey: key, thumbnailKey: key, mimeType: image.type, size: image.bytes.byteLength, isTemporary: false, createdAt, updatedAt: createdAt, cacheVersion: id, platformIndex: { assetId: id, syncStatus: 'synced' } }
   await bucket.put(key, image.bytes, { httpMetadata: { contentType: image.type }, customMetadata: { assetId: id, originalName: metadata.name, workspace } })
   await putJson(bucket, assetMetadataKey(id), metadata)
   await putJson(bucket, `metadata/master-assets/${id}.json`, { assetId: id, tenantId: metadata.tenantId, storeId: metadata.storeId, assetSpace: workspace, syncStatus: 'synced', createdAt: metadata.createdAt })
@@ -31,5 +32,8 @@ export async function onRequestGet(context) {
   if (!safeKey(key)) return json(400, { error: '无效素材地址' })
   const object = await bucket.get(key)
   if (!object) return json(404, { error: '素材不存在' })
-  return new Response(object.body, { headers: { 'content-type': object.httpMetadata?.contentType || 'application/octet-stream', 'cache-control': 'private, max-age=3600' } })
+  const etag = `"${encodeURIComponent(key)}"`
+  const headers = { 'content-type': object.httpMetadata?.contentType || 'application/octet-stream', 'cache-control': 'private, max-age=604800, immutable', etag, vary: 'Authorization' }
+  if (context.request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers })
+  return new Response(object.body, { headers })
 }

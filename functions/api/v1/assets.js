@@ -9,6 +9,6 @@ export async function onRequestGet(context) {
   const assets = (await listJson(bucket, 'metadata/assets/'))
     .filter(asset => !workspace || asset.assetSpace === workspace)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-    .map(asset => ({ ...asset, url: assetUrl(asset.storageKey), thumbnailUrl: assetUrl(asset.thumbnailKey) }))
+    .map(asset => ({ ...asset, updatedAt: asset.updatedAt || asset.createdAt, cacheVersion: asset.cacheVersion || asset.checksum || asset.id, url: assetUrl(asset.storageKey), thumbnailUrl: assetUrl(asset.thumbnailKey) }))
   return json(200, { assets })
 }

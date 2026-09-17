@@ -50,7 +50,8 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
       storageKey, thumbnailKey: storageKey, mimeType: converted.mimeType, size: converted.bytes.byteLength,
       checksum: `${converted.bytes.byteLength}:${id.slice(0, 8)}`, isTemporary: true,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), sourceAssetIds,
-      taskId, model, prompt, createdAt: new Date().toISOString(), platformIndex: { assetId: id, syncStatus: 'synced' },
+      taskId, model, prompt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), cacheVersion: id,
+      platformIndex: { assetId: id, syncStatus: 'synced' },
     }
     await bucket.put(storageKey, converted.bytes, { httpMetadata: { contentType: converted.mimeType }, customMetadata: { assetId: id, taskId, workspace: allowedWorkspace } })
     await putJson(bucket, assetMetadataKey(id), asset)

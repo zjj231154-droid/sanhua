@@ -37,6 +37,7 @@ import {
 import RippleDistortion from './components/RippleDistortion/RippleDistortion'
 import LiveRetouch from './components/LiveRetouch'
 import ImageViewer from './components/ImageViewer'
+import CachedImage from './components/CachedImage'
 import { CLOUD_ASSETS } from './data/cloudAssets'
 
 const NAV_ITEMS = [
@@ -602,7 +603,12 @@ function CreativeCasesPage({ type }) {
   const [selectedAsset, setSelectedAsset] = useState(null)
   const [scriptPrompt, setScriptPrompt] = useState('围绕茶馆真实空间写一个 3 分钟短剧开场：一位年轻掌柜用一杯新茶解决老顾客之间的误会。')
   const [scriptPlan, setScriptPlan] = useState('')
-  const [drafts, setDrafts] = useState(() => { try { const saved = JSON.parse(localStorage.getItem('script-drafts') || '[]'); return Array.isArray(saved) ? saved : [] } catch { return [] } })
+  const [scripts, setScripts] = useState([])
+  const [scriptsLoading, setScriptsLoading] = useState(false)
+  const [scriptsError, setScriptsError] = useState('')
+  const [videoDuration, setVideoDuration] = useState('180')
+  const [videoStatus, setVideoStatus] = useState('')
+  const [videoReady, setVideoReady] = useState(false)
   const config = CREATIVE_CASES[type]
   const [activeId, setActiveId] = useState(config.cases[0].id)
   const refreshBrandAssets = async () => {
@@ -614,9 +620,65 @@ function CreativeCasesPage({ type }) {
       setBrandAssets(Array.isArray(value.assets) ? value.assets : [])
     } catch {}
   }
-  useEffect(() => { refreshBrandAssets() }, [type])
-  const activeCase = config.cases.find(item => item.id === activeId)
+  const refreshScripts = async () => {
+    if (type !== 'script') return
+    setScriptsLoading(true); setScriptsError('')
+    try {
+      const response = await fetch('/api/v1/scripts')
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '剧本库暂时不可用')
+      setScripts(Array.isArray(value.scripts) ? value.scripts : [])
+    } catch (error) { setScriptsError(error.message || '剧本库读取失败') } finally { setScriptsLoading(false) }
+  }
+  useEffect(() => { refreshBrandAssets(); refreshScripts() }, [type])
+  const activeScript = scripts.find(item => item.id === activeId)
+  const activeCase = config.cases.find(item => item.id === activeId) || config.cases[0]
   const Icon = config.icon
+  const requestScript = async (url, options = {}) => {
+    const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options })
+    const value = await response.json()
+    if (!response.ok) throw new Error(value.error || '剧本保存失败')
+    return value
+  }
+  const persistScript = async values => {
+    const body = JSON.stringify({ ...values, sourceAssetIds: selectedAsset ? [selectedAsset.id] : [] })
+    const value = editor?.id
+      ? await requestScript(`/api/v1/scripts/${editor.id}`, { method: 'PATCH', body })
+      : await requestScript('/api/v1/scripts', { method: 'POST', body })
+    setScripts(current => [value.script, ...current.filter(item => item.id !== value.script.id)])
+    return value.script
+  }
+  const autoSaveScript = async values => {
+    if (!editor?.id) return null
+    const value = await requestScript(`/api/v1/scripts/${editor.id}`, { method: 'PATCH', body: JSON.stringify(values) })
+    setScripts(current => [value.script, ...current.filter(item => item.id !== value.script.id)])
+    return value.script
+  }
+  const validateVideo = async () => {
+    setVideoStatus('正在校验视频任务…'); setVideoReady(false); setScriptsError('')
+    try {
+      const script = scripts.find(item => item.id === activeId) || scripts[0]
+      const response = await fetch('/api/v1/video-tasks/validate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }),
+      })
+      const value = await response.json()
+      if (!response.ok) throw new Error(Array.isArray(value.missing) ? `请补齐：${value.missing.join('、')}` : value.error || '视频校验失败')
+      setVideoReady(Boolean(value.ready))
+      setVideoStatus(value.ready ? `校验通过。${value.notice || '视频模型未接入，创建后会标记为模拟任务。'}` : `请补齐：${value.missing.join('、')}`)
+    } catch (error) { setVideoStatus(error.message || '视频校验失败') }
+  }
+  const createVideoTask = async () => {
+    setVideoStatus('正在创建视频任务…')
+    try {
+      const script = scripts.find(item => item.id === activeId) || scripts[0]
+      const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }) })
+      const value = await response.json()
+      if (!response.ok) throw new Error(Array.isArray(value.missing) ? `请补齐：${value.missing.join('、')}` : value.error || '视频任务创建失败')
+      setVideoStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}`)
+      setVideoReady(false)
+    } catch (error) { setVideoStatus(error.message || '视频任务创建失败') }
+  }
   async function createBrandPlan(requirements = brandPrompt) {
     setBrandBusy(true); setBrandError(''); setBrandPlan(''); setBrandImage('')
     try {
@@ -654,27 +716,24 @@ function CreativeCasesPage({ type }) {
           {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} />}
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} aria-label="短剧脚本需求" /><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={async () => { setBrandBusy(true); setBrandError(''); try { const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '编导助手暂不可用'); setScriptPlan(value.plan || '') } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) } }}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button>{scriptPlan && <div className="brand-plan"><strong>可拍摄脚本计划</strong><p>{scriptPlan}</p></div>}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
-          {toolbarTab === 2 && <p role="status">{type === 'script' ? '视频生成入口已预留，生成服务尚未接入。' : '效果渲染入口已预留，生成服务尚未接入。'}</p>}
-          {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2>{brandAssets.map(asset => <article key={asset.id}><button className="brand-generated-preview" onClick={() => setViewerImage(asset.url)}><img src={asset.url} alt={asset.name} /><small>点击放大查看</small></button><div><strong>{asset.name}</strong><small>已保存至品牌创作 / 产品库 · {asset.id.slice(0, 8)}</small></div></article>)}{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}<div className="library-case-list">{config.cases.map(item => <article key={item.id}><span className={`case-visual case-visual--${item.tone}`} /><div><strong>{item.title}</strong><small>{item.kind} · {item.status}</small></div></article>)}</div></section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
-            {type === 'script' && drafts.map(draft => <button className="case-card" key={draft.id} onClick={() => setEditor(draft)}><span className="case-copy"><small>本机草稿 · 点击编辑</small><strong>{draft.title}</strong><em>{draft.summary}</em><span>{draft.kind}</span></span></button>)}
-            {config.cases.map(item => (
-              <button key={item.id} className={activeId === item.id ? 'case-card is-active' : 'case-card'} onClick={() => setActiveId(item.id)}>
-                <span className={`case-visual case-visual--${item.tone}`}><i>{item.kind}</i></span>
-                <span className="case-copy"><small>{item.status}</small><strong>{item.title}</strong><em>{item.summary}</em><span>{item.progress}<ArrowUpRight size={15} /></span></span>
-              </button>
-            ))}
+          {type === 'script' && toolbarTab === 2 && <section className="video-validation-panel glass-card" aria-label="视频生成前置校验"><div><span className="kicker">视频任务校验</span><h2>从已保存剧本版本发起</h2><p>先检查剧本版本、场景资产、分镜说明与预计时长。当前未接入视频模型时只会创建可追踪的模拟任务。</p></div><label>预计时长（秒）<input type="number" min="1" max="1800" value={videoDuration} onChange={event => { setVideoDuration(event.target.value); setVideoReady(false) }} /></label><p>当前剧本：{scripts.find(item => item.id === activeId)?.title || scripts[0]?.title || '未选择已保存剧本'}。场景素材：{selectedAsset?.name || '未选择'}。</p><div className="brand-agent-actions"><button className="primary-button" disabled={scriptsLoading || !scripts.length} onClick={validateVideo}>{scriptsLoading ? '正在读取剧本…' : '校验视频任务'}</button><button className="secondary-button" disabled={!videoReady} title={!videoReady ? '请先通过前置校验' : undefined} onClick={createVideoTask}>创建模拟任务</button></div>{videoStatus && <p className="video-validation-status" role="status">{videoStatus}</p>}</section>}
+          {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2>{brandAssets.map(asset => <article key={asset.id}><button className="brand-generated-preview" onClick={() => setViewerImage(asset.url)}><CachedImage asset={asset} src={asset.thumbnailUrl || asset.url} alt={asset.name} /><small>点击放大查看</small></button><div><strong>{asset.name}</strong><small>已保存至品牌创作 / 产品库 · {asset.id.slice(0, 8)}</small></div></article>)}{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}<div className="library-case-list">{config.cases.map(item => <article key={item.id}><span className={`case-visual case-visual--${item.tone}`} /><div><strong>{item.title}</strong><small>{item.kind} · {item.status}</small></div></article>)}</div></section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
+            {scriptsLoading && <p role="status">正在读取云端剧本库…</p>}
+            {!scriptsLoading && scripts.map(script => <button className={activeId === script.id ? 'case-card is-active' : 'case-card'} key={script.id} onClick={() => { setActiveId(script.id); setEditor(script) }}><span className="case-copy"><small>云端剧本 · {script.versionCount || 1} 个版本</small><strong>{script.title}</strong><em>{script.summary || '尚未填写故事梗概'}</em><span>{script.kind || '未分类'} · 更新于 {new Date(script.updatedAt).toLocaleDateString('zh-CN')}</span></span></button>)}
+            {!scriptsLoading && !scripts.length && <div className="empty-state"><p>暂无云端剧本。新建后会自动持久化并支持版本恢复。</p><button className="primary-button" onClick={() => setEditor({})}>新建剧本</button></div>}
+            {scriptsError && <p className="retouch-error" role="alert">{scriptsError}</p>}
           </section> : null)}
         </main>
         {((type === 'brand' && toolbarTab === 1) || (type === 'script' && toolbarTab === 1)) && <aside className="case-inspector glass-card">
           <span className="case-inspector-icon"><Icon size={20} /></span>
-          <span className="kicker">SELECTED CASE</span>
-          <h2>{activeCase.title}</h2>
-          <p>{activeCase.summary}</p>
-          <div className="case-facts"><span><small>类型</small><strong>{activeCase.kind}</strong></span><span><small>当前进度</small><strong>{activeCase.progress}</strong></span><span><small>状态</small><strong>{activeCase.status}</strong></span></div>
-          <button className="primary-button primary-button--wide" onClick={() => type === 'script' && setEditor({ title: activeCase.title, kind: activeCase.kind, summary: activeCase.summary })}>以此案例开始 <ArrowUpRight size={16} /></button>
+          <span className="kicker">{type === 'script' ? 'CLOUD SCRIPT' : 'SELECTED CASE'}</span>
+          <h2>{activeScript?.title || activeCase.title}</h2>
+          <p>{activeScript?.summary || activeCase.summary}</p>
+          <div className="case-facts"><span><small>类型</small><strong>{activeScript?.kind || activeCase.kind}</strong></span><span><small>{type === 'script' ? '版本' : '当前进度'}</small><strong>{type === 'script' ? `v${activeScript?.versionCount || 1}` : activeCase.progress}</strong></span><span><small>状态</small><strong>{activeScript?.status || activeCase.status}</strong></span></div>
+          <button className="primary-button primary-button--wide" onClick={() => type === 'script' && setEditor(activeScript || { title: activeCase.title, kind: activeCase.kind, summary: activeCase.summary })}>{activeScript ? '编辑云端剧本' : '以此案例开始'} <ArrowUpRight size={16} /></button>
         </aside>}
       </div>
-      {editor && <ScriptEditor initial={editor} onClose={() => setEditor(null)} onSave={values => { const item = { ...values, id: editor.id || crypto.randomUUID() }; const next = [item, ...drafts.filter(draft => draft.id !== item.id)]; localStorage.setItem('script-drafts', JSON.stringify(next)); setDrafts(next) }} />}
+      {editor && <ScriptEditor initial={editor} onClose={() => setEditor(null)} onSave={persistScript} onAutoSave={autoSaveScript} onListVersions={async id => (await requestScript(`/api/v1/scripts/${id}/versions`)).versions || []} onSaveVersion={async (values, changeNote) => { const result = await requestScript(`/api/v1/scripts/${editor.id}/versions`, { method: 'POST', body: JSON.stringify({ ...values, changeNote }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); return result }} onRestoreVersion={async versionId => { const result = await requestScript(`/api/v1/scripts/${editor.id}/restore-version`, { method: 'POST', body: JSON.stringify({ versionId }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); setEditor(result.script); return result.script }} />}
       {viewerImage && <ImageViewer src={viewerImage} alt="中式文创效果图" onClose={() => setViewerImage('')} />}
     </div>
   )
@@ -683,6 +742,8 @@ function CreativeCasesPage({ type }) {
 function AssetLibraryPage({ onNavigate }) {
   const [category, setCategory] = useState('coffee')
   const [storedAssets, setStoredAssets] = useState([])
+  const [query, setQuery] = useState('')
+  const [viewerAsset, setViewerAsset] = useState(null)
   useEffect(() => {
     let active = true
     fetch('/api/v1/assets').then(async response => {
@@ -699,15 +760,17 @@ function AssetLibraryPage({ onNavigate }) {
     }).catch(() => {})
     return () => { active = false }
   }, [])
-  const allAssets = [...storedAssets, ...CLOUD_ASSETS.filter(asset => !storedAssets.some(item => item.id === asset.id))]
+  const allAssets = [...storedAssets, ...CLOUD_ASSETS.filter(asset => !storedAssets.some(item => item.id === asset.id)).map(asset => ({ ...asset, isDemo: true }))]
   const matches = asset => category === 'coffee' ? asset.id.startsWith('coffee-') : category === 'brand' ? asset.category === 'brand' : category === 'script' ? asset.category === 'script' : asset.category.endsWith('-generated')
-  const visible = allAssets.filter(matches)
+  const visible = allAssets.filter(matches).filter(asset => !query.trim() || `${asset.name} ${asset.group} ${asset.assetSpace || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   return <div className="page-content asset-library-page">
     <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创、短剧场景和 AI 创作成果。</p></div><span className="connection-note">云端资产 · {allAssets.length} 项</span></header>
-    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['coffee', '咖啡店'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><small>{visible.length} 项素材</small></div>
+    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['coffee', '咖啡店'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材</small></div>
     <section className="asset-grid" aria-label="云端资产列表">
-      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><img src={asset.url} alt={asset.name} loading="lazy" /><div><span><strong>{asset.name}</strong><small>{asset.group}</small></span><button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></div></article>)}
+      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`}><CachedImage asset={asset} src={asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{asset.isDemo ? `${asset.group} · 演示素材` : asset.group}</small></span><button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></div></article>)}
     </section>
+    {!visible.length && <p className="empty-state">未找到匹配资产，请调整搜索词或分类。</p>}
+    {viewerAsset && <ImageViewer src={viewerAsset.url} alt={viewerAsset.name} onClose={() => setViewerAsset(null)} />}
   </div>
 }
 
