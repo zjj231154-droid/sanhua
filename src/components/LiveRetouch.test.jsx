@@ -16,7 +16,7 @@ it('恢复计划后等待明确确认，才提交编辑请求', async () => {
 
 it('将已归档的云端精修结果显示在素材选择器中', async () => {
   const fetch = vi.fn(async url => {
-    if (url === '/api/v1/assets?workspace=retouch') return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
+    if (url.startsWith('/api/v1/assets?workspace=retouch')) return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
     return { ok: true, json: async () => ({ engine: 'api' }) }
   })
   vi.stubGlobal('fetch', fetch)
@@ -29,7 +29,7 @@ it('将已归档的云端精修结果显示在素材选择器中', async () => {
 
 it('单图点击后立即应用，批量选择会在工作区保留全部素材', async () => {
   const fetch = vi.fn(async url => {
-    if (url === '/api/v1/assets?workspace=retouch') return { ok: true, json: async () => ({ assets: [
+    if (url.startsWith('/api/v1/assets?workspace=retouch')) return { ok: true, json: async () => ({ assets: [
       { id: 'remote-retouch-1', name: '云端素材一', assetSpace: 'retouch', url: '/api/assets/generated/one.png' },
       { id: 'remote-retouch-2', name: '云端素材二', assetSpace: 'retouch', url: '/api/assets/generated/two.png' },
     ] }) }
@@ -47,10 +47,37 @@ it('单图点击后立即应用，批量选择会在工作区保留全部素材'
   const assetPicker = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
   expect(await within(assetPicker).findByRole('button', { name: /云端素材一/ })).toHaveAttribute('aria-pressed', 'true')
   fireEvent.click(within(assetPicker).getByRole('button', { name: /云端素材二/ }))
-  expect(screen.getByText('已选 2 / 4 张')).toBeInTheDocument()
+  expect(screen.getByText('已选 2 / 10 张')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '使用已选 2 张素材' }))
   await waitFor(() => expect(screen.getByText('已选择 2 张素材')).toBeInTheDocument())
   expect(screen.getAllByText('批量精修素材')).toHaveLength(2)
+})
+
+it('批量选择最多十张，第十一张会被阻止', async () => {
+  const assets = Array.from({ length: 11 }, (_, index) => ({ id: `retouch-${index + 1}`, name: `素材${index + 1}`, assetSpace: 'retouch', url: `/api/assets/${index + 1}.png` }))
+  vi.stubGlobal('fetch', vi.fn(async url => url.startsWith('/api/v1/assets') ? { ok: true, json: async () => ({ assets }) } : { ok: true, json: async () => ({ engine: 'api' }) }))
+  render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('button', { name: /批量修图/ }))
+  const dialog = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
+  for (let index = 1; index <= 10; index += 1) fireEvent.click((await within(dialog).findByText(`素材${index}`, { selector: 'span' })).closest('button'))
+  expect(screen.getByText('已选 10 / 10 张')).toBeInTheDocument()
+  fireEvent.click((await within(dialog).findByText('素材11', { selector: 'span' })).closest('button'))
+  expect(screen.getByRole('alert')).toHaveTextContent('一次最多选择 10 张')
+})
+
+it('图库中的已归档精修图可以重命名并更新当前卡片', async () => {
+  const fetch = vi.fn(async (url, options) => {
+    if (url.startsWith('/api/v1/assets?workspace=retouch')) return { ok: true, json: async () => ({ assets: [{ id: 'generated-1', name: '旧精修结果', assetSpace: 'retouch', url: '/api/assets/generated-1.png' }] }) }
+    if (url === '/api/v1/assets/generated-1/name' && options?.method === 'PATCH') return { ok: true, json: async () => ({ asset: { id: 'generated-1', name: '新版精修结果', downloadName: '新版精修结果.png' } }) }
+    return { ok: true, json: async () => ({ engine: 'api' }) }
+  })
+  vi.stubGlobal('fetch', fetch)
+  vi.stubGlobal('prompt', vi.fn(() => '新版精修结果'))
+  render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('tab', { name: '图库' }))
+  fireEvent.click(await screen.findByRole('button', { name: '重命名 旧精修结果' }))
+  await waitFor(() => expect(screen.getByText('新版精修结果')).toBeInTheDocument())
+  expect(fetch).toHaveBeenCalledWith('/api/v1/assets/generated-1/name', expect.objectContaining({ method: 'PATCH' }))
 })
 
 it('修图模板面板只提供上传与云资产参考素材入口', () => {

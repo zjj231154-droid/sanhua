@@ -10,18 +10,22 @@ export async function onRequestPost(context) {
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const workspace = workspaceFor(input.workspace)
   const prompt = String(input.prompt || '').trim().slice(0, 12000)
-  const images = Array.isArray(input.images) ? input.images.filter(value => typeof value === 'string').slice(0, 4) : []
-  const count = Number(input.count || 4)
+  const submittedImages = Array.isArray(input.images) ? input.images.filter(value => typeof value === 'string') : []
+  const count = Number(input.count || (input.workspace === 'retouch' ? 1 : 4))
   if (!workspace) return json(400, { error: 'WORKSPACE_REQUIRED' })
   if (!prompt) return json(400, { error: 'PROMPT_REQUIRED' })
-  if (!Number.isInteger(count) || count < 1 || count > 4) return json(400, { error: 'BATCH_COUNT_MUST_BE_BETWEEN_1_AND_4' })
+  const limit = workspace === 'retouch' ? 10 : 4
+  if (!Number.isInteger(count) || count < 1 || count > limit) return json(400, { error: 'BATCH_LIMIT_EXCEEDED', limit })
+  if (submittedImages.length > limit || (Array.isArray(input.sourceAssetIds) && input.sourceAssetIds.length > limit)) return json(400, { error: 'BATCH_LIMIT_EXCEEDED', limit })
+  if (workspace === 'retouch' && !submittedImages.length) return json(400, { error: 'IMAGE_REQUIRED' })
+  const images = submittedImages
   const model = String(input.model || 'gpt-image-2').slice(0, 160)
   const requestedName = String(input.requestedName || input.requested_name || '').trim().slice(0, 160)
   const namePrefix = String(input.namePrefix || input.name_prefix || '').trim().slice(0, 160)
   const task = await saveTask(context, {
     id: crypto.randomUUID(), workspace, type: 'image-batch', status: 'running', progress: 25,
     stage: `模型处理中（0/${count}）`, heartbeatAt: new Date().toISOString(), requirements: prompt,
-    finalPrompt: prompt, model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
+    finalPrompt: String(input.metadata?.finalPrompt || prompt).slice(0, 12000), originalPlan: String(input.metadata?.originalPlan || '').slice(0, 12000), model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
   })
   let result
   if (images.length) {
@@ -54,7 +58,7 @@ export async function onRequestPost(context) {
     return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id })
   }
   await updateTask(context, task.id, { progress: 90, stage: `归档图片（${outputs.length}/${count}）`, heartbeatAt: new Date().toISOString() })
-  const archived = await archiveImageOutputs(context, { taskId: task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, 50) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, 50) : [] })
+  const archived = await archiveImageOutputs(context, { taskId: task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, limit) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, limit) : [], originalPlan: input.metadata?.originalPlan, finalPrompt: input.metadata?.finalPrompt || prompt })
   if (archived.error) {
     await updateTask(context, task.id, { status: 'failed', progress: 90, stage: '资产归档失败', error: 'ASSET_ARCHIVE_FAILED' })
     return archived.error

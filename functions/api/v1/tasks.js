@@ -34,3 +34,14 @@ export async function onRequestPatch(context) {
   const task = await updateTask(context, id, { status: input.status, progress: Math.max(0, Math.min(100, Number(input.progress ?? 0))), stage: String(input.stage || '').slice(0, 200), error: input.error ? String(input.error).slice(0, 1000) : undefined })
   return task ? json(200, task) : json(404, { error: 'TASK_NOT_FOUND' })
 }
+
+export async function onRequestDelete(context) {
+  const id = new URL(context.request.url).searchParams.get('id')
+  if (!id) return json(400, { error: 'TASK_ID_REQUIRED' })
+  const task = await getTask(context, id)
+  if (!task) return json(404, { error: 'TASK_NOT_FOUND' })
+  if (!['completed', 'failed', 'cancelled'].includes(task.status)) return json(409, { error: 'TASK_STILL_ACTIVE' })
+  const hiddenAt = new Date().toISOString()
+  await updateTask(context, id, { hiddenAt, hiddenBy: 'demo-user', hiddenReason: 'user_dismissed' })
+  return json(200, { ok: true, id, hiddenAt })
+}

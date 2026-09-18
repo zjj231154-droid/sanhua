@@ -32,7 +32,8 @@ export async function getTask(context, id) {
 export async function listTasks(context, filters = {}) {
   const bucket = assetsBucket(context)
   const values = bucket ? await listJson(bucket, 'metadata/tasks/') : [...memory.values()]
-  return values.filter(task => !filters.workspace || task.workspace === filters.workspace)
+  return values.filter(task => filters.includeHidden === 'true' || !task.hiddenAt)
+    .filter(task => !filters.workspace || task.workspace === filters.workspace)
     .filter(task => !filters.status || task.status === filters.status)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
 }

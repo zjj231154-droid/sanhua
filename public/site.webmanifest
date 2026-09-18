@@ -1,0 +1,9 @@
+{
+  "name": "叁花工作室 · AI 创作工作台",
+  "short_name": "叁花工作室",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f1eb",
+  "theme_color": "#7a3025",
+  "icons": [{ "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

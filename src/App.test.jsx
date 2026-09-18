@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App from './App'
+import App, { BrandMerchWorkflow, TaskProgress } from './App'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -85,5 +85,28 @@ describe('AI 创作工作台 Demo', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 成果' }))
     await waitFor(() => expect(screen.getByText('已归档精修结果')).toBeInTheDocument())
+  })
+
+  it('品牌产品选择可再次点击取消并清空后续步骤', () => {
+    render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
+    const product = screen.getByRole('button', { name: '杯垫' })
+    fireEvent.click(product)
+    expect(screen.getByText('当前产品：杯垫。下一步会据此更新可量产材质建议。')).toBeInTheDocument()
+    fireEvent.click(product)
+    expect(screen.queryByText(/当前产品：杯垫/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '下一步：选择材质' })).toBeDisabled()
+  })
+
+  it('任务进度可删除已完成任务而不显示运行中任务的删除按钮', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url, options) => {
+      if (options?.method === 'DELETE') return { ok: true, json: async () => ({ ok: true }) }
+      return { ok: true, json: async () => ({ tasks: [{ id: 'done-task', workspace: 'brand', status: 'completed', progress: 100, stage: '完成' }, { id: 'live-task', workspace: 'retouch', status: 'running', progress: 50, stage: '处理中' }] }) }
+    }))
+    render(<TaskProgress />)
+    fireEvent.click(screen.getByRole('button', { name: '查看后台任务进度' }))
+    expect(await screen.findByRole('button', { name: '删除任务 done-tas' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '删除任务 live-tas' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除任务 done-tas' }))
+    await waitFor(() => expect(screen.queryByText('品牌创作')).not.toBeInTheDocument())
   })
 })

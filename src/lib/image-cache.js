@@ -3,7 +3,8 @@ const entries = new Map()
 export function imageCacheKey(assetOrUrl, version = '') {
   if (typeof assetOrUrl === 'string') return `${assetOrUrl}|${version}`
   const asset = assetOrUrl || {}
-  return [asset.id || asset.assetId || '', asset.thumbnailKey || '', asset.storageKey || asset.url || '', asset.cacheVersion || asset.updatedAt || asset.createdAt || version].join('|')
+  const previewPart = asset.previewUrl ? `preview:${asset.previewUrl}` : ''
+  return [asset.id || asset.assetId || '', previewPart, asset.thumbnailKey || '', asset.storageKey || asset.url || '', asset.cacheVersion || asset.updatedAt || asset.createdAt || version].filter((part, index) => index === 0 || part).join('|')
 }
 
 export function imageCacheStatus(key) {

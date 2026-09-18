@@ -38,4 +38,12 @@ describe('four-image batch generation', () => {
     expect(response.status).toBe(201)
     expect((await response.json()).assets).toHaveLength(1)
   })
+
+  it('rejects more than ten retouch images before calling the provider', async () => {
+    const bucket = new MemoryBucket()
+    const request = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', prompt: '批量精修', count: 11, images: Array.from({ length: 11 }, () => 'data:image/png;base64,iVBORw0KGgo=') }) })
+    const response = await onRequestPost({ request, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: 'BATCH_LIMIT_EXCEEDED', limit: 10 })
+  })
 })

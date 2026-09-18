@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { imageCacheKey, imageCacheStatus, preloadImage, clearImageCache } from '../lib/image-cache'
 
 export default function CachedImage({ asset, src, alt, className = '', loading = 'lazy', onClick }) {
-  const cacheKey = useMemo(() => imageCacheKey(asset || src), [asset, src])
+  const cacheKey = useMemo(() => `${imageCacheKey(asset || src)}|${src || ''}`, [asset, src])
   const [status, setStatus] = useState(() => imageCacheStatus(cacheKey))
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined')
   const wrapper = useRef(null)

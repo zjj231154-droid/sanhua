@@ -38,7 +38,7 @@ export async function listJson(bucket, prefix, limit = 200) {
   return rows.filter(Boolean)
 }
 
-export async function archiveImageOutputs(context, { taskId, workspace, outputs, model, prompt, sourceAssetIds = [], title, requestedName, namePrefix, promptSummary, referenceAssetIds = [] }) {
+export async function archiveImageOutputs(context, { taskId, workspace, outputs, model, prompt, sourceAssetIds = [], title, requestedName, namePrefix, promptSummary, referenceAssetIds = [], originalPlan, finalPrompt }) {
   const bucket = requiredBucket(context)
   if (!bucket) return { error: json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' }) }
   const allowedWorkspace = ['retouch', 'brand'].includes(workspace) ? workspace : null
@@ -63,7 +63,7 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
       storageKey, thumbnailKey: storageKey, mimeType: converted.mimeType, size: converted.bytes.byteLength,
       checksum: `${converted.bytes.byteLength}:${id.slice(0, 8)}`, isTemporary: true,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), sourceAssetIds,
-      taskId, model, prompt, promptSummary: String(promptSummary || prompt || '').slice(0, 800),
+      taskId, model, prompt, promptSummary: String(promptSummary || finalPrompt || prompt || '').slice(0, 800), originalPlan: String(originalPlan || '').slice(0, 12000), finalPrompt: String(finalPrompt || prompt || '').slice(0, 12000),
       sourceAssetIds, referenceAssetIds: Array.isArray(referenceAssetIds) ? referenceAssetIds.slice(0, 50) : [],
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), cacheVersion: id,
       platformIndex: { assetId: id, syncStatus: 'synced' },
