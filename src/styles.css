@@ -1355,14 +1355,19 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .asset-picker-heading strong { font-size: 16px; }
 .asset-picker-heading small { color: #c5b1a1; font-size: 11px; }
 .asset-picker-grid { min-height: 0; padding: 2px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; overflow-y: auto; overscroll-behavior: contain; }
-.asset-select-card { padding: 0; overflow: hidden; border: 1px solid rgba(245,224,197,.14); border-radius: 14px; color: inherit; background: rgba(255,255,255,.06); text-align: left; cursor: pointer; }
-.asset-select-card img { width: 100%; aspect-ratio: 4 / 3; display: block; object-fit: cover; }
-.asset-select-card .cached-image { aspect-ratio: 4 / 3; }
+.asset-select-card { position: relative; padding: 0; overflow: hidden; border: 1px solid rgba(245,224,197,.14); border-radius: 10px; color: inherit; background: rgba(255,255,255,.06); text-align: left; cursor: pointer; }
+.asset-select-card img { width: 100%; aspect-ratio: 1 / 1; display: block; object-fit: cover; }
+.asset-select-card .cached-image { aspect-ratio: 1 / 1; }
 .asset-select-card span, .asset-select-card small { display: block; padding-inline: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asset-select-card span { padding-top: 8px; font-size: 11px; }
 .asset-select-card small { padding-top: 4px; padding-bottom: 9px; color: #c5b1a1; font-size: 9px; }
-.asset-select-card.is-selected { box-shadow: 0 0 0 2px #d5af7d; }
+.asset-select-card.is-selected { border-color: #e5c89b; box-shadow: 0 0 0 2px #d5af7d, 0 10px 22px rgba(0,0,0,.22); }
+.asset-select-card .asset-selection-index { position: absolute; z-index: 2; top: 8px; right: 8px; min-width: 28px; min-height: 28px; padding: 4px 6px; display: grid; place-items: center; border-radius: 8px; color: #291b15; background: #f2d5a8; font-size: 11px; font-weight: 800; line-height: 1; box-shadow: 0 5px 12px rgba(0,0,0,.25); }
+.asset-select-card:not(.is-selected) .asset-selection-index { display: none; }
 .asset-picker-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 14px; color: #c5b1a1; font-size: 11px; }
+.retouch-selection-summary { flex-shrink: 0; padding: 7px 10px; border-radius: 999px; color: #f5dfc4; background: rgba(230,194,149,.15); font-size: 13px; font-weight: 700; }
+.selected-source-card .real-photo { aspect-ratio: 1 / 1; }
+.selected-source-card .photo-info button { color: #f5e8d7; background: rgba(129,70,48,.75); font-size: 20px; line-height: 1; }
 .showcase-main, .case-grid, .asset-library-page, .page-content { overscroll-behavior: contain; scrollbar-gutter: stable; }
 .showcase-main { overflow: auto; }
 .showcase-main > .case-grid { flex: 1; }
