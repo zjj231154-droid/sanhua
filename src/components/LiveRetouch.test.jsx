@@ -52,3 +52,13 @@ it('单图点击后立即应用，批量选择会在工作区保留全部素材'
   await waitFor(() => expect(screen.getByText('已选择 2 张素材')).toBeInTheDocument())
   expect(screen.getAllByText('批量精修素材')).toHaveLength(2)
 })
+
+it('修图模板面板只提供上传与云资产参考素材入口', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
+  render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('button', { name: '修图模版' }))
+  const panel = screen.getByLabelText('修图模板')
+  expect(within(panel).getByText('上传参考素材')).toBeInTheDocument()
+  expect(within(panel).getByRole('button', { name: '选择云资产参考素材' })).toBeInTheDocument()
+  expect(within(panel).queryByText('咖啡日光')).not.toBeInTheDocument()
+})

@@ -18,6 +18,12 @@ export const assetUrl = key => `/api/assets/${key}`
 export const assetMetadataKey = id => `metadata/assets/${id}.json`
 export const taskMetadataKey = id => `metadata/tasks/${id}.json`
 
+export const normalizeAssetName = (value, fallback = '生成图片') => {
+  const name = String(value || '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim()
+  return (name || fallback).slice(0, 160)
+}
+export const downloadFileName = (value, extension = 'png') => `${normalizeAssetName(value).replace(/\.+$/g, '')}.${extension}`
+
 export async function putJson(bucket, key, value) {
   await bucket.put(key, JSON.stringify(value), { httpMetadata: { contentType: 'application/json; charset=utf-8' } })
   return value
@@ -32,7 +38,7 @@ export async function listJson(bucket, prefix, limit = 200) {
   return rows.filter(Boolean)
 }
 
-export async function archiveImageOutputs(context, { taskId, workspace, outputs, model, prompt, sourceAssetIds = [], title }) {
+export async function archiveImageOutputs(context, { taskId, workspace, outputs, model, prompt, sourceAssetIds = [], title, requestedName, namePrefix, promptSummary, referenceAssetIds = [] }) {
   const bucket = requiredBucket(context)
   if (!bucket) return { error: json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' }) }
   const allowedWorkspace = ['retouch', 'brand'].includes(workspace) ? workspace : null
@@ -44,13 +50,22 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
     if (!converted) return { error: json(502, { error: 'MODEL_OUTPUT_NOT_ARCHIVABLE', index: index + 1 }) }
     const id = crypto.randomUUID()
     const storageKey = `generated/default/day-coffee-night-bar/${allowedWorkspace}/ai-temp/${year}/${month}/${day}/${taskId}/outputs/${id}.${converted.extension}`
+    const defaultTitle = title || (allowedWorkspace === 'brand' ? '品牌创作' : '产品精修')
+    const datedDefault = `${defaultTitle}-${year}${month}${day}`
+    const baseName = outputs.length > 1
+      ? `${normalizeAssetName(namePrefix || requestedName || datedDefault)}-${String(index + 1).padStart(2, '0')}`
+      : normalizeAssetName(requestedName || `${datedDefault}-01`)
     const asset = {
       id, tenantId: 'default', storeId: 'day-coffee-night-bar', assetSpace: allowedWorkspace,
-      folderType: 'ai-temp', category: 'generated', name: `${title || (allowedWorkspace === 'brand' ? '品牌创作' : '产品精修')}-${index + 1}.${converted.extension}`,
+      folderType: 'ai-temp', category: 'generated', name: baseName, displayName: baseName,
+      originalName: `${defaultTitle}-${index + 1}.${converted.extension}`,
+      downloadName: downloadFileName(baseName, converted.extension),
       storageKey, thumbnailKey: storageKey, mimeType: converted.mimeType, size: converted.bytes.byteLength,
       checksum: `${converted.bytes.byteLength}:${id.slice(0, 8)}`, isTemporary: true,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), sourceAssetIds,
-      taskId, model, prompt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), cacheVersion: id,
+      taskId, model, prompt, promptSummary: String(promptSummary || prompt || '').slice(0, 800),
+      sourceAssetIds, referenceAssetIds: Array.isArray(referenceAssetIds) ? referenceAssetIds.slice(0, 50) : [],
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), cacheVersion: id,
       platformIndex: { assetId: id, syncStatus: 'synced' },
     }
     await bucket.put(storageKey, converted.bytes, { httpMetadata: { contentType: converted.mimeType }, customMetadata: { assetId: id, taskId, workspace: allowedWorkspace } })

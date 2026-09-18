@@ -28,4 +28,13 @@ describe('persistent asset archive', () => {
     await putJson(bucket, taskMetadataKey('batch-four'), { id: 'batch-four', status: 'completed' })
     expect(await getJson(bucket, taskMetadataKey('batch-four'))).toMatchObject({ status: 'completed' })
   })
+
+  it('uses the requested name for metadata and safe download files', async () => {
+    const bucket = new MemoryBucket()
+    const result = await archiveImageOutputs({ env: { SANHUA_ASSETS: bucket } }, {
+      taskId: 'named-one', workspace: 'retouch', model: 'gpt-image-2', prompt: 'test', requestedName: '山茶:精修/主图',
+      outputs: [{ b64_json: 'iVBORw0KGgo=' }],
+    })
+    expect(result.assets[0]).toMatchObject({ name: '山茶 精修 主图', displayName: '山茶 精修 主图', downloadName: '山茶 精修 主图.png' })
+  })
 })

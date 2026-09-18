@@ -1318,15 +1318,25 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .image-viewer-toolbar strong { margin-right: auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .image-viewer-toolbar span { min-width: 48px; text-align: center; font-size: 12px; }
 .image-viewer-toolbar button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(255,244,228,.22); border-radius: 9px; color: inherit; background: rgba(255,255,255,.08); cursor: pointer; }
+.image-viewer-toolbar a { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(255,244,228,.22); border-radius: 9px; color: inherit; background: rgba(255,255,255,.08); }
 .image-viewer-stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; cursor: grab; touch-action: none; }
 .image-viewer-stage:active { cursor: grabbing; }
 .image-viewer-stage img { max-width: 92%; max-height: 88%; object-fit: contain; transform-origin: center; transition: transform .08s linear; user-select: none; }
 .product-library-panel { min-height: 240px; margin-top: 14px; padding: 20px; color: inherit; }
 .product-library-panel h2 { margin: 0 0 16px; font-size: 18px; font-weight: 500; }
-.product-library-panel article { width: min(420px, 100%); overflow: hidden; border-radius: 16px; background: rgba(255,255,255,.07); }
+.product-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.product-library-panel article { min-width: 0; overflow: hidden; border-radius: 16px; background: rgba(255,255,255,.07); }
 .product-library-panel article img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; background: rgba(0,0,0,.12); }
 .product-library-panel article div { padding: 12px; display: grid; gap: 4px; }
 .product-library-panel article small { color: var(--workbench-muted); }
+.brand-card-actions, .asset-card-actions, .brand-result-preview { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.brand-card-actions .secondary-button, .asset-card-actions .secondary-button, .brand-result-preview .secondary-button { display: inline-flex; align-items: center; gap: 6px; }
+.template-panel { display: grid; gap: 12px; }
+.template-reference-card { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px; border: 1px solid var(--glass-line); border-radius: 12px; background: rgba(255,255,255,.07); }
+.template-reference-card img { width: 58px; height: 58px; border-radius: 9px; object-fit: cover; }
+.template-reference-card div { min-width: 0; display: grid; gap: 3px; }
+.template-reference-card strong, .template-reference-card b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.template-reference-card small { color: var(--workbench-muted); font-size: 10px; }
 .library-case-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
 .library-case-list article { overflow: hidden; border: 1px solid var(--glass-line); border-radius: 16px; background: rgba(255,255,255,.07); }
 .library-case-list .case-visual { min-height: 120px; aspect-ratio: 16 / 9; }
@@ -1390,6 +1400,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .asset-card small { color: var(--workbench-muted); font-size: 14px; }
 .asset-card .secondary-button { flex-shrink: 0; padding: 8px 10px; }
 
+@media (max-width: 800px) { .product-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* 夜酒模式可读性：提高文字亮度，不抬高背景 */
 .app-shell.time-night { --workbench-cream: #fff8ec; --workbench-muted: #d1c2b4; }
 .app-shell.time-night .sidebar .brand-lockup,
@@ -1439,4 +1451,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   .asset-grid { grid-template-columns: 1fr; }
   .asset-picker-modal { padding: 10px; }
   .asset-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .product-library-grid { grid-template-columns: 1fr; }
+  .template-reference-card { grid-template-columns: 52px minmax(0, 1fr); }
+  .template-reference-card > button { grid-column: 1 / -1; }
 }

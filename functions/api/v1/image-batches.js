@@ -16,10 +16,12 @@ export async function onRequestPost(context) {
   if (!prompt) return json(400, { error: 'PROMPT_REQUIRED' })
   if (!Number.isInteger(count) || count < 1 || count > 4) return json(400, { error: 'BATCH_COUNT_MUST_BE_BETWEEN_1_AND_4' })
   const model = String(input.model || 'gpt-image-2').slice(0, 160)
+  const requestedName = String(input.requestedName || input.requested_name || '').trim().slice(0, 160)
+  const namePrefix = String(input.namePrefix || input.name_prefix || '').trim().slice(0, 160)
   const task = await saveTask(context, {
     id: crypto.randomUUID(), workspace, type: 'image-batch', status: 'running', progress: 25,
     stage: `模型处理中（0/${count}）`, heartbeatAt: new Date().toISOString(), requirements: prompt,
-    finalPrompt: prompt, model, createdAt: new Date().toISOString(), requestedCount: count,
+    finalPrompt: prompt, model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
   })
   let result
   if (images.length) {
@@ -52,7 +54,7 @@ export async function onRequestPost(context) {
     return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id })
   }
   await updateTask(context, task.id, { progress: 90, stage: `归档图片（${outputs.length}/${count}）`, heartbeatAt: new Date().toISOString() })
-  const archived = await archiveImageOutputs(context, { taskId: task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, 50) : [], title: input.title })
+  const archived = await archiveImageOutputs(context, { taskId: task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, 50) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, 50) : [] })
   if (archived.error) {
     await updateTask(context, task.id, { status: 'failed', progress: 90, stage: '资产归档失败', error: 'ASSET_ARCHIVE_FAILED' })
     return archived.error
