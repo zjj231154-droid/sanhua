@@ -39,11 +39,13 @@ const requestBody = request => new Promise((resolve, reject) => {
 })
 
 async function runApi(request, response, pathname) {
-  const route = Object.keys(apiRoutes).find(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  // Asset actions share the collection prefix but are handled by the dynamic Pages Function.
+  const assetAction = pathname.startsWith('/api/v1/assets/')
+  const route = assetAction ? '/api/v1/assets' : Object.keys(apiRoutes).find(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))
   if (!route) return false
   try {
     const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await requestBody(request)
-    const handler = await apiRoutes[route]()
+    const handler = assetAction ? await import('../functions/api/v1/assets/[[path]].js') : await apiRoutes[route]()
     const endpoint = pathname.slice(route.length).replace(/^\//, '')
     const method = `onRequest${request.method.slice(0, 1)}${request.method.slice(1).toLowerCase()}`
     const fn = handler[method]
