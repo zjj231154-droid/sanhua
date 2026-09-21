@@ -13,13 +13,14 @@ export default function ScriptEditor({ initial, onClose, onSave, onAutoSave, onS
   const dialog = useRef(null)
   const latest = useRef(null)
   const saved = useRef('')
+  const confirmation = Boolean(initial?.pendingConfirmation)
   const [title, setTitle] = useState(initial?.title || topics[0][0])
   const [kind, setKind] = useState(initial?.kind || topics[0][1])
   const [summary, setSummary] = useState(initial?.summary || topics[0][2])
   const [outline, setOutline] = useState(initial?.outline || '开场钩子：\n主要人物：\n茶馆场景：\n核心冲突：\n结尾反转：')
   const [versions, setVersions] = useState([])
   const [changeNote, setChangeNote] = useState('')
-  const [status, setStatus] = useState(initial?.id ? '已加载，自动保存已开启' : '新剧本将在首次保存后进入云端剧本库')
+  const [status, setStatus] = useState(initial?.id ? '已加载，自动保存已开启' : confirmation ? '请审阅生成计划，确认后才会写入云端剧本库' : '新剧本将在首次保存后进入云端剧本库')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -94,15 +95,15 @@ export default function ScriptEditor({ initial, onClose, onSave, onAutoSave, onS
 
   return <dialog ref={dialog} className="script-editor" onCancel={onClose}>
     <form onSubmit={submit}>
-      <header><div><small>茶馆故事 · 云端剧本库</small><h2>{initial?.id ? '编辑短剧项目' : '新建短剧项目'}</h2></div><button type="button" className="secondary-button" onClick={onClose}>关闭</button></header>
+      <header><div><small>{confirmation ? '编导助手 · 待确认计划' : '茶馆故事 · 云端剧本库'}</small><h2>{confirmation ? '确认短剧计划' : initial?.id ? '编辑短剧项目' : '新建短剧项目'}</h2></div><button type="button" className="secondary-button" onClick={onClose}>{confirmation ? '返回修改' : '关闭'}</button></header>
       <div className="topic-options">{topics.map(topic => <button key={topic[0]} type="button" className="secondary-button" onClick={() => { setTitle(topic[0]); setKind(topic[1]); setSummary(topic[2]) }}>{topic[0]}</button>)}</div>
       <label>选题名称<input required maxLength={80} value={title} onChange={e => setTitle(e.target.value)} /></label>
       <label>类型<input required value={kind} onChange={e => setKind(e.target.value)} /></label>
       <label>故事梗概<textarea value={summary} onChange={e => setSummary(e.target.value)} /></label>
-      <label>分集创意与拍摄笔记<textarea rows={7} value={outline} onChange={e => setOutline(e.target.value)} /></label>
+      <label>{confirmation ? '生成的故事规划（可直接修改）' : '分集创意与拍摄笔记'}<textarea rows={confirmation ? 14 : 7} value={outline} onChange={e => setOutline(e.target.value)} /></label>
       {initial?.id && <section className="script-version-panel"><div><strong>版本记录</strong><small>{status}</small></div><div className="script-version-actions"><input value={changeNote} maxLength={300} onChange={event => setChangeNote(event.target.value)} placeholder="本次版本说明（可选）" aria-label="版本说明" /><button type="button" className="secondary-button" disabled={saving} onClick={saveVersion}>{saving ? '正在保存…' : '保存版本'}</button></div>{versions.length ? <ul>{versions.map(version => <li key={version.id}><span><strong>v{version.versionNo}</strong><small>{version.changeNote} · {new Date(version.savedAt).toLocaleString('zh-CN')}</small></span><button type="button" className="quiet-button" disabled={saving} onClick={() => restore(version)}>恢复此版本</button></li>)}</ul> : <p>尚无可恢复版本。</p>}</section>}
       {error && <p className="retouch-error" role="alert">{error}</p>}
-      <footer><small>{initial?.id ? status : '保存后将持久化到云端，可在刷新或重新部署后恢复。'}</small><button className="primary-button" disabled={!title.trim() || saving}>{saving ? '正在保存…' : '保存并关闭'}</button></footer>
+      <footer><small>{initial?.id ? status : confirmation ? status : '保存后将持久化到云端，可在刷新或重新部署后恢复。'}</small><button className="primary-button" disabled={!title.trim() || saving}>{saving ? '正在保存…' : confirmation ? '确认并保存剧本' : '保存并关闭'}</button></footer>
     </form>
   </dialog>
 }

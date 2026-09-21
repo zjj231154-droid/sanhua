@@ -89,3 +89,17 @@ it('修图模板面板只提供上传与云资产参考素材入口', () => {
   expect(within(panel).getByRole('button', { name: '选择云资产参考素材' })).toBeInTheDocument()
   expect(within(panel).queryByText('咖啡日光')).not.toBeInTheDocument()
 })
+
+it('精修助手将参数显示为可折叠卡片，并保留 AI 偏离状态', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
+  render(<LiveRetouch />)
+
+  const scene = screen.getByRole('button', { name: /^场景/ })
+  expect(scene).toHaveAttribute('aria-expanded', 'false')
+  fireEvent.click(scene)
+  expect(scene).toHaveAttribute('aria-expanded', 'true')
+  fireEvent.change(screen.getByDisplayValue('保留原图咖啡店场景'), { target: { value: '改为窗边茶席场景' } })
+  expect(screen.getAllByText('已偏离 AI 建议').length).toBeGreaterThan(0)
+  fireEvent.click(screen.getAllByRole('button', { name: '恢复 AI 建议' }).find(button => !button.disabled))
+  expect(screen.queryByText('已偏离 AI 建议')).not.toBeInTheDocument()
+})

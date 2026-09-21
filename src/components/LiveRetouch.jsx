@@ -31,9 +31,9 @@ function readAnalysis(value) {
   return Object.fromEntries(Object.keys(DEFAULT_ANALYSIS).map(key => [key, String(parsed[key] || DEFAULT_ANALYSIS[key]).slice(0, 600)]))
 }
 
-function RetouchField({ name, label, value, recommendation, locked, onChange, onToggleLock, onReset, disabled }) {
-  return <label className="retouch-analysis-field">
-    <span><b>{label}</b><button type="button" className={locked ? 'field-lock is-locked' : 'field-lock'} aria-pressed={locked} onClick={onToggleLock}>{locked ? '已锁定' : '锁定'}</button></span>
+function RetouchField({ name, label, value, recommendation, locked, dirty, onChange, onToggleLock, onReset, disabled }) {
+  return <label className={dirty ? 'retouch-analysis-field is-dirty' : 'retouch-analysis-field'}>
+    <span><b>{label}</b><em>{dirty ? '已偏离 AI 建议' : 'AI 建议'}</em><button type="button" className={locked ? 'field-lock is-locked' : 'field-lock'} aria-pressed={locked} onClick={onToggleLock}>{locked ? '已锁定' : '锁定'}</button></span>
     {name === 'requirements' || name === 'preserve' ? <textarea value={value} disabled={disabled} onChange={event => onChange(event.target.value)} /> : <input value={value} disabled={disabled} onChange={event => onChange(event.target.value)} />}
     <button type="button" className="field-reset" disabled={disabled || value === recommendation} onClick={onReset}>恢复 AI 建议</button>
   </label>
@@ -55,7 +55,7 @@ async function cloudRequest(data) {
   if (!res.ok) throw new Error(typeof value.error === 'string' ? value.error : JSON.stringify(value.error || value))
   return value
 }
-export default function LiveRetouch() {
+export default function LiveRetouch({ initialTab = 'one-click', focusAssistant = false }) {
   const cloudMode = isCloudDeployment()
   const [image, setImage] = useState('')
   const [assistantOpen, setAssistantOpen] = useState(true)
@@ -71,11 +71,18 @@ export default function LiveRetouch() {
   const [assetNextCursor, setAssetNextCursor] = useState(null)
   const [loadingMoreAssets, setLoadingMoreAssets] = useState(false)
   const [retouchTab, setRetouchTab] = useState('one-click')
+  const [openSections, setOpenSections] = useState(() => {
+    try { return { size: true, product: true, ...JSON.parse(localStorage.getItem('sanhua-retouch-open-sections') || '{}') } } catch { return { size: true, product: true } }
+  })
   const [templateImage, setTemplateImage] = useState('')
   const [templateName, setTemplateName] = useState('')
   const [templateAssetId, setTemplateAssetId] = useState('')
   const [resultName, setResultName] = useState('')
   const [batchNamePrefix, setBatchNamePrefix] = useState('')
+  useEffect(() => {
+    setRetouchTab(initialTab === 'gallery' ? 'gallery' : 'one-click')
+    if (focusAssistant) setAssistantOpen(true)
+  }, [initialTab, focusAssistant])
   async function uploadTemplate(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -187,6 +194,11 @@ export default function LiveRetouch() {
   }
   const fields = { size, scene, decor, product, preserve, requirements }
   const setField = (name, value) => ({ size: setSize, scene: setScene, decor: setDecor, product: setProduct, preserve: setPreserve, requirements: setRequirements }[name])(value)
+  const toggleSection = name => setOpenSections(current => {
+    const next = { ...current, [name]: !current[name] }
+    localStorage.setItem('sanhua-retouch-open-sections', JSON.stringify(next))
+    return next
+  })
   function applyAnalysis(next, requestId) {
     if (requestId !== analysisRequest.current) return
     setRecommendations(next)
@@ -338,8 +350,15 @@ export default function LiveRetouch() {
         <div className="assistant-body live-controls" hidden={!assistantOpen}>
         <div className="assistant-message"><p>{analyzing ? '正在根据当前素材识别商品、场景与可保留元素…' : '当前素材已生成可编辑的精修字段。锁定的字段在重新识别时不会被覆盖。'}</p>{image && cloudMode && <button className="text-button" disabled={analyzing || busy} onClick={() => void analyzeImage(image)}>重新识别当前素材</button>}</div>
         {templateImage && <div className="template-reference-card" aria-label="模板参考"><img src={templateImage} alt={`模板参考：${templateName}`} /><div><strong>模板参考</strong><b>{templateName}</b><small>{templateAssetId ? '云资产参考素材' : '本地上传参考素材'}</small></div><button className="secondary-button" disabled={busy} onClick={() => { setTemplateImage(''); setTemplateName(''); setTemplateAssetId('') }}>移除</button></div>}
-        <fieldset disabled={busy || job?.status === 'awaiting_confirmation'}>
-          {ANALYSIS_FIELDS.map(([name, label]) => <RetouchField key={name} name={name} label={label} value={fields[name]} recommendation={recommendations[name] || DEFAULT_ANALYSIS[name]} locked={Boolean(lockedFields[name])} disabled={busy || job?.status === 'awaiting_confirmation'} onChange={value => { setEditedFields(current => ({ ...current, [name]: true })); setField(name, value) }} onToggleLock={() => setLockedFields(current => ({ ...current, [name]: !current[name] }))} onReset={() => { setEditedFields(current => ({ ...current, [name]: false })); setField(name, recommendations[name] || DEFAULT_ANALYSIS[name]) }} />)}
+        <fieldset className="retouch-accordion" disabled={busy || job?.status === 'awaiting_confirmation'}>
+          {ANALYSIS_FIELDS.map(([name, label]) => {
+            const recommendation = recommendations[name] || DEFAULT_ANALYSIS[name]
+            const dirty = Boolean(editedFields[name] && fields[name] !== recommendation)
+            return <section key={name} className={dirty ? 'retouch-accordion-item is-dirty' : 'retouch-accordion-item'}>
+              <button type="button" className="retouch-accordion-trigger" aria-expanded={Boolean(openSections[name])} onClick={() => toggleSection(name)}><span><b>{label}</b><small>{dirty ? '已偏离 AI 建议' : fields[name] || '待补充'}</small></span><i>{openSections[name] ? '−' : '+'}</i></button>
+              {openSections[name] && <RetouchField name={name} label={label} value={fields[name]} recommendation={recommendation} locked={Boolean(lockedFields[name])} dirty={dirty} disabled={busy || job?.status === 'awaiting_confirmation'} onChange={value => { setEditedFields(current => ({ ...current, [name]: true })); setField(name, value) }} onToggleLock={() => setLockedFields(current => ({ ...current, [name]: !current[name] }))} onReset={() => { setEditedFields(current => ({ ...current, [name]: false })); setField(name, recommendation) }} />}
+            </section>
+          })}
         </fieldset>
         {job?.plan && <div className="live-plan"><h3>生图计划</h3><p>{job.plan}</p></div>}
         {job?.note && <details><summary>查看精修说明</summary><p>{job.note}</p></details>}

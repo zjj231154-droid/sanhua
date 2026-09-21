@@ -44,11 +44,13 @@ import { CLOUD_ASSETS } from './data/cloudAssets'
 
 const NAV_ITEMS = [
   { id: 'home', label: '工作台', icon: Home },
-  { id: 'retouch', label: '产品精修', icon: WandSparkles },
-  { id: 'brand', label: '品牌创作', icon: Palette },
-  { id: 'script', label: '短剧脚本', icon: BookOpenText },
-  { id: 'assets', label: '资产库', icon: FolderOpen },
+  { id: 'retouch', label: '产品精修', icon: WandSparkles, children: [['one-click', '一键修图'], ['gallery', '图库'], ['assistant', '精修助手'], ['tasks', '任务记录']] },
+  { id: 'brand', label: '品牌创作', icon: Palette, children: [['create', '素材创作'], ['library', '产品库'], ['prompts', '提示词记录']] },
+  { id: 'script', label: '短剧脚本', icon: BookOpenText, children: [['create', '脚本创作'], ['library', '剧本库'], ['video', '视频生成'], ['versions', '版本记录']] },
+  { id: 'assets', label: '资产库', icon: FolderOpen, children: [['images', '图片'], ['video', '视频'], ['audio', '音频'], ['text', '文本'], ['generated', 'AI 成果'], ['trash', '回收站']] },
 ]
+
+const DEFAULT_SUB_ROUTE = { home: '', retouch: 'one-click', brand: 'create', script: 'create', assets: 'images', settings: '' }
 
 const DEMO_PHOTOS = [
   { id: 'americano', name: '冰美式', meta: '3024 × 4032 · 18.2 MB', tone: 'amber', status: '待处理' },
@@ -169,7 +171,7 @@ function Login({ onLogin }) {
   )
 }
 
-function Sidebar({ page, onNavigate }) {
+function Sidebar({ page, subRoute, onNavigate }) {
   return (
     <aside className="sidebar">
       <div className="brand-lockup">
@@ -178,17 +180,14 @@ function Sidebar({ page, onNavigate }) {
       </div>
       <nav className="main-nav" aria-label="主导航">
         <span className="nav-caption">创作空间</span>
-        {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            className={page === id ? 'nav-item is-active' : 'nav-item'}
-            onClick={() => onNavigate(id)}
-          >
-            <Icon size={18} />
-            <span>{label}</span>
-            {id === 'script' && <i className="nav-dot" />}
+        {NAV_ITEMS.map(({ id, label, icon: Icon, children }) => <div className="nav-group" key={id}>
+          <button className={page === id ? 'nav-item is-active' : 'nav-item'} onClick={() => onNavigate(id)} aria-expanded={page === id && Boolean(children)}>
+            <span className="nav-icon"><Icon size={18} strokeWidth={2} /></span><span>{label}</span>{id === 'script' && <i className="nav-dot" />}{children && <ChevronDown className="nav-chevron" size={15} />}
           </button>
-        ))}
+          {page === id && children && <div className="nav-submenu" aria-label={`${label}子菜单`}>
+            {children.map(([route, childLabel]) => <button key={route} className={subRoute === route ? 'nav-subitem is-active' : 'nav-subitem'} onClick={() => onNavigate(id, route)}>{childLabel}</button>)}
+          </div>}
+        </div>)}
       </nav>
       <div className="sidebar-bottom">
         <button className={page === 'settings' ? 'nav-item is-active' : 'nav-item'} onClick={() => onNavigate('settings')}><Settings size={18} /><span>管理设置</span></button>
@@ -213,8 +212,8 @@ export function TaskProgress() {
     if (manual) setRefreshing(true)
     try {
       const response = await fetch('/api/v1/tasks')
-      const value = await response.json()
-      if (!response.ok) throw new Error(value.error || '任务状态暂不可用')
+      const value = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : '任务状态暂不可用，请稍后重试')
       const nextTasks = Array.isArray(value.tasks) ? value.tasks.slice(0, 12) : []
       if (hasLoadedStatuses.current) {
         const completed = nextTasks.find(task => previousStatuses.current.get(task.id) !== 'completed' && task.status === 'completed')
@@ -242,7 +241,7 @@ export function TaskProgress() {
   const togglePopover = () => {
     if (open) { setOpen(false); return }
     const rect = triggerRef.current?.getBoundingClientRect()
-    if (rect) setPopoverPosition({ top: `${rect.bottom + 10}px`, right: `${Math.max(12, window.innerWidth - rect.right)}px` })
+    if (rect) setPopoverPosition({ bottom: `${Math.max(12, window.innerHeight - rect.top + 10)}px`, right: `${Math.max(12, window.innerWidth - rect.right)}px` })
     setOpen(true)
   }
   const dismissTask = async task => {
@@ -259,7 +258,7 @@ export function TaskProgress() {
     } finally { setRemovingId('') }
   }
   const progressPopover = <section className="task-progress-popover task-progress-popover--portal" style={popoverPosition} aria-label="后台任务进度"><header><div><strong>后台任务</strong><small>{active.length ? `${active.length} 个任务正在运行` : '当前没有运行中的任务'}</small></div><div><button className="icon-button" disabled={refreshing} onClick={() => load(true)} aria-label="刷新任务进度"><RefreshCw className={refreshing ? 'spin-icon' : ''} size={16} /></button><button className="icon-button" onClick={() => setOpen(false)} aria-label="关闭任务进度"><X size={17} /></button></div></header>{loading && <p className="task-progress-empty">正在读取任务…</p>}{error && <p className="task-progress-error">{error}</p>}{!loading && !error && !tasks.length && <p className="task-progress-empty">暂无后台任务。提交图片或脚本计划后，进度会在这里持续更新。</p>}<div className="task-progress-list">{tasks.map(task => { const finished = ['completed', 'failed', 'cancelled'].includes(task.status); return <article key={task.id} className={`task-progress-item task-status--${task.status}`}><div><strong>{task.workspace === 'retouch' ? '产品精修' : task.workspace === 'brand' ? '品牌创作' : task.workspace === 'script' ? '短剧脚本' : '视频生成'}</strong><span>{status(task)} · {task.stage || '等待服务响应'}</span></div>{finished && <button className="task-dismiss-button" disabled={removingId === task.id} onClick={() => dismissTask(task)} aria-label={`删除任务 ${String(task.id).slice(0, 8)}`}><X size={15} /></button>}<b>{Number(task.progress || 0)}%</b><i><em style={{ width: `${Math.max(0, Math.min(100, Number(task.progress || 0)))}%` }} /></i><small>任务 {String(task.id).slice(0, 8)} · 更新于 {task.updatedAt ? new Date(task.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '刚刚'}</small></article> })}</div></section>
-  return <div className="task-progress-menu">
+  return <div className="task-progress-menu task-progress-menu--widget">
     <button ref={triggerRef} className={open ? 'task-progress-button is-open' : 'task-progress-button'} aria-label="查看后台任务进度" aria-expanded={open} onClick={togglePopover}><ListChecks size={18} /><span>任务进度</span><b>{active.length}</b></button>
     {open && createPortal(progressPopover, document.body)}
     {completedToast && <div className="task-complete-toast" role="status"><CheckCircle2 size={19} /><span><strong>{completedToast.workspace === 'retouch' ? '产品精修' : completedToast.workspace === 'brand' ? '品牌创作' : completedToast.workspace === 'script' ? '短剧脚本' : '视频生成'}任务已完成</strong><small>结果已保存到对应资产库</small></span><button onClick={() => setCompletedToast(null)} aria-label="关闭完成提醒"><X size={16} /></button></div>}
@@ -276,7 +275,6 @@ function Topbar({ timeMode, onToggleTimeMode, onLogout }) {
         <ChevronDown size={16} />
       </button>
       <div className="top-actions">
-        <TaskProgress />
         <span className="demo-tag">演示数据</span>
         <button className="icon-button" aria-label="帮助"><CircleHelp size={19} /></button>
         <button className="icon-button notification-button" aria-label="消息"><MessageSquareText size={19} /><i /></button>
@@ -579,6 +577,23 @@ function materialHintsFor(product) {
   return ['亚克力：通透轻盈，适合图形素材', '陶瓷：雅致、有器物感', '木质：温润自然，适合国风设计', '金属珐琅：精致耐用，有收藏感']
 }
 
+export function DisabledReasonTooltip({ reason, children }) {
+  return <span className="disabled-reason" data-reason={reason || undefined} tabIndex={reason ? 0 : undefined}>{children}{reason && <span role="tooltip">{reason}</span>}</span>
+}
+
+export function WorkflowStepper({ steps, activeStep, onStep }) {
+  return <ol className="workflow-stepper" aria-label="文创设计步骤">
+    {steps.map((label, index) => {
+      const stepNo = index + 1
+      const complete = stepNo < activeStep
+      const current = stepNo === activeStep
+      return <li key={label} className={current ? 'is-active' : complete ? 'is-done' : 'is-pending'}>
+        <button type="button" disabled={!complete && !current} onClick={() => complete && onStep(stepNo)} aria-current={current ? 'step' : undefined}><b>{complete ? '✓' : stepNo}</b><span>{label}</span></button>
+      </li>
+    })}
+  </ol>
+}
+
 export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy, plan, image, error, onPlan, onGenerate, onViewImage }) {
   const [step, setStep] = useState(1)
   const [product, setProduct] = useState('')
@@ -589,6 +604,10 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
   const [imageName, setImageName] = useState('')
   const [originalBrandPlan, setOriginalBrandPlan] = useState('')
   const [editableBrandPrompt, setEditableBrandPrompt] = useState('')
+  const [customProducts, setCustomProducts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('sanhua-custom-products') || '[]').slice(0, 10) } catch { return [] }
+  })
+  const [customProductInput, setCustomProductInput] = useState('')
   const asset = upload || selectedAsset
   const materials = MERCH_MATERIALS[product] || materialHintsFor(product)
   const clearPrompt = () => { setOriginalBrandPlan(''); setEditableBrandPrompt(''); setImageName('') }
@@ -603,6 +622,14 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
     reader.onload = () => { const item = { id: `upload-${Date.now()}`, name: file.name, url: reader.result, category: 'brand', local: true }; setUpload(item); onSelectAsset(item); clearAfterAsset() }
     reader.readAsDataURL(file)
   }
+  const addCustomProduct = () => {
+    const value = customProductInput.trim()
+    if (!value || value.length > 40) return
+    const next = [value, ...customProducts.filter(item => item !== value)].slice(0, 10)
+    setCustomProducts(next)
+    localStorage.setItem('sanhua-custom-products', JSON.stringify(next))
+    setProduct(value); clearAfterProduct(); setCustomProductInput('')
+  }
   const createPlan = async () => {
     const nextPlan = await onPlan(`中式文创周边设计需求\n产品类型：${product}\n可量产材质：${material}\n真实尺寸：${size}\n创作补充：${brief || '按品牌素材的核心视觉进行适配'}\n引用素材：${asset?.name || '未选择'}\n参考素材 ID：${asset?.id || '未选择'}\n必须还原参考图核心视觉：主体造型、主要构图、关键色彩、品牌/IP/书法/图形特征、装饰元素、氛围和材质观感。`)
     if (nextPlan) { setOriginalBrandPlan(nextPlan); setEditableBrandPrompt(nextPlan); setStep(5) }
@@ -612,16 +639,21 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
   }, [plan, originalBrandPlan])
   return <div className="brand-agent-card glass-card brand-merch-workflow">
     <div><span className="kicker">中式文创周边设计 · 五步工作流</span><p>每一步完成后才能进入下一步。提示词规划由 UseGoodAI 推理模型完成，确认后才调用图片模型。</p></div>
-    <ol className="merch-steps" aria-label="文创设计步骤">{['产品', '材质', '尺寸', '素材', '提示词'].map((label, index) => <li className={step === index + 1 ? 'is-active' : step > index + 1 ? 'is-done' : ''} key={label}>{index + 1}. {label}</li>)}</ol>
-    {step === 1 && <section><strong>想做哪一种中式文创周边？</strong><div className="merch-options">{Object.keys(MERCH_MATERIALS).map(item => <button key={item} aria-pressed={product === item} className={product === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { if (product === item) { setProduct(''); clearAfterProduct() } else { setProduct(item); clearAfterProduct() } }}>{product === item && '✓ 已选 · '}{item}</button>)}</div><label className="merch-custom-field">或自行填写产品类型<input value={Object.keys(MERCH_MATERIALS).includes(product) ? '' : product} onChange={event => { setProduct(event.target.value); clearAfterProduct() }} placeholder="例如：香牌、折扇、丝巾、手机壳" aria-label="自定义文创产品类型" /></label>{product && <p className="selection-summary">当前产品：{product}。下一步会据此更新可量产材质建议。</p>}<button className="primary-button" disabled={!product.trim()} onClick={() => setStep(2)}>下一步：选择材质</button></section>}
+    <WorkflowStepper steps={['产品', '材质', '尺寸', '素材', '提示词']} activeStep={step} onStep={setStep} />
+    <div className={step > 1 ? 'brand-workspace-canvas is-active' : 'brand-workspace-canvas'}>
+      {step > 1 && <aside className="brand-canvas-preview" aria-label="品牌创作实时预览"><span className="kicker">实时预览</span><strong>{product || '选择产品'}</strong><small>{material || '等待选择材质'} · {size || '待填写尺寸'}</small>{asset ? <CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /> : <span className="canvas-placeholder">选择素材后将在此展示参考构图</span>}<p>{brief || '补充设计需求后，这里会同步显示创作摘要。'}</p></aside>}
+      <div className="brand-workspace-form">
+    {step === 1 && <section><strong>想做哪一种中式文创周边？</strong><div className="merch-options">{[...Object.keys(MERCH_MATERIALS), ...customProducts.filter(item => !Object.keys(MERCH_MATERIALS).includes(item))].map(item => <button key={item} aria-pressed={product === item} className={product === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { if (product === item) { setProduct(''); clearAfterProduct() } else { setProduct(item); clearAfterProduct() } }}>{product === item && '✓ 已选 · '}{item}</button>)}</div><label className="merch-custom-field">添加自定义产品标签（回车保存）<input value={customProductInput} onChange={event => setCustomProductInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomProduct() } }} placeholder="例如：香牌、折扇、丝巾、手机壳" aria-label="自定义文创产品类型" /></label>{product && <p className="selection-summary">当前产品：{product}。下一步会据此更新可量产材质建议。</p>}<DisabledReasonTooltip reason={!product.trim() ? '请先选择或填写产品类型' : ''}><button className="primary-button" disabled={!product.trim()} onClick={() => setStep(2)}>下一步：选择材质</button></DisabledReasonTooltip></section>}
     {step === 2 && <section><strong>{product}适合以下可量产材质</strong><div className="merch-options merch-options--stack">{materials.map(item => <button key={item} aria-pressed={material === item} className={material === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { if (material === item) { setMaterial(''); clearAfterMaterial() } else { setMaterial(item); clearAfterMaterial() } }}>{material === item && '✓ 已选 · '}{item}</button>)}</div><label className="merch-custom-field">或自行填写材质与工艺<input value={materials.includes(material) ? '' : material} onChange={event => { setMaterial(event.target.value); clearAfterMaterial() }} placeholder="例如：竹骨 + 绢布，UV 彩印" aria-label="自定义文创材质" /></label>{material && <p className="selection-summary">当前材质：{material}。最终提示词会据此写入真实质感和生产工艺。</p>}<div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(1)}>上一步</button><button className="primary-button" disabled={!material.trim()} onClick={() => setStep(3)}>下一步：确认尺寸</button></div></section>}
     {step === 3 && <section><strong>填写真实产品尺寸</strong><input value={size} onChange={event => { setSize(event.target.value); clearPrompt() }} placeholder="例如 90 × 90 mm" aria-label="文创产品尺寸" />{size && <p className="selection-summary">当前尺寸：{size}。最终效果图会标注对应的 REAL SIZE。</p>}<p>尺寸会写入效果图提案的 REAL SIZE 标注。</p><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(2)}>上一步</button><button className="primary-button" disabled={!size.trim()} onClick={() => setStep(4)}>下一步：选择素材</button></div></section>}
     {step === 4 && <section><strong>选择或上传视觉素材</strong><div className="asset-picker"><div>{assets.map(item => <button key={item.id} aria-pressed={asset?.id === item.id} className={asset?.id === item.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => { if (asset?.id === item.id) { setUpload(null); onSelectAsset(null); clearAfterAsset() } else { setUpload(null); onSelectAsset(item); clearAfterAsset() } }}><CachedImage asset={item} src={item.previewUrl || item.thumbnailUrl || item.url} alt={item.name} /><small>{asset?.id === item.id ? `✓ 已选 · ${item.name}` : item.name}</small></button>)}</div></div><label className="secondary-button merch-upload">上传图片<input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectUpload} /></label>{asset && <p className="asset-selected">已选择参考素材：{asset.name}。将强制写入参考图还原提示词。</p>}<textarea value={brief} onChange={event => { setBrief(event.target.value); clearPrompt() }} aria-label="文创补充要求" placeholder="可补充文案、风格、必须保留或禁止出现的元素" /><div className="brand-agent-actions"><button className="secondary-button" onClick={() => setStep(3)}>上一步</button><button className="primary-button" disabled={!asset || busy} onClick={createPlan}>{busy ? '正在生成提示词…' : '生成最终提示词'}</button></div></section>}
     {step === 5 && <section><strong>UseGoodAI 推理输出 · 可执行提示词</strong>{editableBrandPrompt ? <div className="brand-plan"><textarea value={editableBrandPrompt} onChange={event => setEditableBrandPrompt(event.target.value)} aria-label="品牌最终提示词" /><small>{editableBrandPrompt === originalBrandPlan ? '原始提示词由 UseGoodAI 生成' : '已修改 · 出图将使用当前内容'}</small></div> : <p role="status">正在由推理模型整理产品、材质、尺寸与素材约束…</p>}<label className="merch-custom-field">生成图片名称<input value={imageName} maxLength="160" onChange={event => setImageName(event.target.value)} placeholder={`例如：${product || '茶猫'}${product ? '-正面方案' : '冰箱贴-正面方案'}`} aria-label="生成图片名称" /></label><p className="selection-summary">产品：{product} · 材质：{material} · 尺寸：{size} · 参考图：{asset?.name || '未选择'}</p><div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => { clearPrompt(); setStep(4) }}>返回修改</button><button className="primary-button" disabled={busy || !editableBrandPrompt.trim()} onClick={() => onGenerate(imageName, editableBrandPrompt, originalBrandPlan)}>{busy ? '正在生成效果图…' : '确认并生成效果图'}</button></div>{image && <div className="brand-result-preview"><button className="brand-generated-preview" onClick={() => onViewImage(image)}><img className="brand-generated-image" src={image.url} alt="中式文创效果图，点击查看大图" /><small>点击放大查看</small></button><a className="secondary-button" href={`/api/v1/assets/${image.id}/download`} download={image.downloadName || image.name}><Download size={15} />下载原图</a></div>}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
+      </div>
+    </div>
   </div>
 }
 
-function CreativeCasesPage({ type }) {
+function CreativeCasesPage({ type, initialRoute = '' }) {
   const [editor, setEditor] = useState(null)
   const [toolbarTab, setToolbarTab] = useState(0)
   const [brandPrompt, setBrandPrompt] = useState('为叁花茶馆设计一张日光茶饮品牌海报，保留叁花 Logo，突出茶汤与留白。')
@@ -642,6 +674,12 @@ function CreativeCasesPage({ type }) {
   const [videoReady, setVideoReady] = useState(false)
   const config = CREATIVE_CASES[type]
   const [activeId, setActiveId] = useState(config.cases[0].id)
+  useEffect(() => {
+    const routeIndex = type === 'brand'
+      ? { create: 0, library: 1, prompts: 0 }[initialRoute]
+      : { create: 0, library: 1, video: 2, versions: 1 }[initialRoute]
+    if (Number.isInteger(routeIndex)) setToolbarTab(routeIndex)
+  }, [initialRoute, type])
   const refreshBrandAssets = async () => {
     if (type !== 'brand') return
     try {
@@ -671,12 +709,24 @@ function CreativeCasesPage({ type }) {
     if (!response.ok) throw new Error(value.error || '剧本保存失败')
     return value
   }
+  const openScriptConfirmation = (plan, taskId) => {
+    setScriptPlan(plan)
+    setEditor({ pendingConfirmation: true, sourceTaskId: taskId, title: '待确认茶馆短剧计划', kind: '短剧故事规划', summary: scriptPrompt, outline: plan })
+  }
   const persistScript = async values => {
     const body = JSON.stringify({ ...values, sourceAssetIds: selectedAsset ? [selectedAsset.id] : [] })
     const value = editor?.id
       ? await requestScript(`/api/v1/scripts/${editor.id}`, { method: 'PATCH', body })
       : await requestScript('/api/v1/scripts', { method: 'POST', body })
     setScripts(current => [value.script, ...current.filter(item => item.id !== value.script.id)])
+    setActiveId(value.script.id)
+    setScriptPlan(values.outline)
+    if (editor?.pendingConfirmation) {
+      setToolbarTab(1)
+      if (editor.sourceTaskId) {
+        fetch('/api/v1/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editor.sourceTaskId, status: 'completed', progress: 100, stage: '剧本计划已确认' }) }).catch(() => {})
+      }
+    }
     return value.script
   }
   const autoSaveScript = async values => {
@@ -736,6 +786,16 @@ function CreativeCasesPage({ type }) {
       setBrandAssets(current => [output, ...current.filter(asset => asset.id !== output.id)])
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
+  const generateScriptPlan = async () => {
+    setBrandBusy(true); setBrandError('')
+    try {
+      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) })
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '编导助手暂不可用')
+      openScriptConfirmation(value.plan || '', value.id || value.task?.id)
+    } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
+  }
+  const appendScriptInspiration = suggestion => setScriptPrompt(current => `${current.trim()}${current.trim() ? '\n' : ''}${suggestion}`)
 
   return (
     <div className="showcase-page">
@@ -747,7 +807,7 @@ function CreativeCasesPage({ type }) {
         <main className="showcase-main">
           <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成'] : ['素材创作', '产品库']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
           {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} />}
-          {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} aria-label="短剧脚本需求" /><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={async () => { setBrandBusy(true); setBrandError(''); try { const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '编导助手暂不可用'); setScriptPlan(value.plan || '') } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) } }}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button>{scriptPlan && <div className="brand-plan"><strong>可拍摄脚本计划</strong><p>{scriptPlan}</p></div>}{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
+          {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card script-workspace"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><div className="script-workspace-grid"><div className="script-input-panel"><label>短剧创作需求<textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && scriptPrompt.trim() && !brandBusy) { event.preventDefault(); generateScriptPlan() } }} aria-label="短剧脚本需求" placeholder="描述人物、冲突、场景与时长" /></label><div className="script-inspiration" aria-label="创作灵感">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button type="button" key={item} className="secondary-button" onClick={() => appendScriptInspiration(item)}>{item}</button>)}</div><DisabledReasonTooltip reason={!scriptPrompt.trim() ? '请先填写短剧创作需求' : ''}><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={generateScriptPlan}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button></DisabledReasonTooltip><small>按 Ctrl + Enter 或 Command + Enter 快速提交</small></div>{scriptPrompt.trim() && <aside className="script-preview-canvas" aria-label="短剧实时预览"><span className="kicker">实时预览画布</span><article><strong>剧情概要</strong><p>{scriptPrompt.slice(0, 88)}{scriptPrompt.length > 88 ? '…' : ''}</p></article><div><article><strong>角色设定</strong><p>掌柜、老顾客与来访者将围绕一个真实冲突展开。</p></article><article><strong>茶馆场景</strong><p>{selectedAsset?.name || '选择场景素材后将绑定真实空间。'}</p></article></div><article><strong>分镜预览</strong><p>开场钩子 → 人物对峙 → 茶饮转机 → 结尾反转</p></article></aside>}</div>{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
           {type === 'script' && toolbarTab === 2 && <section className="video-validation-panel glass-card" aria-label="视频生成前置校验"><div><span className="kicker">视频任务校验</span><h2>从已保存剧本版本发起</h2><p>先检查剧本版本、场景资产、分镜说明与预计时长。当前未接入视频模型时只会创建可追踪的模拟任务。</p></div><label>预计时长（秒）<input type="number" min="1" max="1800" value={videoDuration} onChange={event => { setVideoDuration(event.target.value); setVideoReady(false) }} /></label><p>当前剧本：{scripts.find(item => item.id === activeId)?.title || scripts[0]?.title || '未选择已保存剧本'}。场景素材：{selectedAsset?.name || '未选择'}。</p><div className="brand-agent-actions"><button className="primary-button" disabled={scriptsLoading || !scripts.length} onClick={validateVideo}>{scriptsLoading ? '正在读取剧本…' : '校验视频任务'}</button><button className="secondary-button" disabled={!videoReady} title={!videoReady ? '请先通过前置校验' : undefined} onClick={createVideoTask}>创建模拟任务</button></div>{videoStatus && <p className="video-validation-status" role="status">{videoStatus}</p>}</section>}
           {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2><div className="product-library-grid">{brandAssets.map(asset => <article key={asset.id}><button className="brand-generated-preview" onClick={() => setViewerImage(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><small>点击放大查看</small></button><div><strong>{asset.name}</strong><small>{new Date(asset.createdAt || Date.now()).toLocaleDateString('zh-CN')} · {asset.model || 'gpt-image-2'} · 引用 {asset.referenceAssetIds?.length || asset.sourceAssetIds?.length || 0} 项素材</small><span className="brand-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name}><Download size={15} />下载</a><button className="secondary-button" aria-label={`重命名 ${asset.name}`} onClick={async () => { const nextName = window.prompt('输入新的图片名称', asset.name); if (!nextName?.trim()) return; const response = await fetch(`/api/v1/assets/${asset.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: nextName }) }); const value = await response.json(); if (!response.ok) { setBrandError(value.error || '重命名失败'); return }; setBrandAssets(current => current.map(item => item.id === asset.id ? { ...item, ...value.asset } : item)); }}><Pencil size={15} />重命名</button></span></div></article>)}</div>{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}</section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
@@ -772,8 +832,8 @@ function CreativeCasesPage({ type }) {
   )
 }
 
-function AssetLibraryPage({ onNavigate }) {
-  const [category, setCategory] = useState('coffee')
+function AssetLibraryPage({ onNavigate, initialCategory = 'images' }) {
+  const [category, setCategory] = useState(initialCategory)
   const [storedAssets, setStoredAssets] = useState([])
   const [query, setQuery] = useState('')
   const [viewerAsset, setViewerAsset] = useState(null)
@@ -793,12 +853,13 @@ function AssetLibraryPage({ onNavigate }) {
     }).catch(() => {})
     return () => { active = false }
   }, [])
+  useEffect(() => setCategory(initialCategory), [initialCategory])
   const allAssets = [...storedAssets, ...CLOUD_ASSETS.filter(asset => !storedAssets.some(item => item.id === asset.id)).map(asset => ({ ...asset, isDemo: true }))]
-  const matches = asset => category === 'coffee' ? asset.id.startsWith('coffee-') : category === 'brand' ? asset.category === 'brand' : category === 'script' ? asset.category === 'script' : asset.category.endsWith('-generated')
+  const matches = asset => category === 'images' ? Boolean(asset.url || asset.thumbnailUrl) : category === 'brand' ? asset.category === 'brand' : category === 'script' ? asset.category === 'script' : category === 'generated' ? asset.category.endsWith('-generated') : false
   const visible = allAssets.filter(matches).filter(asset => !query.trim() || `${asset.name} ${asset.group} ${asset.assetSpace || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   return <div className="page-content asset-library-page">
     <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创、短剧场景和 AI 创作成果。</p></div><span className="connection-note">云端资产 · {allAssets.length} 项</span></header>
-    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['coffee', '咖啡店'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材</small></div>
+    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['images', '图片'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材</small></div>
     <section className="asset-grid" aria-label="云端资产列表">
       {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{asset.isDemo ? `${asset.group} · 演示素材` : asset.group}</small></span><span className="asset-card-actions">{!asset.isDemo && <a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>}<button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}
     </section>
@@ -843,24 +904,27 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'assets', 'settings'].includes(previewPage) ? previewPage : null
   const [authenticated, setAuthenticated] = useState(initialAuthenticated || Boolean(validPreviewPage))
   const [page, setPage] = useState(validPreviewPage || initialPage)
+  const [subRoute, setSubRoute] = useState(DEFAULT_SUB_ROUTE[validPreviewPage || initialPage] || '')
   const [timeMode, setTimeMode] = useState(previewParams.get('theme') === 'night' ? 'night' : 'day')
 
   if (!authenticated) return <Login onLogin={() => setAuthenticated(true)} />
 
+  const navigate = (nextPage, nextSubRoute = DEFAULT_SUB_ROUTE[nextPage] || '') => { setPage(nextPage); setSubRoute(nextSubRoute) }
   return (
     <div className={`app-shell time-${timeMode}`}>
-      <Sidebar page={page} onNavigate={setPage} />
+      <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} />
       <div className="app-main">
-        <Topbar timeMode={timeMode} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { setAuthenticated(false); setPage('home') }} />
+        <Topbar timeMode={timeMode} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
-          {page === 'home' && <HomePage onNavigate={setPage} />}
-          {page === 'retouch' && (demoRetouch ? <RetouchPage /> : <LiveRetouch />)}
-          {page === 'brand' && <CreativeCasesPage type="brand" />}
-          {page === 'script' && <CreativeCasesPage type="script" />}
-          {page === 'assets' && <AssetLibraryPage onNavigate={setPage} />}
+          {page === 'home' && <HomePage onNavigate={navigate} />}
+          {page === 'retouch' && (demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant'} />)}
+          {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} />}
+          {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} />}
+          {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} />}
           {page === 'settings' && <ApiSettings />}
         </div>
       </div>
+      <TaskProgress />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App, { BrandMerchWorkflow, TaskProgress } from './App'
 
@@ -81,10 +81,19 @@ describe('AI 创作工作台 Demo', () => {
       if (url === '/api/v1/assets') return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
       return { ok: true, json: async () => ({ tasks: [] }) }
     }))
-    render(<App initialAuthenticated initialPage="assets" />)
+    const { container } = render(<App initialAuthenticated initialPage="assets" />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'AI 成果' }))
+    fireEvent.click(within(container.querySelector('.asset-toolbar')).getByRole('button', { name: 'AI 成果' }))
     await waitFor(() => expect(screen.getByText('已归档精修结果')).toBeInTheDocument())
+  })
+
+  it('选中产品精修时会展开模块内的二级导航', () => {
+    render(<App initialAuthenticated initialPage="retouch" />)
+
+    expect(screen.getByRole('button', { name: '一键修图' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '图库' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '精修助手' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '任务记录' })).toBeInTheDocument()
   })
 
   it('品牌产品选择可再次点击取消并清空后续步骤', () => {
@@ -97,6 +106,16 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('button', { name: '下一步：选择材质' })).toBeDisabled()
   })
 
+  it('自定义产品标签按回车后会立即选中并保存到会话', () => {
+    render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
+    const input = screen.getByRole('textbox', { name: '自定义文创产品类型' })
+    fireEvent.change(input, { target: { value: '香牌' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(screen.getByText('当前产品：香牌。下一步会据此更新可量产材质建议。')).toBeInTheDocument()
+    expect(localStorage.getItem('sanhua-custom-products')).toContain('香牌')
+  })
+
   it('任务进度可删除已完成任务而不显示运行中任务的删除按钮', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url, options) => {
       if (options?.method === 'DELETE') return { ok: true, json: async () => ({ ok: true }) }
@@ -105,6 +124,9 @@ describe('AI 创作工作台 Demo', () => {
     render(<TaskProgress />)
     fireEvent.click(screen.getByRole('button', { name: '查看后台任务进度' }))
     expect(await screen.findByRole('button', { name: '删除任务 done-tas' })).toBeInTheDocument()
+    const popover = document.body.querySelector('.task-progress-popover--portal')
+    expect(popover.style.top).toBe('')
+    expect(popover.style.bottom).not.toBe('')
     expect(screen.queryByRole('button', { name: '删除任务 live-tas' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '删除任务 done-tas' }))
     await waitFor(() => expect(screen.queryByText('品牌创作')).not.toBeInTheDocument())
