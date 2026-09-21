@@ -1538,6 +1538,65 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell .secondary-button { box-shadow: 0 6px 16px rgba(18,12,9,.12); }
 .app-shell .secondary-button:active { transform: translateY(1px); box-shadow: 0 2px 7px rgba(18,12,9,.12); }
 
+/* v1.4 精修助手：可读字号、参数节奏与长文本预览 */
+.assistant-panel {
+  --assistant-font-label: 13px;
+  --assistant-font-body: 13px;
+  --assistant-font-hint: 12px;
+  --assistant-font-meta: 11px;
+  --assistant-line-body: 1.55;
+  --assistant-panel-padding-x: 24px;
+  --assistant-panel-padding-y: 20px;
+  --assistant-field-gap: 20px;
+  --assistant-section-gap: 24px;
+  --assistant-compact-gap: 16px;
+}
+.integrated-retouch .assistant-title { min-height: 68px; padding-inline: var(--assistant-panel-padding-x); }
+.assistant-title > span:nth-child(2) { font-size: var(--assistant-font-body); }
+.assistant-title strong { font-size: 16px; font-weight: 700; }
+.assistant-title small { font-size: var(--assistant-font-hint); line-height: 1.45; }
+.assistant-body { padding: var(--assistant-panel-padding-y) var(--assistant-panel-padding-x); }
+.assistant-message { padding: 16px; }
+.assistant-message p, .integrated-retouch .live-plan { font-size: var(--assistant-font-body); line-height: var(--assistant-line-body); }
+.assistant-footer { padding: 16px var(--assistant-panel-padding-x) 20px; }
+.integrated-retouch .assistant-footer small, .assistant-footer > small { font-size: var(--assistant-font-hint); line-height: 1.5; }
+.assistant-footer > div { font-size: var(--assistant-font-body); }
+.retouch-accordion { gap: var(--assistant-compact-gap); }
+.retouch-accordion-trigger { min-height: 56px; padding: 12px 14px; }
+.retouch-accordion-trigger b { font-size: 14px; font-weight: 650; }
+.retouch-accordion-trigger small { color: #6f6a64; font-size: var(--assistant-font-hint); line-height: 1.45; }
+.retouch-analysis-field { padding: 16px; display: grid; gap: 12px; }
+.retouch-analysis-field > span { display: contents; }
+.retouch-analysis-field header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.retouch-analysis-field header > span { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.retouch-analysis-field b { color: #3d342e; font-size: var(--assistant-font-label); font-weight: 650; }
+.retouch-analysis-field > header em { color: #6f6a64; font-size: var(--assistant-font-hint); font-style: normal; font-weight: 600; }
+.field-lock, .field-reset { font-size: var(--assistant-font-hint); line-height: 1.4; }
+.retouch-analysis-field input, .retouch-analysis-field textarea { min-height: 42px; padding: 11px 12px; color: #4a4a4a; font-size: var(--assistant-font-body); line-height: 1.5; }
+.retouch-analysis-field textarea { min-height: 80px; resize: vertical; }
+.retouch-analysis-field[data-field="requirements"] textarea { min-height: 100px; }
+.retouch-long-preview { display: grid; gap: 10px; }
+.retouch-long-preview ul { margin: 0; padding-left: 19px; display: grid; gap: 7px; color: #4a4a4a; font-size: var(--assistant-font-body); line-height: 1.6; }
+.retouch-long-preview li::marker { color: #9b6046; }
+.retouch-preview-actions { display: flex; align-items: center; gap: 12px; }
+.retouch-preview-actions .text-button, .retouch-edit-state .text-button { min-height: auto; padding: 0; color: #8a4a32; font-size: var(--assistant-font-hint); font-weight: 700; }
+.retouch-edit-state { display: grid; gap: 9px; }
+.empty-field-button { min-height: 46px; border: 1px dashed rgba(111,106,100,.55); border-radius: 9px; color: #6f6a64; background: transparent; font-size: var(--assistant-font-body); text-align: left; cursor: pointer; }
+.protection-chips { margin: 0; gap: 8px; }
+.protection-chips span, .protection-chips button { padding: 6px 9px; border: 1px solid rgba(116,76,53,.24); border-radius: 999px; color: #684b39; background: rgba(128,83,54,.1); font-size: 12px; line-height: 1.4; }
+.protection-chips button { cursor: pointer; }
+.assistant-panel .context-card small { font-size: var(--assistant-font-hint); line-height: 1.5; }
+.assistant-panel .context-label, .assistant-panel .recipe-heading span { font-size: var(--assistant-font-hint); }
+.assistant-panel .recipe-block textarea { min-height: 100px; font-size: var(--assistant-font-body); line-height: 1.5; }
+.app-shell.time-night .retouch-accordion-trigger small, .app-shell.time-night .retouch-analysis-field > header em { color: #c9b7a5; }
+.app-shell.time-night .retouch-analysis-field b { color: #ead9c8; }
+.app-shell.time-night .retouch-analysis-field input, .app-shell.time-night .retouch-analysis-field textarea, .app-shell.time-night .retouch-long-preview ul { color: #ead9c8; }
+.app-shell.time-night .protection-chips span, .app-shell.time-night .protection-chips button { border-color: rgba(220,199,177,.28); color: #e0c8af; background: rgba(238,218,190,.09); }
+@media (max-width: 760px) {
+  .assistant-panel { --assistant-panel-padding-x: 16px; --assistant-panel-padding-y: 16px; }
+  .integrated-retouch .assistant-title { padding-inline: var(--assistant-panel-padding-x); }
+}
+
 @media (max-width: 1000px) {
   .brand-workspace-canvas.is-active, .script-workspace-grid { grid-template-columns: 1fr; }
   .brand-canvas-preview { position: relative; top: auto; min-height: 230px; }

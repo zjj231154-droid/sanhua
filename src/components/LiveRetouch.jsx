@@ -31,12 +31,23 @@ function readAnalysis(value) {
   return Object.fromEntries(Object.keys(DEFAULT_ANALYSIS).map(key => [key, String(parsed[key] || DEFAULT_ANALYSIS[key]).slice(0, 600)]))
 }
 
-function RetouchField({ name, label, value, recommendation, locked, dirty, onChange, onToggleLock, onReset, disabled }) {
-  return <label className={dirty ? 'retouch-analysis-field is-dirty' : 'retouch-analysis-field'}>
-    <span><b>{label}</b><em>{dirty ? '已偏离 AI 建议' : 'AI 建议'}</em><button type="button" className={locked ? 'field-lock is-locked' : 'field-lock'} aria-pressed={locked} onClick={onToggleLock}>{locked ? '已锁定' : '锁定'}</button></span>
-    {name === 'requirements' || name === 'preserve' ? <textarea value={value} disabled={disabled} onChange={event => onChange(event.target.value)} /> : <input value={value} disabled={disabled} onChange={event => onChange(event.target.value)} />}
+const splitRequirements = value => String(value || '').split(/[\n；;。]+/).map(item => item.trim().replace(/^[•·\-\d.\s]+/, '')).filter(Boolean)
+const splitPreserve = value => String(value || '').split(/[，,、；;\n]+/).map(item => item.trim()).filter(Boolean)
+
+function RetouchField({ name, label, value, recommendation, locked, dirty, expanded, editing, onChange, onToggleLock, onReset, onToggleExpanded, onStartEditing, onFinishEditing, disabled }) {
+  const longText = name === 'requirements' || name === 'preserve'
+  const items = name === 'requirements' ? splitRequirements(value) : splitPreserve(value)
+  const limit = name === 'preserve' ? 8 : 2
+  const hasMore = items.length > limit
+  const visibleItems = expanded ? items : items.slice(0, limit)
+  return <section className={dirty ? 'retouch-analysis-field is-dirty' : 'retouch-analysis-field'} data-field={name}>
+    <header><span><b>{label}</b><em>{dirty ? '已偏离 AI 建议' : 'AI 建议'}</em></span><button type="button" className={locked ? 'field-lock is-locked' : 'field-lock'} aria-pressed={locked} onClick={onToggleLock}>{locked ? '已锁定' : '锁定'}</button></header>
+    {longText && !editing ? <div className="retouch-long-preview">
+      {items.length ? name === 'requirements' ? <ul>{visibleItems.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <div className="protection-chips">{visibleItems.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}{!expanded && hasMore && <button type="button" onClick={onToggleExpanded}>+{items.length - limit}</button>}</div> : <button type="button" className="empty-field-button" onClick={onStartEditing}>点击填写{label}</button>}
+      <div className="retouch-preview-actions"><button type="button" className="text-button" onClick={onStartEditing} disabled={disabled}>编辑</button>{hasMore && <button type="button" className="text-button" onClick={onToggleExpanded}>{expanded ? '收起' : '展开'}</button>}</div>
+    </div> : longText ? <div className="retouch-edit-state"><textarea aria-label={`${label}编辑`} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} /><button type="button" className="text-button" onClick={onFinishEditing} disabled={disabled}>完成编辑</button></div> : <input aria-label={`${label}编辑`} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} />}
     <button type="button" className="field-reset" disabled={disabled || value === recommendation} onClick={onReset}>恢复 AI 建议</button>
-  </label>
+  </section>
 }
 
 async function request(route, data) {
@@ -72,8 +83,10 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
   const [loadingMoreAssets, setLoadingMoreAssets] = useState(false)
   const [retouchTab, setRetouchTab] = useState('one-click')
   const [openSections, setOpenSections] = useState(() => {
-    try { return { size: true, product: true, ...JSON.parse(localStorage.getItem('sanhua-retouch-open-sections') || '{}') } } catch { return { size: true, product: true } }
+    try { return { product: true, requirements: true, ...JSON.parse(localStorage.getItem('sanhua-retouch-open-sections') || '{}') } } catch { return { product: true, requirements: true } }
   })
+  const [expandedTextFields, setExpandedTextFields] = useState({})
+  const [editingFieldId, setEditingFieldId] = useState('')
   const [templateImage, setTemplateImage] = useState('')
   const [templateName, setTemplateName] = useState('')
   const [templateAssetId, setTemplateAssetId] = useState('')
@@ -356,7 +369,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
             const dirty = Boolean(editedFields[name] && fields[name] !== recommendation)
             return <section key={name} className={dirty ? 'retouch-accordion-item is-dirty' : 'retouch-accordion-item'}>
               <button type="button" className="retouch-accordion-trigger" aria-expanded={Boolean(openSections[name])} onClick={() => toggleSection(name)}><span><b>{label}</b><small>{dirty ? '已偏离 AI 建议' : fields[name] || '待补充'}</small></span><i>{openSections[name] ? '−' : '+'}</i></button>
-              {openSections[name] && <RetouchField name={name} label={label} value={fields[name]} recommendation={recommendation} locked={Boolean(lockedFields[name])} dirty={dirty} disabled={busy || job?.status === 'awaiting_confirmation'} onChange={value => { setEditedFields(current => ({ ...current, [name]: true })); setField(name, value) }} onToggleLock={() => setLockedFields(current => ({ ...current, [name]: !current[name] }))} onReset={() => { setEditedFields(current => ({ ...current, [name]: false })); setField(name, recommendation) }} />}
+              {openSections[name] && <RetouchField name={name} label={label} value={fields[name]} recommendation={recommendation} locked={Boolean(lockedFields[name])} dirty={dirty} expanded={Boolean(expandedTextFields[name])} editing={editingFieldId === name} disabled={busy || job?.status === 'awaiting_confirmation'} onChange={value => { setEditedFields(current => ({ ...current, [name]: true })); setField(name, value) }} onToggleLock={() => setLockedFields(current => ({ ...current, [name]: !current[name] }))} onReset={() => { setEditedFields(current => ({ ...current, [name]: false })); setField(name, recommendation) }} onToggleExpanded={() => setExpandedTextFields(current => ({ ...current, [name]: !current[name] }))} onStartEditing={() => setEditingFieldId(name)} onFinishEditing={() => setEditingFieldId('')} />}
             </section>
           })}
         </fieldset>
