@@ -1107,7 +1107,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   --workbench-muted: #74685c;
   color: #2c211d;
   background:
-    linear-gradient(120deg, rgba(244,239,221,.82), rgba(218,207,183,.75)),
+    linear-gradient(120deg, rgba(244,239,221,.58), rgba(218,207,183,.5)),
     url('/assets/workbench-daylight-cafe-v4.png') center / cover fixed no-repeat;
 }
 .app-shell.time-day .sidebar {
@@ -1479,6 +1479,8 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 
 .task-progress-menu--widget { position: fixed; z-index: 130; right: 24px; bottom: 22px; }
 .task-progress-menu--widget .task-progress-button { min-height: 44px; padding: 0 14px; border-radius: 14px; color: #fff8ed; background: #4b2b20; box-shadow: 0 12px 28px rgba(59,34,21,.27); }
+.task-progress-menu--widget .task-progress-button { cursor: grab; touch-action: none; user-select: none; }
+.task-progress-menu--widget .task-progress-button.is-dragging { cursor: grabbing; }
 .task-progress-menu--widget .task-progress-button:hover, .task-progress-menu--widget .task-progress-button.is-open { border-color: #d8af7a; background: #673528; }
 .task-progress-menu--widget .task-progress-button b { background: #d6a66f; color: #372116; }
 .task-progress-menu--widget .task-progress-popover--portal { z-index: 1005; }

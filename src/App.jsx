@@ -199,6 +199,13 @@ function Sidebar({ page, subRoute, onNavigate }) {
 export function TaskProgress() {
   const [open, setOpen] = useState(false)
   const [popoverPosition, setPopoverPosition] = useState({})
+  const [widgetPosition, setWidgetPosition] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('sanhua-task-progress-position') || '{}')
+      return Number.isFinite(saved.right) && Number.isFinite(saved.bottom) ? { right: saved.right, bottom: saved.bottom } : {}
+    } catch { return {} }
+  })
+  const [dragging, setDragging] = useState(false)
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -208,6 +215,8 @@ export function TaskProgress() {
   const previousStatuses = useRef(new Map())
   const hasLoadedStatuses = useRef(false)
   const triggerRef = useRef(null)
+  const dragStart = useRef(null)
+  const suppressClick = useRef(false)
   const load = async (manual = false) => {
     if (manual) setRefreshing(true)
     try {
@@ -239,10 +248,61 @@ export function TaskProgress() {
   const active = tasks.filter(task => ['queued', 'running', 'waiting_user'].includes(task.status))
   const status = task => task.status === 'completed' ? '已完成' : task.status === 'failed' ? '失败' : task.status === 'cancelled' ? '已取消' : task.status === 'waiting_user' ? '等待确认' : task.status === 'queued' ? '排队中' : '运行中'
   const togglePopover = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      return
+    }
     if (open) { setOpen(false); return }
     const rect = triggerRef.current?.getBoundingClientRect()
-    if (rect) setPopoverPosition({ bottom: `${Math.max(12, window.innerHeight - rect.top + 10)}px`, right: `${Math.max(12, window.innerWidth - rect.right)}px` })
+    if (rect) {
+      const right = `${Math.max(12, window.innerWidth - rect.right)}px`
+      setPopoverPosition(rect.top > 32 && rect.top < window.innerHeight / 2
+        ? { top: `${Math.max(12, rect.bottom + 10)}px`, right }
+        : { bottom: `${Math.max(12, window.innerHeight - rect.top + 10)}px`, right })
+    }
     setOpen(true)
+  }
+  const startDragging = event => {
+    if (event.button !== 0) return
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    dragStart.current = {
+      x: event.clientX,
+      y: event.clientY,
+      right: window.innerWidth - rect.right,
+      bottom: window.innerHeight - rect.bottom,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const dragWidget = event => {
+    const start = dragStart.current
+    if (!start) return
+    const deltaX = event.clientX - start.x
+    const deltaY = event.clientY - start.y
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) start.moved = true
+    if (!start.moved) return
+    setDragging(true)
+    setWidgetPosition({
+      right: Math.max(12, Math.min(window.innerWidth - start.width - 12, start.right - deltaX)),
+      bottom: Math.max(12, Math.min(window.innerHeight - start.height - 12, start.bottom - deltaY)),
+    })
+  }
+  const stopDragging = event => {
+    const start = dragStart.current
+    if (!start) return
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (start.moved) {
+      suppressClick.current = true
+      setWidgetPosition(current => {
+        localStorage.setItem('sanhua-task-progress-position', JSON.stringify(current))
+        return current
+      })
+    }
+    dragStart.current = null
+    setDragging(false)
   }
   const dismissTask = async task => {
     const previous = tasks
@@ -258,8 +318,8 @@ export function TaskProgress() {
     } finally { setRemovingId('') }
   }
   const progressPopover = <section className="task-progress-popover task-progress-popover--portal" style={popoverPosition} aria-label="后台任务进度"><header><div><strong>后台任务</strong><small>{active.length ? `${active.length} 个任务正在运行` : '当前没有运行中的任务'}</small></div><div><button className="icon-button" disabled={refreshing} onClick={() => load(true)} aria-label="刷新任务进度"><RefreshCw className={refreshing ? 'spin-icon' : ''} size={16} /></button><button className="icon-button" onClick={() => setOpen(false)} aria-label="关闭任务进度"><X size={17} /></button></div></header>{loading && <p className="task-progress-empty">正在读取任务…</p>}{error && <p className="task-progress-error">{error}</p>}{!loading && !error && !tasks.length && <p className="task-progress-empty">暂无后台任务。提交图片或脚本计划后，进度会在这里持续更新。</p>}<div className="task-progress-list">{tasks.map(task => { const finished = ['completed', 'failed', 'cancelled'].includes(task.status); return <article key={task.id} className={`task-progress-item task-status--${task.status}`}><div><strong>{task.workspace === 'retouch' ? '产品精修' : task.workspace === 'brand' ? '品牌创作' : task.workspace === 'script' ? '短剧脚本' : '视频生成'}</strong><span>{status(task)} · {task.stage || '等待服务响应'}</span></div>{finished && <button className="task-dismiss-button" disabled={removingId === task.id} onClick={() => dismissTask(task)} aria-label={`删除任务 ${String(task.id).slice(0, 8)}`}><X size={15} /></button>}<b>{Number(task.progress || 0)}%</b><i><em style={{ width: `${Math.max(0, Math.min(100, Number(task.progress || 0)))}%` }} /></i><small>任务 {String(task.id).slice(0, 8)} · 更新于 {task.updatedAt ? new Date(task.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '刚刚'}</small></article> })}</div></section>
-  return <div className="task-progress-menu task-progress-menu--widget">
-    <button ref={triggerRef} className={open ? 'task-progress-button is-open' : 'task-progress-button'} aria-label="查看后台任务进度" aria-expanded={open} onClick={togglePopover}><ListChecks size={18} /><span>任务进度</span><b>{active.length}</b></button>
+  return <div className="task-progress-menu task-progress-menu--widget" style={widgetPosition}>
+    <button ref={triggerRef} className={`task-progress-button${open ? ' is-open' : ''}${dragging ? ' is-dragging' : ''}`} aria-label="查看后台任务进度" aria-expanded={open} onPointerDown={startDragging} onPointerMove={dragWidget} onPointerUp={stopDragging} onPointerCancel={stopDragging} onMouseDown={startDragging} onMouseMove={dragWidget} onMouseUp={stopDragging} onClick={togglePopover} title="按住可拖动"><ListChecks size={18} /><span>任务进度</span><b>{active.length}</b></button>
     {open && createPortal(progressPopover, document.body)}
     {completedToast && <div className="task-complete-toast" role="status"><CheckCircle2 size={19} /><span><strong>{completedToast.workspace === 'retouch' ? '产品精修' : completedToast.workspace === 'brand' ? '品牌创作' : completedToast.workspace === 'script' ? '短剧脚本' : '视频生成'}任务已完成</strong><small>结果已保存到对应资产库</small></span><button onClick={() => setCompletedToast(null)} aria-label="关闭完成提醒"><X size={16} /></button></div>}
   </div>

@@ -131,4 +131,22 @@ describe('AI 创作工作台 Demo', () => {
     fireEvent.click(screen.getByRole('button', { name: '删除任务 done-tas' }))
     await waitFor(() => expect(screen.queryByText('品牌创作')).not.toBeInTheDocument())
   })
+
+  it('任务进度按钮支持拖拽定位，拖拽结束不会误打开面板', () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ tasks: [] }) })))
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+    render(<TaskProgress />)
+
+    const trigger = screen.getByRole('button', { name: '查看后台任务进度' })
+    trigger.getBoundingClientRect = () => ({ right: 760, bottom: 570, width: 120, height: 44 })
+    fireEvent.mouseDown(trigger, { button: 0, buttons: 1, clientX: 700, clientY: 548 })
+    fireEvent.mouseMove(trigger, { buttons: 1, clientX: 600, clientY: 448 })
+    fireEvent.mouseUp(trigger, { button: 0, buttons: 0, clientX: 600, clientY: 448 })
+    fireEvent.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger.closest('.task-progress-menu--widget')).toHaveStyle({ right: '140px', bottom: '130px' })
+    expect(localStorage.getItem('sanhua-task-progress-position')).toContain('140')
+  })
 })
