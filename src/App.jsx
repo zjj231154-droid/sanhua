@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   BadgeCheck,
   CheckCircle2,
+  Copy,
   BookOpenText,
   ChevronDown,
   CircleHelp,
@@ -29,11 +30,13 @@ import {
   PanelRightClose,
   PanelRightOpen,
   RefreshCw,
+  RotateCcw,
   Settings,
   ShieldCheck,
   Sparkles,
   Upload,
   WandSparkles,
+  Trash2,
   X,
 } from 'lucide-react'
 import RippleDistortion from './components/RippleDistortion/RippleDistortion'
@@ -435,6 +438,71 @@ function ProductPhoto({ photo, selected, onToggle, processed }) {
   )
 }
 
+const RECORD_TYPE_LABELS = { retouch_plan: '精修计划', retouch_final_prompt: '最终提示词', brand_plan: '设计计划', brand_final_prompt: '最终提示词', script_outline: '脚本大纲', script_version: '剧本版本', video_prompt: '视频提示词' }
+
+function PromptRecordPage({ workspace, title, description, filters = [], onReuse }) {
+  const [activeFilter, setActiveFilter] = useState('all')
+  const [records, setRecords] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busyId, setBusyId] = useState('')
+  const [notice, setNotice] = useState('')
+  const includeDeleted = activeFilter === 'deleted'
+  const load = async () => {
+    setLoading(true); setError('')
+    try {
+      const params = new URLSearchParams({ limit: '40' })
+      if (workspace || activeFilter.startsWith('workspace:')) params.set('workspace', workspace || activeFilter.slice('workspace:'.length))
+      if (includeDeleted) params.set('includeDeleted', 'true')
+      if (activeFilter !== 'all' && !includeDeleted && !activeFilter.startsWith('workspace:')) params.set('recordType', activeFilter)
+      if (query.trim()) params.set('q', query.trim())
+      const response = await fetch(`/api/v1/text-records?${params}`)
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '文本记录暂时无法读取')
+      setRecords((value.records || []).filter(record => includeDeleted ? record.status === 'deleted' : record.status !== 'deleted'))
+    } catch (reason) { const message = reason.message || '文本记录读取失败'; setError(message === 'SANHUA_ASSETS_NOT_CONFIGURED' ? '云端文本库尚未配置，部署后绑定存储卷即可启用持久化记录。' : message) } finally { setLoading(false) }
+  }
+  useEffect(() => { const timer = window.setTimeout(() => { void load() }, query ? 300 : 0); return () => window.clearTimeout(timer) }, [workspace, activeFilter, query])
+  const mutate = async (record, method, body, action) => {
+    setBusyId(record.id); setError('')
+    try {
+      const response = await fetch(`/api/v1/text-records/${record.id}${action === 'restore' ? '/restore' : ''}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined })
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '操作未完成')
+      setNotice(action === 'delete' ? '已移入回收站' : action === 'restore' ? '已恢复记录' : '已更新记录')
+      await load()
+    } catch (reason) { setError(reason.message || '操作失败，可重试') } finally { setBusyId('') }
+  }
+  const copy = async record => {
+    setBusyId(record.id)
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(record.content)
+      else throw new Error('当前浏览器不支持复制')
+      setNotice('已复制完整文本')
+    } catch (reason) { setError(reason.message || '复制失败') } finally { setBusyId('') }
+  }
+  return <section className="prompt-record-page page-content">
+    <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 文本记录</span><h1>{title}</h1><p>{description}</p></div><span className="connection-note">云端文本记录</span></header>
+    <div className="prompt-record-toolbar glass-card"><div className="record-filter-tabs">{[['all', '全部'], ...filters, ['deleted', '已删除']].map(([id, label]) => <button key={id} className={activeFilter === id ? 'primary-button' : 'secondary-button'} onClick={() => setActiveFilter(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索文本记录</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索标题、摘要或全文" aria-label="搜索文本记录" /></label></div>
+    {notice && <p className="record-notice" role="status">{notice}</p>}{error && <p className="retouch-error" role="alert">{error}</p>}
+    <div className="prompt-record-list" aria-label="文本记录列表">{loading && <p role="status">正在读取云端文本记录…</p>}{!loading && records.map(record => <article className="prompt-record-card glass-card" key={record.id}><header><span><b>{RECORD_TYPE_LABELS[record.recordType] || record.recordType}</b><small>{record.workspace === 'retouch' ? '产品精修' : record.workspace === 'brand' ? '品牌创作' : record.workspace === 'video' ? '视频生成' : '短剧脚本'}</small></span><time>{new Date(record.updatedAt || record.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time></header><h2>{record.title}</h2><p>{record.summary || record.content}</p><footer><span>{record.model || '手动记录'} · 任务 {record.sourceTaskId ? record.sourceTaskId.slice(0, 8) : '—'}</span><div><details><summary>查看全文</summary><pre>{record.content}</pre></details><button className="secondary-button" disabled={busyId === record.id} onClick={() => void copy(record)}><Copy size={14} />复制</button>{record.status === 'deleted' ? <button className="secondary-button" disabled={busyId === record.id} onClick={() => void mutate(record, 'POST', null, 'restore')}><RotateCcw size={14} />恢复</button> : <><button className="secondary-button" disabled={busyId === record.id} onClick={() => { const next = window.prompt('重命名文本记录', record.title); if (next?.trim()) void mutate(record, 'PATCH', { title: next.trim() }, 'rename') }}><Pencil size={14} />重命名</button><button className="secondary-button" disabled={busyId === record.id} onClick={() => onReuse?.(record)}><RefreshCw size={14} />复用</button><button className="secondary-button record-delete" disabled={busyId === record.id} onClick={() => void mutate(record, 'DELETE', null, 'delete')}><Trash2 size={14} />删除</button></>}</div></footer></article>)}{!loading && !records.length && <p className="empty-state">暂无提示词记录，完成一次生成后会自动出现在这里。</p>}</div>
+  </section>
+}
+
+function VideoWorkbench({ scripts, activeId, scriptPlan }) {
+  const [assets, setAssets] = useState([]); const [assetType, setAssetType] = useState('scene'); const [query, setQuery] = useState('')
+  const [refs, setRefs] = useState({ scene: [], character: [], prop: [], other: [] }); const [prompt, setPrompt] = useState('')
+  const [duration, setDuration] = useState('180'); const [ratio, setRatio] = useState('16:9'); const [status, setStatus] = useState(''); const [creating, setCreating] = useState(false); const [tasks, setTasks] = useState([])
+  useEffect(() => { let active = true; fetch('/api/v1/assets?workspace=script&usableFor=video&limit=80').then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.error); return value.assets || [] }).then(value => { if (active) setAssets(value) }).catch(() => { if (active) setAssets(CLOUD_ASSETS.filter(item => item.category === 'script').map(item => ({ ...item, assetSpace: 'script', assetType: 'image', videoAssetType: 'scene', usableFor: ['script', 'video'], isDemo: true }))) }); return () => { active = false } }, [])
+  const activeScript = scripts.find(item => item.id === activeId) || scripts[0]
+  const selected = Object.values(refs).flat(); const filtered = assets.filter(asset => asset.videoAssetType === assetType && (!query.trim() || `${asset.name} ${(asset.tags || []).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())))
+  const toggle = asset => setRefs(current => ({ ...current, [assetType]: current[assetType].some(item => item.id === asset.id) ? current[assetType].filter(item => item.id !== asset.id) : [...current[assetType], asset] }))
+  const missing = !activeScript ? '请先保存剧本' : !refs.scene.length ? '请选择至少一个场景资产' : (prompt.trim() || activeScript.outline || scriptPlan).length < 12 ? '请输入不少于 12 字的视频提示词' : ''
+  const create = async () => { if (missing || creating) return; setCreating(true); setStatus('正在校验视频任务…'); const body = { scriptId: activeScript.id, scriptVersionId: activeScript.currentVersionId, videoPrompt: prompt.trim() || activeScript.outline || scriptPlan, shotPlan: activeScript.outline || scriptPlan, durationSeconds: Number(duration), aspectRatio: ratio, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, value]) => [key, value.map(item => item.id)])) }; try { const checked = await fetch('/api/v1/video-tasks/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const validation = await checked.json(); if (!checked.ok) throw new Error(`请补齐：${(validation.missing || []).join('、')}`); setStatus('正在创建视频任务…'); const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '视频任务创建失败'); setTasks(current => [value.task, ...current]); setStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}；提示词已归档。`) } catch (reason) { setStatus(reason.message || '视频任务创建失败') } finally { setCreating(false) } }
+  return <section className="video-workbench" aria-label="视频生成工作台"><header><span className="kicker">VIDEO WORKBENCH</span><h2>视频生成</h2><p>引用云端场景、角色与道具，整理分镜并创建可追踪的视频任务。</p></header><div className="video-workbench-grid"><div className="video-composer glass-card"><div className="video-reference-strip">{selected.length ? selected.map(asset => <span key={asset.id} className="video-reference"><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt="" /><b>{asset.name}</b><small>{asset.videoAssetType}</small><button aria-label={`移除 ${asset.name}`} onClick={() => setRefs(current => ({ ...current, [asset.videoAssetType]: current[asset.videoAssetType].filter(item => item.id !== asset.id) }))}>×</button></span>) : <p>选择场景、角色、道具或其他资产作为视频参考</p>}</div><textarea value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void create() } }} placeholder="输入想法、脚本、分镜，支持引用上方资产生成视频任务" aria-label="视频生成提示词" /><footer><span>模拟任务 · 真实模型待接入</span><label>时长 <input type="number" min="1" max="1800" value={duration} onChange={event => setDuration(event.target.value)} /></label><select value={ratio} onChange={event => setRatio(event.target.value)} aria-label="画面比例"><option>16:9</option><option>9:16</option><option>1:1</option></select><button className="primary-button" disabled={Boolean(missing) || creating} title={missing || undefined} onClick={() => void create()}>{creating ? '正在创建任务…' : '校验并创建视频任务'}</button></footer>{status && <p className="video-validation-status" role="status">{status}</p>}</div><aside className="video-asset-picker glass-card"><div className="record-filter-tabs">{[['scene', '场景资产'], ['character', '角色资产'], ['prop', '道具资产'], ['other', '其他']].map(([id, label]) => <button key={id} className={assetType === id ? 'primary-button' : 'secondary-button'} onClick={() => setAssetType(id)}>{label}</button>)}</div><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索云端资产" aria-label="搜索视频资产" /><div className="video-asset-list">{filtered.map(asset => <button key={asset.id} className={refs[assetType].some(item => item.id === asset.id) ? 'video-asset-card is-selected' : 'video-asset-card'} onClick={() => toggle(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><span><b>{asset.name}</b><small>{asset.isDemo ? '演示素材' : asset.inferred ? '未明确分类' : '云端资产'}</small></span></button>)}{!filtered.length && <p className="empty-state">暂无该分类资产，可先到云端资产库上传或标记资产类型。</p>}</div></aside></div>{tasks.length > 0 && <section className="video-task-results"><h3>已创建视频任务</h3>{tasks.map(task => <article key={task.id}><b>{task.id.slice(0, 8)}</b><span>{task.stage} · {task.durationSeconds} 秒 · {task.aspectRatio}</span><small>引用 {Object.values(task.assetRefs || {}).flat().length} 项资产</small></article>)}</section>}</section>
+}
+
 function RetouchPage() {
   const [selected, setSelected] = useState(new Set())
   const [sampleGenerated, setSampleGenerated] = useState(false)
@@ -736,8 +804,8 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
   const [activeId, setActiveId] = useState(config.cases[0].id)
   useEffect(() => {
     const routeIndex = type === 'brand'
-      ? { create: 0, library: 1, prompts: 0 }[initialRoute]
-      : { create: 0, library: 1, video: 2, versions: 1 }[initialRoute]
+      ? { create: 0, library: 1, prompts: 2 }[initialRoute]
+      : { create: 0, library: 1, video: 2, versions: 3 }[initialRoute]
     if (Number.isInteger(routeIndex)) setToolbarTab(routeIndex)
   }, [initialRoute, type])
   const refreshBrandAssets = async () => {
@@ -769,6 +837,7 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
     if (!response.ok) throw new Error(value.error || '剧本保存失败')
     return value
   }
+  const archiveText = (input) => fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }).catch(() => null)
   const openScriptConfirmation = (plan, taskId) => {
     setScriptPlan(plan)
     setEditor({ pendingConfirmation: true, sourceTaskId: taskId, title: '待确认茶馆短剧计划', kind: '短剧故事规划', summary: scriptPrompt, outline: plan })
@@ -781,6 +850,7 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
     setScripts(current => [value.script, ...current.filter(item => item.id !== value.script.id)])
     setActiveId(value.script.id)
     setScriptPlan(values.outline)
+    void archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script_outline', title: value.script.title || '短剧脚本大纲', content: values.outline || values.content || values.summary, contentFormat: 'markdown', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [], scriptId: value.script.id, scriptVersionId: value.script.currentVersionId })
     if (editor?.pendingConfirmation) {
       setToolbarTab(1)
       if (editor.sourceTaskId) {
@@ -828,6 +898,7 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
       if (!response.ok) throw new Error(value.error || '设计助手暂不可用')
       const plan = value.plan || ''
       setBrandPlan(plan)
+      void archiveText({ workspace: 'brand', sourceModule: 'brand.prompts', recordType: 'brand_plan', title: '品牌设计计划', content: plan, contentFormat: 'prompt', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [] })
       return plan
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
@@ -844,6 +915,7 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
       if (!output?.url) throw new Error('模型结果未能完成资产归档')
       setBrandImage(output)
       setBrandAssets(current => [output, ...current.filter(asset => asset.id !== output.id)])
+      void archiveText({ workspace: 'brand', sourceModule: 'brand.prompts', recordType: 'brand_final_prompt', title: requestedName || '品牌创作最终提示词', content: finalPrompt, contentFormat: 'prompt', model: 'gpt-image-2', provider: 'usegoodai', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [], generatedAssetIds: [output.id] })
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
   const generateScriptPlan = async () => {
@@ -852,7 +924,9 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
       const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '编导助手暂不可用')
-      openScriptConfirmation(value.plan || '', value.id || value.task?.id)
+      const plan = value.plan || ''
+      void archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script_outline', title: '待确认短剧脚本大纲', content: plan, contentFormat: 'markdown', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [], sourceTaskId: value.id || value.task?.id })
+      openScriptConfirmation(plan, value.id || value.task?.id)
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
   const appendScriptInspiration = suggestion => setScriptPrompt(current => `${current.trim()}${current.trim() ? '\n' : ''}${suggestion}`)
@@ -865,11 +939,13 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
       </header>
       <div className="showcase-layout">
         <main className="showcase-main">
-          <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成'] : ['素材创作', '产品库']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
+          <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成', '文本记录'] : ['素材创作', '产品库', '提示词记录']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
           {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} />}
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card script-workspace"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div><div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><div className="script-workspace-grid"><div className="script-input-panel"><label>短剧创作需求<textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && scriptPrompt.trim() && !brandBusy) { event.preventDefault(); generateScriptPlan() } }} aria-label="短剧脚本需求" placeholder="描述人物、冲突、场景与时长" /></label><div className="script-inspiration" aria-label="创作灵感">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button type="button" key={item} className="secondary-button" onClick={() => appendScriptInspiration(item)}>{item}</button>)}</div><DisabledReasonTooltip reason={!scriptPrompt.trim() ? '请先填写短剧创作需求' : ''}><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={generateScriptPlan}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button></DisabledReasonTooltip><small>按 Ctrl + Enter 或 Command + Enter 快速提交</small></div>{scriptPrompt.trim() && <aside className="script-preview-canvas" aria-label="短剧实时预览"><span className="kicker">实时预览画布</span><article><strong>剧情概要</strong><p>{scriptPrompt.slice(0, 88)}{scriptPrompt.length > 88 ? '…' : ''}</p></article><div><article><strong>角色设定</strong><p>掌柜、老顾客与来访者将围绕一个真实冲突展开。</p></article><article><strong>茶馆场景</strong><p>{selectedAsset?.name || '选择场景素材后将绑定真实空间。'}</p></article></div><article><strong>分镜预览</strong><p>开场钩子 → 人物对峙 → 茶饮转机 → 结尾反转</p></article></aside>}</div>{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
-          {type === 'script' && toolbarTab === 2 && <section className="video-validation-panel glass-card" aria-label="视频生成前置校验"><div><span className="kicker">视频任务校验</span><h2>从已保存剧本版本发起</h2><p>先检查剧本版本、场景资产、分镜说明与预计时长。当前未接入视频模型时只会创建可追踪的模拟任务。</p></div><label>预计时长（秒）<input type="number" min="1" max="1800" value={videoDuration} onChange={event => { setVideoDuration(event.target.value); setVideoReady(false) }} /></label><p>当前剧本：{scripts.find(item => item.id === activeId)?.title || scripts[0]?.title || '未选择已保存剧本'}。场景素材：{selectedAsset?.name || '未选择'}。</p><div className="brand-agent-actions"><button className="primary-button" disabled={scriptsLoading || !scripts.length} onClick={validateVideo}>{scriptsLoading ? '正在读取剧本…' : '校验视频任务'}</button><button className="secondary-button" disabled={!videoReady} title={!videoReady ? '请先通过前置校验' : undefined} onClick={createVideoTask}>创建模拟任务</button></div>{videoStatus && <p className="video-validation-status" role="status">{videoStatus}</p>}</section>}
+          {type === 'script' && toolbarTab === 2 && <VideoWorkbench scripts={scripts} activeId={activeId} scriptPlan={scriptPlan} />}
+          {type === 'brand' && toolbarTab === 2 && <PromptRecordPage workspace="brand" title="品牌提示词记录" description="设计计划与最终提示词会自动同步到云端文本库。" filters={[["brand_plan", "设计计划"], ["brand_final_prompt", "最终提示词"]]} onReuse={record => { setBrandPlan(record.content); setToolbarTab(0) }} />}
+          {type === 'script' && toolbarTab === 3 && <PromptRecordPage workspace="script" title="短剧文本记录" description="脚本大纲、剧本版本与视频提示词均以独立记录保存。" filters={[["script_outline", "脚本大纲"], ["script_version", "剧本版本"], ["video_prompt", "视频提示词"]]} onReuse={record => { setScriptPrompt(record.content); setToolbarTab(0) }} />}
           {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2><div className="product-library-grid">{brandAssets.map(asset => <article key={asset.id}><button className="brand-generated-preview" onClick={() => setViewerImage(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><small>点击放大查看</small></button><div><strong>{asset.name}</strong><small>{new Date(asset.createdAt || Date.now()).toLocaleDateString('zh-CN')} · {asset.model || 'gpt-image-2'} · 引用 {asset.referenceAssetIds?.length || asset.sourceAssetIds?.length || 0} 项素材</small><span className="brand-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name}><Download size={15} />下载</a><button className="secondary-button" aria-label={`重命名 ${asset.name}`} onClick={async () => { const nextName = window.prompt('输入新的图片名称', asset.name); if (!nextName?.trim()) return; const response = await fetch(`/api/v1/assets/${asset.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: nextName }) }); const value = await response.json(); if (!response.ok) { setBrandError(value.error || '重命名失败'); return }; setBrandAssets(current => current.map(item => item.id === asset.id ? { ...item, ...value.asset } : item)); }}><Pencil size={15} />重命名</button></span></div></article>)}</div>{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}</section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
             {scriptsLoading && <p role="status">正在读取云端剧本库…</p>}
             {!scriptsLoading && scripts.map(script => <button className={activeId === script.id ? 'case-card is-active' : 'case-card'} key={script.id} onClick={() => { setActiveId(script.id); setEditor(script) }}><span className="case-copy"><small>云端剧本 · {script.versionCount || 1} 个版本</small><strong>{script.title}</strong><em>{script.summary || '尚未填写故事梗概'}</em><span>{script.kind || '未分类'} · 更新于 {new Date(script.updatedAt).toLocaleDateString('zh-CN')}</span></span></button>)}
@@ -886,7 +962,7 @@ function CreativeCasesPage({ type, initialRoute = '' }) {
           <button className="primary-button primary-button--wide" onClick={() => type === 'script' && setEditor(activeScript || { title: activeCase.title, kind: activeCase.kind, summary: activeCase.summary })}>{activeScript ? '编辑云端剧本' : '以此案例开始'} <ArrowUpRight size={16} /></button>
         </aside>}
       </div>
-      {editor && <ScriptEditor initial={editor} onClose={() => setEditor(null)} onSave={persistScript} onAutoSave={autoSaveScript} onListVersions={async id => (await requestScript(`/api/v1/scripts/${id}/versions`)).versions || []} onSaveVersion={async (values, changeNote) => { const result = await requestScript(`/api/v1/scripts/${editor.id}/versions`, { method: 'POST', body: JSON.stringify({ ...values, changeNote }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); return result }} onRestoreVersion={async versionId => { const result = await requestScript(`/api/v1/scripts/${editor.id}/restore-version`, { method: 'POST', body: JSON.stringify({ versionId }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); setEditor(result.script); return result.script }} />}
+      {editor && <ScriptEditor initial={editor} onClose={() => setEditor(null)} onSave={persistScript} onAutoSave={autoSaveScript} onListVersions={async id => (await requestScript(`/api/v1/scripts/${id}/versions`)).versions || []} onSaveVersion={async (values, changeNote) => { const result = await requestScript(`/api/v1/scripts/${editor.id}/versions`, { method: 'POST', body: JSON.stringify({ ...values, changeNote }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); void archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script_version', title: result.version.title || '短剧剧本版本', content: result.version.outline || result.version.content || result.version.summary, contentFormat: 'markdown', scriptId: result.script.id, scriptVersionId: result.version.id }); return result }} onRestoreVersion={async versionId => { const result = await requestScript(`/api/v1/scripts/${editor.id}/restore-version`, { method: 'POST', body: JSON.stringify({ versionId }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); setEditor(result.script); return result.script }} />}
       {viewerImage && <ImageViewer src={typeof viewerImage === 'string' ? viewerImage : viewerImage.url} alt={typeof viewerImage === 'string' ? '中式文创效果图' : viewerImage.name} downloadUrl={typeof viewerImage === 'string' ? viewerImage : `/api/v1/assets/${viewerImage.id}/download`} downloadName={typeof viewerImage === 'string' ? undefined : viewerImage.downloadName || viewerImage.name} onClose={() => setViewerImage('')} />}
     </div>
   )
@@ -914,12 +990,13 @@ function AssetLibraryPage({ onNavigate, initialCategory = 'images' }) {
     return () => { active = false }
   }, [])
   useEffect(() => setCategory(initialCategory), [initialCategory])
+  if (category === 'text') return <PromptRecordPage title="文本库" description="产品精修、品牌创作、短剧脚本与视频生成的文本记录共用同一云端数据源。" filters={[["workspace:retouch", "产品精修"], ["workspace:brand", "品牌创作"], ["workspace:script", "短剧脚本"], ["video_prompt", "视频生成"]]} onReuse={record => onNavigate(record.workspace === 'brand' ? 'brand' : record.workspace === 'retouch' ? 'retouch' : 'script')} />
   const allAssets = [...storedAssets, ...CLOUD_ASSETS.filter(asset => !storedAssets.some(item => item.id === asset.id)).map(asset => ({ ...asset, isDemo: true }))]
   const matches = asset => category === 'images' ? Boolean(asset.url || asset.thumbnailUrl) : category === 'brand' ? asset.category === 'brand' : category === 'script' ? asset.category === 'script' : category === 'generated' ? asset.category.endsWith('-generated') : false
   const visible = allAssets.filter(matches).filter(asset => !query.trim() || `${asset.name} ${asset.group} ${asset.assetSpace || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   return <div className="page-content asset-library-page">
     <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创、短剧场景和 AI 创作成果。</p></div><span className="connection-note">云端资产 · {allAssets.length} 项</span></header>
-    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['images', '图片'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材</small></div>
+    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['images', '图片'], ['brand', '茶馆文创'], ['script', '短剧'], ['text', '文本'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材</small></div>
     <section className="asset-grid" aria-label="云端资产列表">
       {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{asset.isDemo ? `${asset.group} · 演示素材` : asset.group}</small></span><span className="asset-card-actions">{!asset.isDemo && <a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>}<button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}
     </section>
@@ -977,7 +1054,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
         <Topbar timeMode={timeMode} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
           {page === 'home' && <HomePage onNavigate={navigate} />}
-          {page === 'retouch' && (demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant'} />)}
+          {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_plan", "精修计划"], ["retouch_final_prompt", "最终提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant'} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} />}
           {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} />}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} />}

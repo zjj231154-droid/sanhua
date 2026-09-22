@@ -305,6 +305,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           setJob({ id: 'cloud', status: 'awaiting_confirmation', plan })
           setFinalPrompt(plan)
           setPromptDialogOpen(true)
+          void fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', sourceModule: 'retouch.records', recordType: 'retouch_plan', title: '产品精修计划', content: plan, contentFormat: 'prompt', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean) }) }).catch(() => {})
         } else {
           const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(async sourceUrl => {
             if (sourceUrl.startsWith('data:')) return sourceUrl
@@ -326,6 +327,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           void refreshStoredAssets()
           setCloudResult(resultAsset)
           setJob({ ...job, status: 'done', taskId: value.task?.id })
+          void fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', sourceModule: 'retouch.records', recordType: 'retouch_final_prompt', title: resultName || '产品精修最终提示词', content: finalPrompt || job?.plan || editPrompt, contentFormat: 'prompt', model: 'gpt-image-2', provider: 'usegoodai', sourceTaskId: value.task?.id, sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean), generatedAssetIds: newAssets.map(asset => asset.id) }) }).catch(() => {})
         }
         return
       }

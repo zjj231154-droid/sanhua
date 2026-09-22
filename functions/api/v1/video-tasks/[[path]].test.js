@@ -23,11 +23,14 @@ describe('video task validation', () => {
   it('creates a persistent simulated task after a valid check without a video provider key', async () => {
     const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: undefined } }
     const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })
-    const body = { scriptId: script.id, scriptVersionId: script.currentVersionId, sceneAssetIds: ['tea-house-1'], shotPlan: script.outline, durationSeconds: 180 }
+    const body = { scriptId: script.id, scriptVersionId: script.currentVersionId, assetRefs: { scene: ['tea-house-1'], character: ['actor-1'], prop: ['teapot-1'], other: [] }, videoPrompt: '镜头从茶馆门口推进到掌柜与顾客的对峙。', shotPlan: script.outline, aspectRatio: '9:16', durationSeconds: 180 }
     const response = await onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks', body) })
     const value = await response.json()
     expect(response.status).toBe(202)
     expect(value.task.status).toBe('queued')
     expect(value.task.simulated).toBe(true)
+    expect(value.task.assetRefs).toEqual(body.assetRefs)
+    expect(value.task.aspectRatio).toBe('9:16')
+    expect(value.textRecordId).toBeTruthy()
   })
 })

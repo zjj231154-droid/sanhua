@@ -1709,3 +1709,33 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
   .app-shell.time-day .brand-step-actions > *,
   .app-shell.time-day .brand-step-actions button { width: 100%; }
 }
+
+/* v1.6 文本记录与视频生成工作台 */
+.prompt-record-page { max-width: 1180px; }
+.prompt-record-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px; }
+.record-filter-tabs { display: flex; flex-wrap: wrap; gap: 7px; }
+.record-filter-tabs .primary-button, .record-filter-tabs .secondary-button { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.prompt-record-list { display: grid; gap: 12px; margin-top: 16px; }
+.prompt-record-card { padding: 16px 18px; border: 1px solid rgba(15,23,42,.08); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.prompt-record-card:hover { border-color: rgba(139,58,58,.35); box-shadow: 0 7px 18px rgba(15,23,42,.08); }
+.prompt-record-card:active { transform: translateY(1px); }
+.prompt-record-card header, .prompt-record-card footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.prompt-record-card header span { display: flex; align-items: center; gap: 8px; }
+.prompt-record-card header b { color: #8b3a3a; font-size: 12px; }
+.prompt-record-card header small, .prompt-record-card time, .prompt-record-card footer > span { color: #77808c; font-size: 12px; }
+.prompt-record-card h2 { margin: 10px 0 7px; color: #1f2933; font-size: 16px; }
+.prompt-record-card > p { display: -webkit-box; margin: 0 0 14px; overflow: hidden; color: #5c6570; font-size: 13px; line-height: 1.6; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.prompt-record-card footer > div { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.prompt-record-card details summary { color: #535d68; cursor: pointer; font-size: 12px; }
+.prompt-record-card details pre { max-width: min(680px, 72vw); max-height: 260px; overflow: auto; padding: 10px; border-radius: 8px; background: #f7f8fa; color: #374151; white-space: pre-wrap; font: 12px/1.6 inherit; }
+.record-delete { color: #9d3535 !important; }.record-notice { margin: 12px 0 0; color: #35765b; font-size: 13px; }
+.video-workbench { margin-top: 14px; }.video-workbench > header { padding: 4px 4px 14px; }.video-workbench h2 { margin: 3px 0 6px; color: #1f2933; font-size: 22px; }.video-workbench > header p { margin: 0; color: #68717c; font-size: 13px; }
+.video-workbench-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); gap: 14px; }.video-composer, .video-asset-picker { border: 1px solid rgba(15,23,42,.08); background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.04); }.video-composer { padding: 16px; }
+.video-reference-strip { min-height: 76px; display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 8px; border: 1px dashed #d9dde3; border-radius: 12px; background: #fafbfc; }.video-reference-strip > p { margin: 0; color: #8a9099; font-size: 13px; }
+.video-reference { position: relative; display: grid; grid-template-columns: 40px minmax(72px, 1fr); column-gap: 7px; min-width: 145px; padding: 5px 22px 5px 5px; border: 1px solid #e1e4e8; border-radius: 8px; background: #fff; }.video-reference img { grid-row: 1 / 3; width: 40px; height: 40px; border-radius: 5px; object-fit: cover; }.video-reference b { overflow: hidden; color: #303946; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.video-reference small { color: #8b3a3a; font-size: 10px; }.video-reference button { position: absolute; top: 4px; right: 4px; width: 17px; height: 17px; border: 0; border-radius: 50%; color: #8b3a3a; background: #f8eaea; cursor: pointer; line-height: 1; }
+.video-composer > textarea { width: 100%; min-height: 160px; box-sizing: border-box; margin-top: 12px; padding: 14px; border: 1px solid #d9dde3; border-radius: 12px; color: #1f2933; background: #fff; font: inherit; line-height: 1.6; resize: vertical; }.video-composer > textarea:focus { outline: 2px solid rgba(139,58,58,.2); border-color: #8b3a3a; }
+.video-composer > footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 11px; color: #727b86; font-size: 12px; }.video-composer > footer label { display: flex; align-items: center; gap: 4px; }.video-composer > footer input, .video-composer > footer select, .video-asset-picker > input { min-height: 32px; box-sizing: border-box; border: 1px solid #d9dde3; border-radius: 7px; color: #303946; background: #fff; font: inherit; }.video-composer > footer input { width: 68px; padding: 3px 5px; }.video-composer > footer select { padding: 3px 6px; }.video-composer > footer .primary-button { margin-left: auto; min-height: 36px; }
+.video-asset-picker { padding: 12px; }.video-asset-picker > input { width: 100%; margin: 10px 0; padding: 7px 9px; }.video-asset-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 430px; overflow: auto; }.video-asset-card { display: grid; gap: 5px; padding: 5px; border: 1px solid #e1e4e8; border-radius: 8px; color: inherit; background: #fff; text-align: left; cursor: pointer; }.video-asset-card:hover { border-color: #b5bac2; }.video-asset-card.is-selected { border-color: #8b3a3a; box-shadow: inset 0 0 0 1px #8b3a3a; }.video-asset-card img { width: 100%; aspect-ratio: 1.45; border-radius: 5px; object-fit: cover; }.video-asset-card b, .video-asset-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.video-asset-card b { color: #34404c; font-size: 11px; }.video-asset-card small { color: #89919b; font-size: 10px; }
+.video-task-results { display: grid; gap: 8px; margin-top: 14px; padding: 14px; border: 1px solid rgba(15,23,42,.08); border-radius: 12px; background: #fff; }.video-task-results h3 { margin: 0; color: #33404c; font-size: 14px; }.video-task-results article { display: flex; align-items: center; gap: 10px; color: #616b76; font-size: 12px; }.video-task-results article b { color: #8b3a3a; }.video-task-results article small { margin-left: auto; }
+@media (max-width: 880px) { .video-workbench-grid { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .prompt-record-toolbar, .prompt-record-card footer { align-items: stretch; flex-direction: column; }.prompt-record-card footer > div { justify-content: flex-start; }.video-composer > footer .primary-button { width: 100%; margin-left: 0; }.video-asset-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

@@ -17,6 +17,7 @@ const apiRoutes = {
   '/api/v1/agent-runs': () => import('../functions/api/v1/agent-runs.js'),
   '/api/v1/image-batches': () => import('../functions/api/v1/image-batches.js'),
   '/api/v1/assets': () => import('../functions/api/v1/assets.js'),
+  '/api/v1/text-records': () => import('../functions/api/v1/text-records/[[path]].js'),
   '/api/v1/scripts': () => import('../functions/api/v1/scripts/[[path]].js'),
   '/api/v1/video-tasks': () => import('../functions/api/v1/video-tasks/[[path]].js'),
   '/api/assets': () => import('../functions/api/assets/[[key]].js'),
