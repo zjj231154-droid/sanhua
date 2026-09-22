@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App, { BrandMerchWorkflow, TaskProgress } from './App'
+import App, { BrandMerchWorkflow, TaskProgress, WorkflowStepper } from './App'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -104,6 +104,16 @@ describe('AI 创作工作台 Demo', () => {
     fireEvent.click(product)
     expect(screen.queryByText(/当前产品：杯垫/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '下一步：选择材质' })).toBeDisabled()
+  })
+
+  it('五步流程标识当前步骤、完成步骤和未完成步骤', () => {
+    const onStep = vi.fn()
+    render(<WorkflowStepper steps={['产品', '材质', '尺寸']} activeStep={2} onStep={onStep} />)
+
+    expect(screen.getByRole('button', { name: '2 材质' })).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('button', { name: '3 尺寸' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '✓ 产品' }))
+    expect(onStep).toHaveBeenCalledWith(1)
   })
 
   it('自定义产品标签按回车后会立即选中并保存到会话', () => {
