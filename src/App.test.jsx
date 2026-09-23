@@ -96,6 +96,21 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('button', { name: '任务记录' })).toBeInTheDocument()
   })
 
+  it('再次点击当前功能板块会收起，并可再次展开子菜单', () => {
+    render(<App initialAuthenticated initialPage="brand" />)
+    const brandButton = screen.getByRole('button', { name: '品牌创作' })
+    const navigation = within(screen.getByRole('navigation', { name: '主导航' }))
+
+    expect(brandButton).toHaveAttribute('aria-expanded', 'true')
+    expect(navigation.getByRole('button', { name: '素材创作' })).toBeInTheDocument()
+    fireEvent.click(brandButton)
+    expect(brandButton).toHaveAttribute('aria-expanded', 'false')
+    expect(navigation.queryByRole('button', { name: '素材创作' })).not.toBeInTheDocument()
+    fireEvent.click(brandButton)
+    expect(brandButton).toHaveAttribute('aria-expanded', 'true')
+    expect(navigation.getByRole('button', { name: '素材创作' })).toBeInTheDocument()
+  })
+
   it('品牌产品选择可再次点击取消并清空后续步骤', () => {
     render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
     const product = screen.getByRole('button', { name: '杯垫' })

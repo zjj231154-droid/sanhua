@@ -175,6 +175,18 @@ function Login({ onLogin }) {
 }
 
 function Sidebar({ page, subRoute, onNavigate }) {
+  const [expandedPage, setExpandedPage] = useState(() => NAV_ITEMS.some(item => item.id === page && item.children) ? page : null)
+  useEffect(() => {
+    setExpandedPage(NAV_ITEMS.some(item => item.id === page && item.children) ? page : null)
+  }, [page])
+  const toggleSection = id => {
+    if (page === id) {
+      setExpandedPage(current => current === id ? null : id)
+      return
+    }
+    setExpandedPage(id)
+    onNavigate(id)
+  }
   return (
     <aside className="sidebar">
       <div className="brand-lockup">
@@ -183,14 +195,17 @@ function Sidebar({ page, subRoute, onNavigate }) {
       </div>
       <nav className="main-nav" aria-label="主导航">
         <span className="nav-caption">创作空间</span>
-        {NAV_ITEMS.map(({ id, label, icon: Icon, children }) => <div className="nav-group" key={id}>
-          <button className={page === id ? 'nav-item is-active' : 'nav-item'} onClick={() => onNavigate(id)} aria-expanded={page === id && Boolean(children)}>
+        {NAV_ITEMS.map(({ id, label, icon: Icon, children }) => {
+          const isExpanded = expandedPage === id
+          return <div className="nav-group" key={id}>
+          <button className={page === id ? 'nav-item is-active' : 'nav-item'} onClick={() => toggleSection(id)} aria-expanded={children ? isExpanded : undefined} aria-controls={children ? `nav-submenu-${id}` : undefined}>
             <span className="nav-icon"><Icon size={18} strokeWidth={2} /></span><span>{label}</span>{id === 'script' && <i className="nav-dot" />}{children && <ChevronDown className="nav-chevron" size={15} />}
           </button>
-          {page === id && children && <div className="nav-submenu" aria-label={`${label}子菜单`}>
+          {isExpanded && children && <div className="nav-submenu" id={`nav-submenu-${id}`} aria-label={`${label}子菜单`}>
             {children.map(([route, childLabel]) => <button key={route} className={subRoute === route ? 'nav-subitem is-active' : 'nav-subitem'} onClick={() => onNavigate(id, route)}>{childLabel}</button>)}
           </div>}
-        </div>)}
+        </div>
+        })}
       </nav>
       <div className="sidebar-bottom">
         <button className={page === 'settings' ? 'nav-item is-active' : 'nav-item'} onClick={() => onNavigate('settings')}><Settings size={18} /><span>管理设置</span></button>
