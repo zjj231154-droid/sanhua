@@ -35,6 +35,21 @@ function readAnalysis(value) {
 const splitRequirements = value => String(value || '').split(/[\n；;。]+/).map(item => item.trim().replace(/^[•·\-\d.\s]+/, '')).filter(Boolean)
 const splitPreserve = value => String(value || '').split(/[，,、；;\n]+/).map(item => item.trim()).filter(Boolean)
 
+async function toImageDataUrl(source, errorMessage = '无法读取图片') {
+  if (typeof source !== 'string' || !source) throw new Error(errorMessage)
+  if (source.startsWith('data:image/')) return source
+  const response = await fetch(source)
+  if (!response.ok) throw new Error(errorMessage)
+  const blob = await response.blob()
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(blob.type)) throw new Error('仅支持 PNG、JPG 或 WebP 图片')
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error(errorMessage))
+    reader.readAsDataURL(blob)
+  })
+}
+
 function AutoResizeTextarea({ value, onChange, disabled, label }) {
   const textarea = useRef(null)
   useEffect(() => {
@@ -60,7 +75,7 @@ function RetouchField({ name, label, value, recommendation, locked, dirty, expan
     {longText && !editing ? <div className="retouch-long-preview">
       {items.length ? name === 'requirements' ? <ul>{visibleItems.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <div className="protection-chips">{visibleItems.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}{!expanded && hasMore && <button type="button" onClick={onToggleExpanded}>+{items.length - limit}</button>}</div> : <button type="button" className="empty-field-button" onClick={onStartEditing}>点击填写{label}</button>}
       <div className="retouch-preview-actions"><button type="button" className="text-button" onClick={onStartEditing} disabled={disabled}>编辑</button>{hasMore && <button type="button" className="text-button" onClick={onToggleExpanded}>{expanded ? '收起' : '展开'}</button>}</div>
-    </div> : longText ? <div className="retouch-edit-state"><AutoResizeTextarea label={`${label}编辑`} value={value} disabled={disabled} onChange={onChange} /><button type="button" className="text-button" onClick={onFinishEditing} disabled={disabled}>完成编辑</button></div> : <input aria-label={`${label}编辑`} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} />}
+    </div> : <div className="retouch-edit-state"><AutoResizeTextarea label={`${label}编辑`} value={value} disabled={disabled} onChange={onChange} />{longText && <button type="button" className="text-button" onClick={onFinishEditing} disabled={disabled}>完成编辑</button>}</div>}
     <button type="button" className="field-reset" disabled={disabled || value === recommendation} onClick={onReset}>恢复 AI 建议</button>
   </section>
 }
@@ -241,13 +256,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     const requestId = ++analysisRequest.current
     setAnalyzing(true)
     try {
-      let imageSource = source
-      if (!imageSource.startsWith('data:')) {
-        const response = await fetch(imageSource)
-        if (!response.ok) throw new Error('无法读取所选素材')
-        const blob = await response.blob()
-        imageSource = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
-      }
+      const imageSource = await toImageDataUrl(source, '无法读取所选素材')
       const result = await cloudRequest({
         type: 'analyze', image: imageSource,
         prompt: '你是商品修图视觉分析师。分析图片后，只返回 JSON 对象，必须有 size、scene、decor、product、preserve、requirements 六个中文字符串字段。size 写原图比例和输出建议；scene 写真实场景；decor 写可保留或可调整的装饰；product 写产品类型；preserve 写不可改变的产品、文字、标签和品牌元素；requirements 写可直接执行的精修要求。不要使用 Markdown，不要编造不可见元素。',
@@ -321,13 +330,8 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
   async function submit(confirm = false) {
     setSending(true); setError('')
     try {
-      let source = image
-      if ((!confirm || cloudMode) && !image.startsWith('data:')) {
-        const response = await fetch(image)
-        if (!response.ok) throw new Error('无法读取原图，请重新上传')
-        const blob = await response.blob()
-        source = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
-      }
+      const source = (!confirm || cloudMode) ? await toImageDataUrl(image, '无法读取原图，请重新上传') : image
+      const templateSource = templateImage ? await toImageDataUrl(templateImage, '无法读取模板参考素材，请重新选择') : ''
       const templateNote = templateImage
         ? `参考模板图片：${templateName}（${templateAssetId ? '云资产' : '本地上传'}）。模板仅用于光线、构图、色调、质感或氛围参考；不得覆盖产品主体、文字、标签、Logo 和真实外形。`
         : '未引用修图模板参考素材。'
@@ -341,16 +345,10 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           setPromptDialogOpen(true)
           void fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', sourceModule: 'retouch.records', recordType: 'retouch_plan', title: '产品精修计划', content: plan, contentFormat: 'prompt', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean) }) }).catch(() => {})
         } else {
-          const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(async sourceUrl => {
-            if (sourceUrl.startsWith('data:')) return sourceUrl
-            const response = await fetch(sourceUrl)
-            if (!response.ok) throw new Error('无法读取所选素材，请重新选择')
-            const blob = await response.blob()
-            return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
-          }))
+          const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(sourceUrl => toImageDataUrl(sourceUrl, '无法读取所选素材，请重新选择')))
           const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
             workspace: 'retouch', model: 'gpt-image-2', prompt: `${finalPrompt || job?.plan || ''}\n${editPrompt}`,
-            images: [...sourceImages, templateImage].filter(Boolean), count: Math.max(1, activeRetouchAssets.length), size: '1024x1024', title: activeRetouchAssets.length > 1 ? '批量产品精修' : '产品精修', requestedName: activeRetouchAssets.length > 1 ? '' : resultName, namePrefix: activeRetouchAssets.length > 1 ? batchNamePrefix : '', promptSummary: editPrompt, referenceAssetIds: templateAssetId ? [templateAssetId] : [], sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean),
+            images: [...sourceImages, templateSource].filter(Boolean), count: Math.max(1, activeRetouchAssets.length), size: '1024x1024', title: activeRetouchAssets.length > 1 ? '批量产品精修' : '产品精修', requestedName: activeRetouchAssets.length > 1 ? '' : resultName, namePrefix: activeRetouchAssets.length > 1 ? batchNamePrefix : '', promptSummary: editPrompt, referenceAssetIds: templateAssetId ? [templateAssetId] : [], sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean),
           }) })
           const value = await response.json()
           if (!response.ok) throw new Error(value.error || '产品精修失败')
@@ -365,7 +363,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
         }
         return
       }
-      const result = confirm ? await request(`/${job.id}/confirm`, {}) : await request('', { image: source, referenceImage: templateImage, requirements: editPrompt })
+      const result = confirm ? await request(`/${job.id}/confirm`, {}) : await request('', { image: source, referenceImage: templateSource, requirements: editPrompt })
       setJob(result); localStorage.setItem('retouch-job', result.id)
     } catch (err) { setError(err.message) }
     finally { setSending(false) }

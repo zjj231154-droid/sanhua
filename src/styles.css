@@ -1578,8 +1578,8 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .retouch-analysis-field > header em { color: #6f6a64; font-size: var(--assistant-font-hint); font-style: normal; font-weight: 600; }
 .field-lock, .field-reset { font-size: var(--assistant-font-hint); line-height: 1.4; }
 .retouch-analysis-field input, .retouch-analysis-field textarea { min-height: 42px; padding: 11px 12px; color: #4a4a4a; font-size: var(--assistant-font-body); line-height: 1.5; }
-.retouch-analysis-field textarea { min-height: 80px; resize: vertical; }
-.retouch-analysis-field[data-field="requirements"] textarea { min-height: 100px; }
+.retouch-analysis-field textarea { min-height: 45px; max-height: 87px; resize: none; overflow-y: hidden; }
+.retouch-analysis-field[data-field="requirements"] textarea { min-height: 45px; }
 .retouch-long-preview { display: grid; gap: 10px; }
 .retouch-long-preview ul { margin: 0; padding-left: 19px; display: grid; gap: 7px; color: #4a4a4a; font-size: var(--assistant-font-body); line-height: 1.6; }
 .retouch-long-preview li::marker { color: #9b6046; }

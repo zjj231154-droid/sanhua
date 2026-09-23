@@ -119,6 +119,16 @@ it('精修助手将参数显示为可折叠卡片，并保留 AI 偏离状态', 
   expect(screen.queryByText('已偏离 AI 建议')).not.toBeInTheDocument()
 })
 
+it('尺寸与比例使用支持自动增高的多行输入框', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
+  render(<LiveRetouch />)
+
+  fireEvent.click(screen.getByRole('button', { name: /^尺寸与比例/ }))
+  const editor = screen.getByRole('textbox', { name: '尺寸与比例编辑' })
+  expect(editor.tagName).toBe('TEXTAREA')
+  expect(editor).toHaveAttribute('aria-multiline', 'true')
+})
+
 it('默认展开产品类型和精修要求，并将精修要求以可编辑的要点预览展示', () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
   render(<LiveRetouch />)

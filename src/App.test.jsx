@@ -87,6 +87,20 @@ describe('AI 创作工作台 Demo', () => {
     await waitFor(() => expect(screen.getByText('已归档精修结果')).toBeInTheDocument())
   })
 
+  it('从资产库用于写剧本时会带入短剧脚本编辑区', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ assets: [], scripts: [] }) })))
+    render(<App initialAuthenticated initialPage="assets" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '短剧' }))
+    const useForScript = screen.getAllByRole('button', { name: '用于写剧本' })[0]
+    const assetName = useForScript.closest('article').querySelector('strong').textContent
+    fireEvent.click(useForScript)
+
+    expect(await screen.findByRole('textbox', { name: '短剧脚本需求' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(`已将「${assetName}」带入短剧创作`)
+    expect(screen.getByLabelText('短剧实时预览')).toHaveTextContent(assetName)
+  })
+
   it('选中产品精修时会展开模块内的二级导航', () => {
     render(<App initialAuthenticated initialPage="retouch" />)
 
