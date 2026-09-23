@@ -1,4 +1,4 @@
-import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL } from '../../_lib/tokenspace.js'
+import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL, providerFrom } from '../../_lib/tokenspace.js'
 const dataUrlToBlob = value => {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
   if (!match) return null
@@ -7,9 +7,36 @@ const dataUrlToBlob = value => {
 export async function onRequestGet(context) {
   const path = Array.isArray(context.params.path) ? context.params.path.join('/') : context.params.path
   if (path !== 'test') return json(405, { error: 'METHOD_NOT_ALLOWED' })
-  const model = context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
-  const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai-reasoning', payload: { model, messages: [{ role: 'user', content: 'Reply with exactly: connection successful' }] } })
-  return result.response || json(200, { success: true, provider: 'usegoodai' })
+  // This endpoint deliberately performs a tiny completion rather than merely
+  // checking whether a key exists or whether the provider's /models endpoint
+  // is reachable. It therefore verifies the configured key, route and model.
+  const provider = providerFrom(context, 'usegoodai-reasoning')
+  const model = String(context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL).trim()
+  if (!provider.apiKey) return json(503, { error: 'API_KEY_NOT_CONFIGURED', provider: provider.name, requestedModel: model })
+  const startedAt = Date.now()
+  try {
+    const response = await fetch(`${provider.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with exactly: connection successful' }], max_tokens: 16, temperature: 0 }),
+      signal: AbortSignal.timeout(30000),
+    })
+    const raw = await response.text()
+    let data
+    try { data = JSON.parse(raw) } catch { data = null }
+    const elapsedMs = Date.now() - startedAt
+    if (!response.ok) {
+      const message = String(data?.error?.message || data?.message || data?.error || `模型服务返回 HTTP ${response.status}`).slice(0, 500)
+      return json(response.status, { error: message, provider: provider.name, requestedModel: model, elapsedMs })
+    }
+    const reply = data?.choices?.[0]?.message?.content
+    if (typeof reply !== 'string' || !reply.trim()) return json(502, { error: '模型已返回响应，但响应不含可读文本', provider: provider.name, requestedModel: model, elapsedMs })
+    return json(200, { success: true, provider: provider.name, requestedModel: model, respondedModel: String(data?.model || model), reply: reply.trim().slice(0, 200), elapsedMs })
+  } catch (error) {
+    const elapsedMs = Date.now() - startedAt
+    const message = error?.name === 'TimeoutError' ? '模型调用超过 30 秒未返回，请检查模型服务或稍后重试' : '无法连接模型服务，请检查 Railway 网络与 UseGoodAI 配置'
+    return json(502, { error: message, provider: provider.name, requestedModel: model, elapsedMs })
+  }
 }
 export async function onRequestPost(context) {
   const path = Array.isArray(context.params.path) ? context.params.path.join('/') : context.params.path

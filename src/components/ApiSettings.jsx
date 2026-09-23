@@ -26,7 +26,9 @@ export default function ApiSettings() {
       let value
       try { value = JSON.parse(raw) } catch { throw new Error('云端服务返回了无效响应，请刷新后重试。') }
       if (!res.ok) throw new Error(`${value.upstream || '服务'} HTTP ${value.status || res.status}: ${value.error || '请求失败'}`)
-      setMessage('云端 UseGoodAI 连接成功。')
+      const seconds = Number.isFinite(Number(value.elapsedMs)) ? `，耗时 ${(Number(value.elapsedMs) / 1000).toFixed(1)} 秒` : ''
+      const reply = value.reply ? ` 返回“${value.reply}”` : ''
+      setMessage(`UseGoodAI 已实际调用 ${value.respondedModel || value.requestedModel || '推理模型'} 并收到响应${seconds}。${reply} 未生成图片。`)
     } catch (error) { setMessage(error.message) }
     finally { setBusy(false) }
   }
@@ -47,6 +49,7 @@ export default function ApiSettings() {
       <datalist id="image-model-options">{models.map(id => <option key={id} value={id} />)}</datalist>
       <label className="api-toggle"><input type="checkbox" checked={config.enabled} onChange={e => setConfig({ ...config, enabled: e.target.checked })} />启用中转 API（关闭时使用本地 Codex）</label>
       <p>启用后，推理、生成和精修请求会由服务端发送给 UseGoodAI，费用按中转站规则计算。密钥不会返回浏览器；请勿共享 storage/private 目录。</p>
-      <div>{!cloudMode && <button className="primary-button" type="submit">保存设置</button>}<button className="secondary-button" type="button" onClick={testCloud}>测试云端连接</button></div>
+      <p className="api-test-note">测试会由 Railway 发送一条最小推理请求并等待模型响应，不会生成图片。</p>
+      <div>{!cloudMode && <button className="primary-button" type="submit">保存设置</button>}<button className="secondary-button" type="button" onClick={testCloud}>{busy ? '正在调用模型…' : '测试模型连接'}</button></div>
     </fieldset></form><p role="status">{message}</p></section>
 }
