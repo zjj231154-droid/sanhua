@@ -47,7 +47,7 @@ import { CLOUD_ASSETS } from './data/cloudAssets'
 
 const NAV_ITEMS = [
   { id: 'home', label: '工作台', icon: Home },
-  { id: 'retouch', label: '产品精修', icon: WandSparkles, children: [['one-click', '一键修图'], ['gallery', '图库'], ['assistant', '精修助手'], ['tasks', '任务记录']] },
+  { id: 'retouch', label: '产品精修', icon: WandSparkles, children: [['one-click', '一键修图'], ['gallery', '图库'], ['tasks', '任务记录']] },
   { id: 'brand', label: '品牌创作', icon: Palette, children: [['create', '素材创作'], ['library', '产品库'], ['prompts', '提示词记录']] },
   { id: 'script', label: '短剧脚本', icon: BookOpenText, children: [['create', '脚本创作'], ['library', '剧本库'], ['video', '视频生成'], ['versions', '版本记录']] },
   { id: 'assets', label: '资产库', icon: FolderOpen, children: [['images', '图片'], ['video', '视频'], ['audio', '音频'], ['text', '文本'], ['generated', 'AI 成果'], ['trash', '回收站']] },
@@ -1013,7 +1013,7 @@ function AssetLibraryPage({ onNavigate, initialCategory = 'images' }) {
     <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创、短剧场景和 AI 创作成果。</p></div><span className="connection-note">云端资产 · {allAssets.length} 项</span></header>
     <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['images', '图片'], ['brand', '茶馆文创'], ['script', '短剧'], ['text', '文本'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材</small></div>
     <section className="asset-grid" aria-label="云端资产列表">
-      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{asset.isDemo ? `${asset.group} · 演示素材` : asset.group}</small></span><span className="asset-card-actions">{!asset.isDemo && <a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>}<button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch')}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}
+      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{asset.isDemo ? `${asset.group} · 演示素材` : asset.group}</small></span><span className="asset-card-actions">{!asset.isDemo && <a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>}<button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch', undefined, { asset, assetId: asset.id, source: 'asset-library', focusAssistant: true })}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}
     </section>
     {!visible.length && <p className="empty-state">未找到匹配资产，请调整搜索词或分类。</p>}
     {viewerAsset && <ImageViewer src={viewerAsset.url} alt={viewerAsset.name} downloadUrl={viewerAsset.isDemo ? viewerAsset.url : `/api/v1/assets/${viewerAsset.id}/download`} downloadName={viewerAsset.downloadName || viewerAsset.name} onClose={() => setViewerAsset(null)} />}
@@ -1058,10 +1058,15 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   const [page, setPage] = useState(validPreviewPage || initialPage)
   const [subRoute, setSubRoute] = useState(DEFAULT_SUB_ROUTE[validPreviewPage || initialPage] || '')
   const [timeMode, setTimeMode] = useState(previewParams.get('theme') === 'night' ? 'night' : 'day')
+  const [retouchContext, setRetouchContext] = useState(null)
 
   if (!authenticated) return <Login onLogin={() => setAuthenticated(true)} />
 
-  const navigate = (nextPage, nextSubRoute = DEFAULT_SUB_ROUTE[nextPage] || '') => { setPage(nextPage); setSubRoute(nextSubRoute) }
+  const navigate = (nextPage, nextSubRoute = DEFAULT_SUB_ROUTE[nextPage] || '', context = null) => {
+    const route = nextPage === 'retouch' && nextSubRoute === 'assistant' ? 'one-click' : nextSubRoute
+    setPage(nextPage); setSubRoute(route)
+    if (context?.assetId && nextPage === 'retouch') setRetouchContext({ ...context, subRoute: 'one-click', createdAt: new Date().toISOString() })
+  }
   return (
     <div className={`app-shell time-${timeMode}`}>
       <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} />
@@ -1069,7 +1074,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
         <Topbar timeMode={timeMode} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
           {page === 'home' && <HomePage onNavigate={navigate} />}
-          {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_plan", "精修计划"], ["retouch_final_prompt", "最终提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant'} />)}
+          {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_plan", "精修计划"], ["retouch_final_prompt", "最终提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} />}
           {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} />}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} />}

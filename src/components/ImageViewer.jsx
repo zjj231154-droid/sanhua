@@ -5,7 +5,11 @@ export default function ImageViewer({ src, alt = '生成图片', downloadUrl, do
   const [zoom, setZoom] = useState(100)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const drag = useRef(null)
-  const clamp = value => Math.max(10, Math.min(800, value))
+  const clamp = value => Math.max(25, Math.min(400, value))
+  const wheelStep = event => {
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 100
+    return Math.max(-4, Math.min(4, -(event.deltaY / unit) * 3.5))
+  }
   useEffect(() => {
     const onKey = event => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -15,7 +19,7 @@ export default function ImageViewer({ src, alt = '生成图片', downloadUrl, do
   const fullscreen = async () => { try { await document.documentElement.requestFullscreen?.() } catch {} }
   return <div className="image-viewer" role="dialog" aria-modal="true" aria-label="图片查看器">
     <div className="image-viewer-toolbar"><strong>{alt}</strong><span>{zoom}%</span>{(downloadUrl || src) && <a href={downloadUrl || src} download={downloadName || alt} aria-label="下载图片" title="下载图片"><Download size={17} /></a>}<button onClick={() => setZoom(value => clamp(value - 10))} aria-label="缩小"><Minus size={17} /></button><button onClick={() => setZoom(value => clamp(value + 10))} aria-label="放大"><Plus size={17} /></button><button onClick={reset} aria-label="重置视图"><RotateCcw size={17} /></button><button onClick={fullscreen} aria-label="全屏查看"><Maximize2 size={17} /></button><button onClick={onClose} aria-label="关闭图片查看器"><X size={18} /></button></div>
-    <div className="image-viewer-stage" onWheel={event => { event.preventDefault(); setZoom(value => clamp(value + (event.deltaY < 0 ? 10 : -10))) }} onPointerDown={event => { drag.current = { x: event.clientX, y: event.clientY, offset }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={event => { if (!drag.current) return; setOffset({ x: drag.current.offset.x + event.clientX - drag.current.x, y: drag.current.offset.y + event.clientY - drag.current.y }) }} onPointerUp={() => { drag.current = null }}>
+    <div className="image-viewer-stage" onWheel={event => { event.preventDefault(); const step = wheelStep(event); if (step) setZoom(value => clamp(value + step)) }} onPointerDown={event => { drag.current = { x: event.clientX, y: event.clientY, offset }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={event => { if (!drag.current) return; setOffset({ x: drag.current.offset.x + event.clientX - drag.current.x, y: drag.current.offset.y + event.clientY - drag.current.y }) }} onPointerUp={() => { drag.current = null }}>
       <img src={src} alt={alt} draggable="false" style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom / 100})` }} />
     </div>
   </div>

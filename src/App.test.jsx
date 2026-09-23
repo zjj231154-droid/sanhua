@@ -92,7 +92,7 @@ describe('AI 创作工作台 Demo', () => {
 
     expect(screen.getByRole('button', { name: '一键修图' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '图库' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '精修助手' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '精修助手' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '任务记录' })).toBeInTheDocument()
   })
 

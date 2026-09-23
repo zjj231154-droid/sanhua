@@ -27,6 +27,21 @@ it('将已归档的云端精修结果显示在素材选择器中', async () => {
   expect(await screen.findByRole('button', { name: /已归档精修结果/ })).toBeInTheDocument()
 })
 
+it('素材选择器每页展示十二项，并可切换到下一页', async () => {
+  const assets = Array.from({ length: 13 }, (_, index) => ({ id: `paged-${index + 1}`, name: `分页素材${index + 1}`, assetSpace: 'retouch', url: `/api/assets/paged-${index + 1}.png` }))
+  vi.stubGlobal('fetch', vi.fn(async url => url.startsWith('/api/v1/assets') ? { ok: true, json: async () => ({ assets }) } : { ok: true, json: async () => ({ engine: 'api' }) }))
+  render(<LiveRetouch />)
+
+  fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
+  const dialog = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
+  expect(await within(dialog).findByRole('button', { name: /分页素材12/ })).toBeInTheDocument()
+  expect(within(dialog).queryByRole('button', { name: /分页素材13/ })).not.toBeInTheDocument()
+  fireEvent.click(within(dialog).getByRole('button', { name: '下一页' }))
+  expect(await within(dialog).findByRole('button', { name: /分页素材13/ })).toBeInTheDocument()
+  expect(within(dialog).getByLabelText('素材分页')).toHaveTextContent('第 2 /')
+  expect(within(dialog).getByLabelText('素材分页')).toHaveTextContent('每页 12 项')
+})
+
 it('单图点击后立即应用，批量选择会在工作区保留全部素材', async () => {
   const fetch = vi.fn(async url => {
     if (url.startsWith('/api/v1/assets?workspace=retouch')) return { ok: true, json: async () => ({ assets: [
