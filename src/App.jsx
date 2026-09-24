@@ -928,7 +928,6 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       if (!response.ok) throw new Error(value.error || '设计助手暂不可用')
       const plan = value.plan || ''
       setBrandPlan(plan)
-      void archiveText({ workspace: 'brand', sourceModule: 'brand.prompts', recordType: 'brand_plan', title: '品牌设计计划', content: plan, contentFormat: 'prompt', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [] })
       return plan
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
@@ -945,7 +944,6 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       if (!output?.url) throw new Error('模型结果未能完成资产归档')
       setBrandImage(output)
       setBrandAssets(current => [output, ...current.filter(asset => asset.id !== output.id)])
-      void archiveText({ workspace: 'brand', sourceModule: 'brand.prompts', recordType: 'brand_final_prompt', title: requestedName || '品牌创作最终提示词', content: finalPrompt, contentFormat: 'prompt', model: 'gpt-image-2', provider: 'usegoodai', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [], generatedAssetIds: [output.id] })
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
   const generateScriptPlan = async () => {
@@ -955,7 +953,6 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '编导助手暂不可用')
       const plan = value.plan || ''
-      void archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script_outline', title: '待确认短剧脚本大纲', content: plan, contentFormat: 'markdown', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [], sourceTaskId: value.id || value.task?.id })
       openScriptConfirmation(plan, value.id || value.task?.id)
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }

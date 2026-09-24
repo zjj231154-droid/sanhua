@@ -96,6 +96,12 @@ async function cloudRequest(data) {
   if (!res.ok) throw new Error(typeof value.error === 'string' ? value.error : JSON.stringify(value.error || value))
   return value
 }
+async function archivePromptRecord(input) {
+  const response = await fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
+  const value = await response.json()
+  if (!response.ok) throw new Error(value.error || '提示词记录保存失败')
+  return value.record
+}
 export default function LiveRetouch({ initialTab = 'one-click', focusAssistant = false, incomingAsset = null, onIncomingAssetConsumed }) {
   const cloudMode = isCloudDeployment()
   const [image, setImage] = useState('')
@@ -340,14 +346,15 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
         if (!confirm) {
           const planned = await cloudRequest({ type: 'prompt', prompt: `请把以下商品修图要求整理为简洁、可执行的中文生图计划，只输出计划正文：\n${editPrompt}` })
           const plan = planned.data?.choices?.[0]?.message?.content || editPrompt
+          await archivePromptRecord({ workspace: 'retouch', sourceModule: 'retouch.prompts', recordType: 'retouch_plan', title: '产品精修计划', content: plan, contentFormat: 'prompt', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean) })
           setJob({ id: 'cloud', status: 'awaiting_confirmation', plan })
           setFinalPrompt(plan)
           setPromptDialogOpen(true)
-          void fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', sourceModule: 'retouch.records', recordType: 'retouch_plan', title: '产品精修计划', content: plan, contentFormat: 'prompt', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean) }) }).catch(() => {})
         } else {
+          const submittedPrompt = `${finalPrompt || job?.plan || ''}\n${editPrompt}`.trim()
           const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(sourceUrl => toImageDataUrl(sourceUrl, '无法读取所选素材，请重新选择')))
           const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-            workspace: 'retouch', model: 'gpt-image-2', prompt: `${finalPrompt || job?.plan || ''}\n${editPrompt}`,
+            workspace: 'retouch', model: 'gpt-image-2', prompt: submittedPrompt,
             images: [...sourceImages, templateSource].filter(Boolean), count: Math.max(1, activeRetouchAssets.length), size: '1024x1024', title: activeRetouchAssets.length > 1 ? '批量产品精修' : '产品精修', requestedName: activeRetouchAssets.length > 1 ? '' : resultName, namePrefix: activeRetouchAssets.length > 1 ? batchNamePrefix : '', promptSummary: editPrompt, referenceAssetIds: templateAssetId ? [templateAssetId] : [], sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean),
           }) })
           const value = await response.json()
@@ -359,7 +366,6 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           void refreshStoredAssets()
           setCloudResult(resultAsset)
           setJob({ ...job, status: 'done', taskId: value.task?.id })
-          void fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', sourceModule: 'retouch.records', recordType: 'retouch_final_prompt', title: resultName || '产品精修最终提示词', content: finalPrompt || job?.plan || editPrompt, contentFormat: 'prompt', model: 'gpt-image-2', provider: 'usegoodai', sourceTaskId: value.task?.id, sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean), generatedAssetIds: newAssets.map(asset => asset.id) }) }).catch(() => {})
         }
         return
       }

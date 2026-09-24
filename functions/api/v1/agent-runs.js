@@ -1,6 +1,7 @@
 import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL } from '../../_lib/tokenspace.js'
 import { registryFor } from '../../_lib/skills.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
+import { createTextRecord } from '../../_lib/text-record-store.js'
 const allowed = new Set(['retouch', 'brand', 'script'])
 const textFor = (workspace, input = {}) => {
   const requirements = String(input.requirements || input.prompt || '').slice(0, 10000)
@@ -20,7 +21,12 @@ export async function onRequestPost(context) {
   const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai-reasoning', payload: { model, messages: [{ role: 'system', content: prompt }, { role: 'user', content: requirementsText(input) }], temperature: 0.35 } })
   if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'UseGoodAI 请求失败' }); return result.response }
   const content = result.data?.choices?.[0]?.message?.content || ''
-  await updateTask(context, task.id, { status: 'waiting_user', progress: 15, stage: '等待用户确认', plan: content })
-  return json(202, { id: task.id, status: 'waiting_user', workspace, skill, plan: content, input: { assetCount: Array.isArray(input.assets) ? input.assets.length : 0 } })
+  const textRecord = await createTextRecord(context, {
+    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_plan' : workspace === 'script' ? 'script_outline' : 'retouch_plan',
+    title: workspace === 'brand' ? '品牌设计计划' : workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content, contentFormat: 'prompt',
+    model, provider: 'usegoodai-reasoning', sourceTaskId: task.id, sourceAssetIds: Array.isArray(input.assets) ? input.assets : [], referenceAssetIds: Array.isArray(input.reference_asset_ids) ? input.reference_asset_ids : [],
+  })
+  const updatedTask = await updateTask(context, task.id, { status: 'waiting_user', progress: 15, stage: '等待用户确认', plan: content, textRecordId: textRecord?.id || null })
+  return json(202, { id: task.id, status: 'waiting_user', workspace, skill, plan: content, textRecordId: textRecord?.id || null, task: updatedTask, input: { assetCount: Array.isArray(input.assets) ? input.assets.length : 0 } })
 }
 function requirementsText(input) { return String(input.requirements || input.prompt || '请根据当前选中的素材提出推荐方案').slice(0, 10000) }

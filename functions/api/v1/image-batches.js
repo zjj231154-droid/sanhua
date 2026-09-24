@@ -1,6 +1,7 @@
 import { json, tokenSpaceRequest } from '../../_lib/tokenspace.js'
 import { archiveImageOutputs, assetsBucket } from '../../_lib/asset-store.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
+import { createTextRecord } from '../../_lib/text-record-store.js'
 
 const workspaceFor = value => ['retouch', 'brand'].includes(value) ? value : null
 
@@ -27,6 +28,12 @@ export async function onRequestPost(context) {
     stage: `模型处理中（0/${count}）`, heartbeatAt: new Date().toISOString(), requirements: prompt,
     finalPrompt: String(input.metadata?.finalPrompt || prompt).slice(0, 12000), originalPlan: String(input.metadata?.originalPlan || '').slice(0, 12000), model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
   })
+  const textRecord = await createTextRecord(context, {
+    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_final_prompt' : 'retouch_final_prompt',
+    title: requestedName || (workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: String(input.metadata?.finalPrompt || prompt), contentFormat: 'prompt', model, provider: 'usegoodai', sourceTaskId: task.id,
+    sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds : [], referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds : [],
+  })
+  await updateTask(context, task.id, { textRecordId: textRecord?.id || null })
   let result
   if (images.length) {
     const form = new FormData()
@@ -64,5 +71,5 @@ export async function onRequestPost(context) {
     return archived.error
   }
   const completed = await updateTask(context, task.id, { status: 'completed', progress: 100, stage: '数据库完成并可访问', heartbeatAt: new Date().toISOString(), completedAt: new Date().toISOString(), outputIds: archived.assets.map(asset => asset.id), outputs: archived.assets.map(asset => ({ id: asset.id, url: `/api/assets/${asset.storageKey}`, name: asset.name })) })
-  return json(201, { task: completed, assets: archived.assets.map(asset => ({ ...asset, url: `/api/assets/${asset.storageKey}` })) })
+  return json(201, { task: completed, textRecordId: textRecord?.id || null, assets: archived.assets.map(asset => ({ ...asset, url: `/api/assets/${asset.storageKey}` })) })
 }
