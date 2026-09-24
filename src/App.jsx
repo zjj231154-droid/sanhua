@@ -136,7 +136,6 @@ function Login({ onLogin }) {
             <h2>欢迎回来</h2>
             <p>登录你的专属创作工作台</p>
           </div>
-          <span className="demo-pill"><span /> 演示模式</span>
         </div>
 
         <div className="login-fields">

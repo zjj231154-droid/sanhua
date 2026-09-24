@@ -62,9 +62,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .login-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .login-card-heading h2 { margin: 0 0 4px; font-family: Georgia, 'Noto Serif SC', serif; font-size: 28px; font-weight: 400; }
 .login-card-heading p { margin: 0; color: rgba(255,255,255,.66); font-size: 11px; }
-.demo-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid #d8ddd8; border-radius: 999px; color: #53625a; background: #f3f7f4; font-size: 12px; font-weight: 600; }
-.demo-pill span { width: 7px; height: 7px; border-radius: 50%; background: #4d9677; box-shadow: 0 0 0 4px rgba(77,150,119,.12); }
-.login-card--glass .demo-pill { flex: 0 0 auto; border-color: rgba(224,233,226,.26); color: #dbe8e0; background: rgba(222,238,228,.09); font-size: 9px; }
 .login-fields { margin-top: 19px; display: grid; grid-template-columns: 1fr; gap: 9px; }
 .input-shell {
   height: 46px;
