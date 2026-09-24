@@ -87,6 +87,12 @@ describe('AI 创作工作台 Demo', () => {
     await waitFor(() => expect(screen.getByText('已归档精修结果')).toBeInTheDocument())
   })
 
+  it('资产库顶部图片筛选不显示文本按钮', () => {
+    const { container } = render(<App initialAuthenticated initialPage="assets" />)
+    const toolbar = within(container.querySelector('.asset-toolbar'))
+    expect(toolbar.queryByRole('button', { name: '文本' })).not.toBeInTheDocument()
+  })
+
   it('从资产库用于写剧本时会带入短剧脚本编辑区', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ assets: [], scripts: [] }) })))
     render(<App initialAuthenticated initialPage="assets" />)
