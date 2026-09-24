@@ -1336,6 +1336,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .image-viewer-stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; cursor: grab; touch-action: none; }
 .image-viewer-stage:active { cursor: grabbing; }
 .image-viewer-stage img { max-width: 92%; max-height: 88%; object-fit: contain; transform-origin: center; transition: transform .08s linear; user-select: none; }
+.image-viewer-close { position: absolute; z-index: 2; right: 28px; bottom: 28px; width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid rgba(255,244,228,.42); border-radius: 50%; color: #fffaf2; background: rgba(67,39,28,.9); box-shadow: 0 10px 28px rgba(0,0,0,.28); cursor: pointer; transition: transform .15s ease, background .15s ease; }
+.image-viewer-close:hover { transform: scale(1.06); background: #9b413c; }
 .product-library-panel { min-height: 240px; margin-top: 14px; padding: 20px; color: inherit; }
 .product-library-panel h2 { margin: 0 0 16px; font-size: 18px; font-weight: 500; }
 .product-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
@@ -1431,6 +1433,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .retouch-mode-card:hover { border-color: var(--brand-deep); background: rgba(126,49,34,.13); box-shadow: 0 0 0 2px rgba(126,49,34,.14); transform: translateY(-1px); }
 .gallery-toolbar { justify-content: space-between; }
 .gallery-asset-card { position: relative; cursor: pointer; transition: box-shadow .15s ease, transform .15s ease; }
+.gallery-asset-card .real-photo::after { content: '双击预览'; position: absolute; right: 9px; bottom: 9px; padding: 4px 8px; border-radius: 999px; color: #fff; background: rgba(40,25,18,.72); font-size: 11px; opacity: 0; transform: translateY(4px); transition: opacity .15s ease, transform .15s ease; }
+.gallery-asset-card:hover .real-photo::after { opacity: 1; transform: translateY(0); }
 .gallery-asset-card.is-selected { box-shadow: 0 0 0 2px #c76848, 0 16px 34px rgba(66,36,24,.2); }
 .gallery-checkbox { position: absolute; top: 10px; right: 10px; min-width: 24px; min-height: 24px; padding: 4px 6px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: rgba(36,25,19,.78); font-size: 10px; font-weight: 700; }
 .gallery-asset-card:not(.is-selected) .gallery-checkbox { width: 24px; padding: 0; border: 2px solid #fff; background: rgba(36,25,19,.32); }

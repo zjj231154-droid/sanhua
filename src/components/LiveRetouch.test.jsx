@@ -91,3 +91,21 @@ it('模板精修在第四步提供只影响视觉风格的模板参考入口', a
   expect(screen.getByRole('button', { name: '选择云端模板参考' })).toBeInTheDocument()
   expect(screen.getByText(/不会被模板参考覆盖/)).toBeInTheDocument()
 })
+
+it('图库图片双击后可打开缩放预览，并从右下角关闭', async () => {
+  vi.stubGlobal('fetch', vi.fn(async url => {
+    if (String(url).startsWith('/api/v1/assets')) return response({ assets: [{ id: 'gallery-1', name: '图库精修图', assetSpace: 'retouch', url: 'data:image/png;base64,AA==' }] })
+    return response({ engine: 'api' })
+  }))
+  render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('tab', { name: '图库' }))
+  const galleryCard = (await screen.findByText('图库精修图')).closest('article')
+  fireEvent.doubleClick(galleryCard)
+
+  expect(screen.getByRole('dialog', { name: '图片查看器' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '放大' })).toBeInTheDocument()
+  const close = screen.getByRole('button', { name: '关闭图片查看器' })
+  expect(close).toHaveClass('image-viewer-close')
+  fireEvent.click(close)
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '图片查看器' })).not.toBeInTheDocument())
+})
