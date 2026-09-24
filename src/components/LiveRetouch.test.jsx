@@ -3,11 +3,29 @@ import { afterEach, it, expect, vi } from 'vitest'
 import LiveRetouch from './LiveRetouch'
 
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+function renderRetouchWorkspace() {
+  const view = render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('button', { name: '选择单图精修流程' }))
+  return view
+}
+
+it('首次进入先选择单图、批量或模板精修方式', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
+  render(<LiveRetouch />)
+
+  const entry = screen.getByLabelText('选择精修方式')
+  expect(within(entry).getByRole('button', { name: '选择单图精修流程' })).toBeInTheDocument()
+  expect(within(entry).getByRole('button', { name: '选择批量精修流程' })).toBeInTheDocument()
+  expect(within(entry).getByRole('button', { name: '选择模板精修流程' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '选择模板精修流程' }))
+  expect(screen.getByLabelText('修图模板')).toBeInTheDocument()
+})
+
 it('恢复计划后等待明确确认，才提交编辑请求', async () => {
   localStorage.setItem('retouch-job', 'saved-job')
   const fetch = vi.fn(async (url, options) => ({ ok: true, json: async () => url.endsWith('/status') ? { connected: true } : options ? { id: 'saved-job', status: 'editing' } : { id: 'saved-job', status: 'awaiting_confirmation', plan: '保留原比例与杯型；咖啡店；无新增道具。' } }))
   vi.stubGlobal('fetch', fetch)
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
   const button = await screen.findByRole('button', { name: '确认计划并开始精修' })
   expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
   fireEvent.click(button)
@@ -21,7 +39,7 @@ it('将已归档的云端精修结果显示在素材选择器中', async () => {
   })
   vi.stubGlobal('fetch', fetch)
 
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
   fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
 
   expect(await screen.findByRole('button', { name: /已归档精修结果/ })).toBeInTheDocument()
@@ -30,7 +48,7 @@ it('将已归档的云端精修结果显示在素材选择器中', async () => {
 it('素材选择器每页展示十二项，并可切换到下一页', async () => {
   const assets = Array.from({ length: 13 }, (_, index) => ({ id: `paged-${index + 1}`, name: `分页素材${index + 1}`, assetSpace: 'retouch', url: `/api/assets/paged-${index + 1}.png` }))
   vi.stubGlobal('fetch', vi.fn(async url => url.startsWith('/api/v1/assets') ? { ok: true, json: async () => ({ assets }) } : { ok: true, json: async () => ({ engine: 'api' }) }))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
 
   fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
   const dialog = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
@@ -51,7 +69,7 @@ it('单图点击后立即应用，批量选择会在工作区保留全部素材'
     return { ok: true, json: async () => ({ engine: 'api' }) }
   })
   vi.stubGlobal('fetch', fetch)
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
 
   fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
   fireEvent.click(await screen.findByRole('button', { name: /云端素材一/ }))
@@ -71,7 +89,7 @@ it('单图点击后立即应用，批量选择会在工作区保留全部素材'
 it('批量选择最多十张，第十一张会被阻止', async () => {
   const assets = Array.from({ length: 11 }, (_, index) => ({ id: `retouch-${index + 1}`, name: `素材${index + 1}`, assetSpace: 'retouch', url: `/api/assets/${index + 1}.png` }))
   vi.stubGlobal('fetch', vi.fn(async url => url.startsWith('/api/v1/assets') ? { ok: true, json: async () => ({ assets }) } : { ok: true, json: async () => ({ engine: 'api' }) }))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
   fireEvent.click(screen.getByRole('button', { name: /批量修图/ }))
   const dialog = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
   for (let index = 1; index <= 10; index += 1) fireEvent.click((await within(dialog).findByText(`素材${index}`, { selector: 'span' })).closest('button'))
@@ -88,7 +106,7 @@ it('图库中的已归档精修图可以重命名并更新当前卡片', async (
   })
   vi.stubGlobal('fetch', fetch)
   vi.stubGlobal('prompt', vi.fn(() => '新版精修结果'))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
   fireEvent.click(screen.getByRole('tab', { name: '图库' }))
   fireEvent.click(await screen.findByRole('button', { name: '重命名 旧精修结果' }))
   await waitFor(() => expect(screen.getByText('新版精修结果')).toBeInTheDocument())
@@ -97,7 +115,7 @@ it('图库中的已归档精修图可以重命名并更新当前卡片', async (
 
 it('修图模板面板只提供上传与云资产参考素材入口', () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
   fireEvent.click(screen.getByRole('button', { name: '修图模版' }))
   const panel = screen.getByLabelText('修图模板')
   expect(within(panel).getByText('上传参考素材')).toBeInTheDocument()
@@ -107,7 +125,7 @@ it('修图模板面板只提供上传与云资产参考素材入口', () => {
 
 it('精修助手将参数显示为可折叠卡片，并保留 AI 偏离状态', () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
 
   const scene = screen.getByRole('button', { name: /^场景/ })
   expect(scene).toHaveAttribute('aria-expanded', 'false')
@@ -121,7 +139,7 @@ it('精修助手将参数显示为可折叠卡片，并保留 AI 偏离状态', 
 
 it('尺寸与比例使用支持自动增高的多行输入框', () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
 
   fireEvent.click(screen.getByRole('button', { name: /^尺寸与比例/ }))
   const editor = screen.getByRole('textbox', { name: '尺寸与比例编辑' })
@@ -131,7 +149,7 @@ it('尺寸与比例使用支持自动增高的多行输入框', () => {
 
 it('默认展开产品类型和精修要求，并将精修要求以可编辑的要点预览展示', () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
 
   expect(screen.getByRole('button', { name: /^产品类型/ })).toHaveAttribute('aria-expanded', 'true')
   expect(screen.getByRole('button', { name: /^精修要求/ })).toHaveAttribute('aria-expanded', 'true')
@@ -151,7 +169,7 @@ it('默认展开产品类型和精修要求，并将精修要求以可编辑的�
 
 it('必须保留内容以标签展示，超过八项时可展开剩余标签', () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  render(<LiveRetouch />)
+  renderRetouchWorkspace()
 
   fireEvent.click(screen.getByRole('button', { name: /^必须保留/ }))
   const preserveField = document.querySelector('[data-field="preserve"]')
