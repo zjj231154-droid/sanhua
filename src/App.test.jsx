@@ -131,6 +131,16 @@ describe('AI 创作工作台 Demo', () => {
     expect(navigation.getByRole('button', { name: '素材创作' })).toBeInTheDocument()
   })
 
+  it('当前板块红点会随左侧功能导航切换', () => {
+    const { container } = render(<App initialAuthenticated initialPage="retouch" />)
+    const navigation = within(screen.getByRole('navigation', { name: '主导航' }))
+
+    expect(container.querySelector('.nav-dot')?.closest('button')).toHaveTextContent('产品精修')
+    fireEvent.click(navigation.getByRole('button', { name: '品牌创作' }))
+    expect(container.querySelector('.nav-dot')?.closest('button')).toHaveTextContent('品牌创作')
+    expect(screen.getByRole('heading', { name: '品牌创作' })).toBeInTheDocument()
+  })
+
   it('品牌产品选择可再次点击取消并清空后续步骤', () => {
     render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
     const product = screen.getByRole('button', { name: '杯垫' })

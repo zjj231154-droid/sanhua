@@ -199,7 +199,7 @@ function Sidebar({ page, subRoute, onNavigate }) {
           const isExpanded = expandedPage === id
           return <div className="nav-group" key={id}>
           <button className={page === id ? 'nav-item is-active' : 'nav-item'} onClick={() => toggleSection(id)} aria-expanded={children ? isExpanded : undefined} aria-controls={children ? `nav-submenu-${id}` : undefined}>
-            <span className="nav-icon"><Icon size={18} strokeWidth={2} /></span><span>{label}</span>{id === 'script' && <i className="nav-dot" />}{children && <ChevronDown className="nav-chevron" size={15} />}
+            <span className="nav-icon"><Icon size={18} strokeWidth={2} /></span><span>{label}</span>{page === id && <i className="nav-dot" aria-hidden="true" />}{children && <ChevronDown className="nav-chevron" size={15} />}
           </button>
           {isExpanded && children && <div className="nav-submenu" id={`nav-submenu-${id}`} aria-label={`${label}子菜单`}>
             {children.map(([route, childLabel]) => <button key={route} className={subRoute === route ? 'nav-subitem is-active' : 'nav-subitem'} onClick={() => onNavigate(id, route)}>{childLabel}</button>)}
