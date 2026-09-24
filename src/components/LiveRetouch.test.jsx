@@ -23,6 +23,9 @@ it('选择单图精修后只显示居中的分步工作台，不再显示旧精�
   expect(screen.getByLabelText('单图精修工作流')).toBeInTheDocument()
   expect(screen.getByLabelText('精修设计步骤')).toHaveTextContent('1素材2尺寸与比例3场景4装饰与保留5精修计划')
   expect(screen.getByRole('button', { name: '从云端素材库选择' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '选择单图精修流程' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '选择批量精修流程' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '选择模板精修流程' })).toBeInTheDocument()
   expect(document.querySelector('.assistant-panel')).toBeNull()
 })
 
