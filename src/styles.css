@@ -1370,6 +1370,40 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .retouch-entry { width: min(100% - 48px, 760px); margin: 18px auto 0; display: grid; gap: 16px; }
 .retouch-entry > div:first-child { display: grid; gap: 5px; }
 .retouch-entry > div:first-child p { margin: 0; color: var(--workbench-muted); font-size: 13px; line-height: 1.55; }
+.integrated-retouch .is-guided-layout { grid-template-columns: minmax(0, 1fr); }
+.integrated-retouch .is-guided-layout .canvas-area { overflow: auto; background: #f5f6f8; }
+.retouch-guided-workflow { width: min(100% - 48px, 920px); margin: 16px auto 40px; display: grid; gap: 16px; }
+.retouch-workflow-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.retouch-workflow-heading > div { display: grid; gap: 4px; }
+.retouch-workflow-heading h2, .retouch-workflow-card h3 { margin: 0; color: var(--color-text, #2d2926); }
+.retouch-workflow-heading h2 { font-size: 20px; }
+.retouch-workflow-heading p, .retouch-workflow-card > p { margin: 0; color: var(--color-text-muted, #757b84); font-size: 13px; line-height: 1.6; }
+.retouch-workflow-source-note { width: min(100%, 620px); display: flex; align-items: center; gap: 8px; padding: 9px 12px; box-sizing: border-box; border: 1px solid #e2e5e9; border-radius: 10px; color: var(--color-text-muted, #757b84); background: #fff; font-size: 12px; }
+.retouch-workflow-source-note span { min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.retouch-workflow-card { width: min(100%, 620px); padding: 24px; display: grid; gap: 16px; border: 1px solid var(--color-border, #e1e4e8); border-radius: 16px; background: #fff; box-shadow: 0 5px 14px rgba(37, 39, 43, .05); }
+.retouch-workflow-card h3 { font-size: 17px; }
+.retouch-workflow-actions, .retouch-workflow-card footer, .retouch-template-choice { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.retouch-workflow-card footer { justify-content: flex-end; padding-top: 4px; }
+.retouch-workflow-input { display: grid; gap: 8px; color: var(--color-text, #2d2926); font-size: 13px; font-weight: 700; }
+.retouch-workflow-input textarea, .retouch-workflow-input input { width: 100%; min-height: 46px; padding: 11px 12px; box-sizing: border-box; border: 1px solid var(--color-border-strong, #cfd4da); border-radius: 10px; color: var(--color-text, #2d2926); background: #fff; font: inherit; font-weight: 400; line-height: 1.55; resize: vertical; }
+.retouch-workflow-input textarea:focus, .retouch-workflow-input input:focus { outline: 2px solid rgba(147, 58, 56, .18); border-color: var(--color-brand-primary, #933a38); }
+.retouch-workflow-fields { display: grid; gap: 13px; }
+.retouch-workflow-assets { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.retouch-workflow-asset { min-width: 0; display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px; border: 1px solid #e4e6e9; border-radius: 10px; background: #fafbfc; }
+.retouch-workflow-asset .cached-image { width: 54px; height: 54px; overflow: hidden; border-radius: 7px; }
+.retouch-workflow-asset img { width: 100%; height: 100%; object-fit: cover; }
+.retouch-workflow-asset div { min-width: 0; display: grid; gap: 3px; }
+.retouch-workflow-asset strong, .retouch-workflow-asset small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.retouch-workflow-asset strong { font-size: 12px; }
+.retouch-workflow-asset small { color: var(--color-text-muted, #757b84); font-size: 11px; }
+.retouch-template-choice { padding: 13px; border: 1px dashed #d4b6aa; border-radius: 10px; color: #705a51; background: #fffaf7; font-size: 12px; }
+.retouch-template-choice span { margin-right: auto; color: var(--color-text-muted, #757b84); }
+.retouch-plan-pending { display: flex; align-items: center; gap: 9px; color: var(--color-text-muted, #757b84); font-size: 13px; }
+.retouch-result-summary { display: flex; gap: 12px; align-items: center; padding-top: 4px; border-top: 1px solid #eceef0; }
+.retouch-result-summary .cached-image { width: 72px; height: 72px; overflow: hidden; border-radius: 9px; }
+.retouch-result-summary img { width: 100%; height: 100%; object-fit: cover; }
+.retouch-result-summary div { display: grid; gap: 5px; }
+.retouch-result-summary a { color: var(--color-brand-primary, #933a38); font-size: 13px; font-weight: 700; }
 .retouch-mode-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .retouch-mode-card { min-height: 112px; padding: 16px; display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--glass-line); border-radius: 16px; color: inherit; background: rgba(255,255,255,.06); text-align: left; cursor: pointer; transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease; }
 .retouch-mode-card > svg { flex: 0 0 auto; color: #cfa46f; }

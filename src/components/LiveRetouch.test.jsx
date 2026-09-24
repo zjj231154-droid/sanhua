@@ -3,94 +3,73 @@ import { afterEach, it, expect, vi } from 'vitest'
 import LiveRetouch from './LiveRetouch'
 
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
-function renderRetouchWorkspace() {
-  const view = render(<LiveRetouch />)
-  fireEvent.click(screen.getByRole('button', { name: '选择单图精修流程' }))
-  return view
+
+function response(value) {
+  return { ok: true, text: async () => JSON.stringify(value), json: async () => value }
 }
 
-it('首次进入先选择单图、批量或模板精修方式', () => {
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
+function renderWorkspace() {
+  vi.stubGlobal('fetch', vi.fn(async url => {
+    if (String(url).startsWith('/api/v1/assets')) return response({ assets: [] })
+    return response({ engine: 'api' })
+  }))
+  return render(<LiveRetouch />)
+}
+
+it('选择单图精修后只显示居中的分步工作台，不再显示旧精修助手', () => {
+  renderWorkspace()
+  fireEvent.click(screen.getByRole('button', { name: '选择单图精修流程' }))
+
+  expect(screen.getByLabelText('单图精修工作流')).toBeInTheDocument()
+  expect(screen.getByLabelText('精修设计步骤')).toHaveTextContent('1素材2尺寸与比例3场景4装饰与保留5精修计划')
+  expect(screen.getByRole('button', { name: '从云端素材库选择' })).toBeInTheDocument()
+  expect(document.querySelector('.assistant-panel')).toBeNull()
+})
+
+it('从云端选择单图后自动进入尺寸与比例步骤', async () => {
+  const fetch = vi.fn(async url => {
+    if (String(url).startsWith('/api/v1/assets')) return response({ assets: [{ id: 'photo-1', name: '茶饮产品图', assetSpace: 'retouch', url: 'data:image/png;base64,AA==' }] })
+    return response({ engine: 'api' })
+  })
+  vi.stubGlobal('fetch', fetch)
   render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('button', { name: '选择单图精修流程' }))
+  fireEvent.click(screen.getByRole('button', { name: '从云端素材库选择' }))
+  fireEvent.click(await screen.findByRole('button', { name: /茶饮产品图/ }))
 
-  const entry = screen.getByLabelText('选择精修方式')
-  expect(within(entry).getByRole('button', { name: '选择单图精修流程' })).toBeInTheDocument()
-  expect(within(entry).getByRole('button', { name: '选择批量精修流程' })).toBeInTheDocument()
-  expect(within(entry).getByRole('button', { name: '选择模板精修流程' })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '选择模板精修流程' }))
-  expect(screen.getByLabelText('修图模板')).toBeInTheDocument()
+  expect(await screen.findByRole('textbox', { name: '尺寸与比例' })).toBeInTheDocument()
+  expect(screen.getByText('当前素材：茶饮产品图')).toBeInTheDocument()
 })
 
-it('恢复计划后等待明确确认，才提交编辑请求', async () => {
-  localStorage.setItem('retouch-job', 'saved-job')
-  const fetch = vi.fn(async (url, options) => ({ ok: true, json: async () => url.endsWith('/status') ? { connected: true } : options ? { id: 'saved-job', status: 'editing' } : { id: 'saved-job', status: 'awaiting_confirmation', plan: '保留原比例与杯型；咖啡店；无新增道具。' } }))
-  vi.stubGlobal('fetch', fetch)
-  renderRetouchWorkspace()
-  const button = await screen.findByRole('button', { name: '确认计划并开始精修' })
-  expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
-  fireEvent.click(button)
-  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/retouch/saved-job/confirm', expect.objectContaining({ method: 'POST' })))
-})
-
-it('将已归档的云端精修结果显示在素材选择器中', async () => {
-  const fetch = vi.fn(async url => {
-    if (url.startsWith('/api/v1/assets?workspace=retouch')) return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
-    return { ok: true, json: async () => ({ engine: 'api' }) }
+it('从本机上传后可五步推进，生成计划后才确认调用模型', async () => {
+  const fetch = vi.fn(async (url, options) => {
+    if (String(url).startsWith('/api/v1/assets')) return response({ assets: [] })
+    if (url === '/api/retouch' && options?.method === 'POST') return response({ id: 'plan-1', status: 'awaiting_confirmation', plan: '保留原比例与产品文字，清理背景杂物并提亮主体。' })
+    if (url === '/api/retouch/plan-1/confirm' && options?.method === 'POST') return response({ id: 'plan-1', status: 'done', results: [] })
+    return response({ engine: 'api' })
   })
   vi.stubGlobal('fetch', fetch)
+  render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('button', { name: '选择单图精修流程' }))
+  const input = document.querySelector('input[type="file"]')
+  fireEvent.change(input, { target: { files: [new File(['image'], 'product.png', { type: 'image/png' })] } })
+  await screen.findByRole('textbox', { name: '尺寸与比例' })
+  fireEvent.click(screen.getByRole('button', { name: '下一步：确认场景 →' }))
+  fireEvent.click(screen.getByRole('button', { name: '下一步：装饰与保留 →' }))
+  fireEvent.click(screen.getByRole('button', { name: '生成精修计划' }))
 
-  renderRetouchWorkspace()
-  fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
-
-  expect(await screen.findByRole('button', { name: /已归档精修结果/ })).toBeInTheDocument()
+  expect(await screen.findByRole('textbox', { name: '最终精修提示词' })).toHaveValue('保留原比例与产品文字，清理背景杂物并提亮主体。')
+  expect(fetch.mock.calls.some(([url]) => url === '/api/retouch/plan-1/confirm')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '确认提示词并开始精修' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/retouch/plan-1/confirm', expect.objectContaining({ method: 'POST' })))
 })
 
-it('素材选择器每页展示十二项，并可切换到下一页', async () => {
-  const assets = Array.from({ length: 13 }, (_, index) => ({ id: `paged-${index + 1}`, name: `分页素材${index + 1}`, assetSpace: 'retouch', url: `/api/assets/paged-${index + 1}.png` }))
-  vi.stubGlobal('fetch', vi.fn(async url => url.startsWith('/api/v1/assets') ? { ok: true, json: async () => ({ assets }) } : { ok: true, json: async () => ({ engine: 'api' }) }))
-  renderRetouchWorkspace()
-
-  fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
-  const dialog = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
-  expect(await within(dialog).findByRole('button', { name: /分页素材12/ })).toBeInTheDocument()
-  expect(within(dialog).queryByRole('button', { name: /分页素材13/ })).not.toBeInTheDocument()
-  fireEvent.click(within(dialog).getByRole('button', { name: '下一页' }))
-  expect(await within(dialog).findByRole('button', { name: /分页素材13/ })).toBeInTheDocument()
-  expect(within(dialog).getByLabelText('素材分页')).toHaveTextContent('第 2 /')
-  expect(within(dialog).getByLabelText('素材分页')).toHaveTextContent('每页 12 项')
-})
-
-it('单图点击后立即应用，批量选择会在工作区保留全部素材', async () => {
-  const fetch = vi.fn(async url => {
-    if (url.startsWith('/api/v1/assets?workspace=retouch')) return { ok: true, json: async () => ({ assets: [
-      { id: 'remote-retouch-1', name: '云端素材一', assetSpace: 'retouch', url: '/api/assets/generated/one.png' },
-      { id: 'remote-retouch-2', name: '云端素材二', assetSpace: 'retouch', url: '/api/assets/generated/two.png' },
-    ] }) }
-    return { ok: true, json: async () => ({ engine: 'api' }) }
-  })
-  vi.stubGlobal('fetch', fetch)
-  renderRetouchWorkspace()
-
-  fireEvent.click(screen.getByRole('button', { name: /添加图片/ }))
-  fireEvent.click(await screen.findByRole('button', { name: /云端素材一/ }))
-  await waitFor(() => expect(screen.getByText('已选择 1 张素材')).toBeInTheDocument())
-  expect(screen.queryByRole('dialog', { name: '从云端素材库选择图片' })).not.toBeInTheDocument()
-
-  fireEvent.click(screen.getByRole('button', { name: /批量修图/ }))
-  const assetPicker = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
-  expect(await within(assetPicker).findByRole('button', { name: /云端素材一/ })).toHaveAttribute('aria-pressed', 'true')
-  fireEvent.click(within(assetPicker).getByRole('button', { name: /云端素材二/ }))
-  expect(screen.getByText('已选 2 / 10 张')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '使用已选 2 张素材' }))
-  await waitFor(() => expect(screen.getByText('已选择 2 张素材')).toBeInTheDocument())
-  expect(screen.getAllByText('批量精修素材')).toHaveLength(2)
-})
-
-it('批量选择最多十张，第十一张会被阻止', async () => {
-  const assets = Array.from({ length: 11 }, (_, index) => ({ id: `retouch-${index + 1}`, name: `素材${index + 1}`, assetSpace: 'retouch', url: `/api/assets/${index + 1}.png` }))
-  vi.stubGlobal('fetch', vi.fn(async url => url.startsWith('/api/v1/assets') ? { ok: true, json: async () => ({ assets }) } : { ok: true, json: async () => ({ engine: 'api' }) }))
-  renderRetouchWorkspace()
-  fireEvent.click(screen.getByRole('button', { name: /批量修图/ }))
+it('批量精修从云端选择时限制十张素材', async () => {
+  const assets = Array.from({ length: 11 }, (_, index) => ({ id: `asset-${index}`, name: `素材${index + 1}`, assetSpace: 'retouch', url: 'data:image/png;base64,AA==' }))
+  vi.stubGlobal('fetch', vi.fn(async url => String(url).startsWith('/api/v1/assets') ? response({ assets }) : response({ engine: 'api' })))
+  render(<LiveRetouch />)
+  fireEvent.click(screen.getByRole('button', { name: '选择批量精修流程' }))
+  fireEvent.click(screen.getByRole('button', { name: '从云端素材库选择' }))
   const dialog = screen.getByRole('dialog', { name: '从云端素材库选择图片' })
   for (let index = 1; index <= 10; index += 1) fireEvent.click((await within(dialog).findByText(`素材${index}`, { selector: 'span' })).closest('button'))
   expect(screen.getByText('已选 10 / 10 张')).toBeInTheDocument()
@@ -98,87 +77,14 @@ it('批量选择最多十张，第十一张会被阻止', async () => {
   expect(screen.getByRole('alert')).toHaveTextContent('一次最多选择 10 张')
 })
 
-it('图库中的已归档精修图可以重命名并更新当前卡片', async () => {
-  const fetch = vi.fn(async (url, options) => {
-    if (url.startsWith('/api/v1/assets?workspace=retouch')) return { ok: true, json: async () => ({ assets: [{ id: 'generated-1', name: '旧精修结果', assetSpace: 'retouch', url: '/api/assets/generated-1.png' }] }) }
-    if (url === '/api/v1/assets/generated-1/name' && options?.method === 'PATCH') return { ok: true, json: async () => ({ asset: { id: 'generated-1', name: '新版精修结果', downloadName: '新版精修结果.png' } }) }
-    return { ok: true, json: async () => ({ engine: 'api' }) }
-  })
-  vi.stubGlobal('fetch', fetch)
-  vi.stubGlobal('prompt', vi.fn(() => '新版精修结果'))
-  renderRetouchWorkspace()
-  fireEvent.click(screen.getByRole('tab', { name: '图库' }))
-  fireEvent.click(await screen.findByRole('button', { name: '重命名 旧精修结果' }))
-  await waitFor(() => expect(screen.getByText('新版精修结果')).toBeInTheDocument())
-  expect(fetch).toHaveBeenCalledWith('/api/v1/assets/generated-1/name', expect.objectContaining({ method: 'PATCH' }))
-})
-
-it('修图模板面板只提供上传与云资产参考素材入口', () => {
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  renderRetouchWorkspace()
-  fireEvent.click(screen.getByRole('button', { name: '修图模版' }))
-  const panel = screen.getByLabelText('修图模板')
-  expect(within(panel).getByText('上传参考素材')).toBeInTheDocument()
-  expect(within(panel).getByRole('button', { name: '选择云资产参考素材' })).toBeInTheDocument()
-  expect(within(panel).queryByText('咖啡日光')).not.toBeInTheDocument()
-})
-
-it('精修助手将参数显示为可折叠卡片，并保留 AI 偏离状态', () => {
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  renderRetouchWorkspace()
-
-  const scene = screen.getByRole('button', { name: /^场景/ })
-  expect(scene).toHaveAttribute('aria-expanded', 'false')
-  fireEvent.click(scene)
-  expect(scene).toHaveAttribute('aria-expanded', 'true')
-  fireEvent.change(screen.getByDisplayValue('保留原图咖啡店场景'), { target: { value: '改为窗边茶席场景' } })
-  expect(screen.getAllByText('已偏离 AI 建议').length).toBeGreaterThan(0)
-  fireEvent.click(screen.getAllByRole('button', { name: '恢复 AI 建议' }).find(button => !button.disabled))
-  expect(screen.queryByText('已偏离 AI 建议')).not.toBeInTheDocument()
-})
-
-it('尺寸与比例使用支持自动增高的多行输入框', () => {
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  renderRetouchWorkspace()
-
-  fireEvent.click(screen.getByRole('button', { name: /^尺寸与比例/ }))
-  const editor = screen.getByRole('textbox', { name: '尺寸与比例编辑' })
-  expect(editor.tagName).toBe('TEXTAREA')
-  expect(editor).toHaveAttribute('aria-multiline', 'true')
-})
-
-it('默认展开产品类型和精修要求，并将精修要求以可编辑的要点预览展示', () => {
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  renderRetouchWorkspace()
-
-  expect(screen.getByRole('button', { name: /^产品类型/ })).toHaveAttribute('aria-expanded', 'true')
-  expect(screen.getByRole('button', { name: /^精修要求/ })).toHaveAttribute('aria-expanded', 'true')
-  expect(screen.getByRole('button', { name: /^尺寸与比例/ })).toHaveAttribute('aria-expanded', 'false')
-  const requirementsField = document.querySelector('[data-field="requirements"]')
-  fireEvent.click(within(requirementsField).getByRole('button', { name: '编辑' }))
-  const editor = screen.getByRole('textbox', { name: '精修要求编辑' })
-  expect(editor).toHaveValue('提亮主体，清理桌面细小污点，保留杯型、标签、文字和饮品质感。')
-  fireEvent.change(editor, { target: { value: '清理白底色和压缩痕迹；优化杯身边缘模糊；增强咖啡表面拉花清晰度。' } })
-  fireEvent.click(screen.getByRole('button', { name: '完成编辑' }))
-  expect(screen.getByText('清理白底色和压缩痕迹')).toBeInTheDocument()
-  expect(screen.getByText('优化杯身边缘模糊')).toBeInTheDocument()
-  expect(screen.queryByText('增强咖啡表面拉花清晰度')).not.toBeInTheDocument()
-  fireEvent.click(within(requirementsField).getByRole('button', { name: '展开' }))
-  expect(screen.getByText('增强咖啡表面拉花清晰度')).toBeInTheDocument()
-})
-
-it('必须保留内容以标签展示，超过八项时可展开剩余标签', () => {
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ engine: 'api' }) })))
-  renderRetouchWorkspace()
-
-  fireEvent.click(screen.getByRole('button', { name: /^必须保留/ }))
-  const preserveField = document.querySelector('[data-field="preserve"]')
-  fireEvent.click(within(preserveField).getByRole('button', { name: '编辑' }))
-  const editor = screen.getByRole('textbox', { name: '必须保留编辑' })
-  fireEvent.change(editor, { target: { value: '杯型、标签、文字、品牌标识、杯柄、咖啡液面、拉花纹理、白色陶瓷、桌面光影、背景层次' } })
-  fireEvent.click(screen.getByRole('button', { name: '完成编辑' }))
-  expect(screen.getByText('杯型')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '+2' })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '+2' }))
-  expect(screen.getByText('背景层次')).toBeInTheDocument()
+it('模板精修在第四步提供只影响视觉风格的模板参考入口', async () => {
+  renderWorkspace()
+  fireEvent.click(screen.getByRole('button', { name: '选择模板精修流程' }))
+  const input = document.querySelector('input[type="file"]')
+  fireEvent.change(input, { target: { files: [new File(['image'], 'product.png', { type: 'image/png' })] } })
+  await screen.findByRole('textbox', { name: '尺寸与比例' })
+  fireEvent.click(screen.getByRole('button', { name: '下一步：确认场景 →' }))
+  fireEvent.click(screen.getByRole('button', { name: '下一步：装饰与保留 →' }))
+  expect(screen.getByRole('button', { name: '选择云端模板参考' })).toBeInTheDocument()
+  expect(screen.getByText(/不会被模板参考覆盖/)).toBeInTheDocument()
 })

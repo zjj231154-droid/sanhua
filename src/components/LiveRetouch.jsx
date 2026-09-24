@@ -80,6 +80,17 @@ function RetouchField({ name, label, value, recommendation, locked, dirty, expan
   </section>
 }
 
+const RETOUCH_WORKFLOW_STEPS = ['素材', '尺寸与比例', '场景', '装饰与保留', '精修计划']
+function RetouchWorkflowStepper({ step, onStep }) {
+  return <ol className="workflow-stepper retouch-workflow-stepper" aria-label="精修设计步骤">
+    {RETOUCH_WORKFLOW_STEPS.map((label, index) => {
+      const number = index + 1
+      const state = number === step ? 'is-active' : number < step ? 'is-done' : 'is-pending'
+      return <li key={label} className={state}><button type="button" disabled={number > step} onClick={() => onStep(number)}><b>{number}</b>{label}</button></li>
+    })}
+  </ol>
+}
+
 async function request(route, data) {
   const res = await fetch(`/api/retouch${route}`, data ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : undefined)
   const raw = typeof res.text === 'function' ? await res.text() : JSON.stringify(await res.json())
@@ -120,6 +131,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
   const [assetPickerPage, setAssetPickerPage] = useState(1)
   const [retouchTab, setRetouchTab] = useState('one-click')
   const [retouchMode, setRetouchMode] = useState('')
+  const [workflowStep, setWorkflowStep] = useState(1)
   const [openSections, setOpenSections] = useState(() => {
     try { return { product: true, requirements: true, ...JSON.parse(localStorage.getItem('sanhua-retouch-open-sections') || '{}') } } catch { return { product: true, requirements: true } }
   })
@@ -235,8 +247,9 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
   function startRetouch(mode) {
     setRetouchMode(mode)
     setRetouchTab('one-click')
-    setAssistantOpen(true)
-    if (mode === 'template') setTemplatesOpen(true)
+    setAssistantOpen(false)
+    setWorkflowStep(1)
+    setTemplatesOpen(false)
   }
   function goToAssetPickerPage(nextPage) {
     setAssetPickerPage(Math.max(1, Math.min(assetPickerTotalPages, nextPage)))
@@ -286,6 +299,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     const source = assets[0].url
     setSelectedCloudAssets(assets); setActiveRetouchAssets(assets); setSelectedAssetId(assets[0].id); setEditedFields({})
     setImage(source); setCloudResult(null); setJob(null); setError(''); localStorage.removeItem('retouch-job'); setAssetPickerOpen(false)
+    if (retouchMode) setWorkflowStep(2)
     void analyzeImage(source, assets[0].id)
   }
   useEffect(() => {
@@ -299,7 +313,9 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     }
     setRetouchTab('one-click')
     setAssistantOpen(true)
+    setRetouchMode('single')
     applyCloudAssets([{ ...incomingAsset, url: source }], 'single')
+    setWorkflowStep(2)
     setTransferNotice(`已将「${incomingAsset.name || '素材'}」加入产品精修`)
     onIncomingAssetConsumed?.()
   }, [incomingAsset?.id])
@@ -334,12 +350,21 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     return () => clearInterval(timer)
   }, [job?.id, job?.status])
   async function upload(event) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 15 * 1024 * 1024) return setError('请选择 15 MB 以内的 PNG、JPG 或 WebP')
-    const reader = new FileReader()
-    reader.onload = () => { const assetId = `upload-${Date.now()}`; const asset = { id: assetId, name: file.name, url: reader.result, group: '本次上传' }; setSelectedCloudAssets([asset]); setActiveRetouchAssets([asset]); setSelectedAssetId(assetId); setEditedFields({}); setImage(reader.result); setCloudResult(null); setJob(null); setError(''); localStorage.removeItem('retouch-job'); void analyzeImage(reader.result, assetId) }
-    reader.readAsDataURL(file)
+    const files = Array.from(event.target.files || []).slice(0, retouchMode === 'batch' ? BATCH_LIMIT : 1)
+    event.target.value = ''
+    if (!files.length) return
+    if (files.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 15 * 1024 * 1024)) return setError('请选择 15 MB 以内的 PNG、JPG 或 WebP')
+    const assets = await Promise.all(files.map((file, index) => new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('图片读取失败，请重试'))
+      reader.onload = () => resolve({ id: `upload-${Date.now()}-${index}`, name: file.name, url: reader.result, group: '本次上传' })
+      reader.readAsDataURL(file)
+    })))
+    const primary = assets[0]
+    setSelectedCloudAssets(assets); setActiveRetouchAssets(assets); setSelectedAssetId(primary.id); setEditedFields({})
+    setImage(primary.url); setCloudResult(null); setJob(null); setError(''); localStorage.removeItem('retouch-job')
+    if (retouchMode) setWorkflowStep(2)
+    void analyzeImage(primary.url, primary.id)
   }
   async function submit(confirm = false) {
     setSending(true); setError('')
@@ -357,7 +382,8 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           await archivePromptRecord({ workspace: 'retouch', sourceModule: 'retouch.prompts', recordType: 'retouch_plan', title: '产品精修计划', content: plan, contentFormat: 'prompt', model: 'UseGoodAI Reasoning', provider: 'usegoodai-reasoning', sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean) })
           setJob({ id: 'cloud', status: 'awaiting_confirmation', plan })
           setFinalPrompt(plan)
-          setPromptDialogOpen(true)
+          if (retouchMode && retouchTab === 'one-click') setWorkflowStep(5)
+          else setPromptDialogOpen(true)
         } else {
           const submittedPrompt = `${finalPrompt || job?.plan || ''}\n${editPrompt}`.trim()
           const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(sourceUrl => toImageDataUrl(sourceUrl, '无法读取所选素材，请重新选择')))
@@ -379,20 +405,37 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
       }
       const result = confirm ? await request(`/${job.id}/confirm`, {}) : await request('', { image: source, referenceImage: templateSource, requirements: editPrompt })
       setJob(result); localStorage.setItem('retouch-job', result.id)
+      if (!confirm && retouchMode && retouchTab === 'one-click') setWorkflowStep(5)
     } catch (err) { setError(err.message) }
     finally { setSending(false) }
   }
   const status = busy ? job?.status === 'editing' ? '正在精修' : '正在整理计划' : job?.status === 'done' ? '精修完成' : job?.status === 'awaiting_confirmation' ? '等待确认计划' : job?.status === 'failed' ? '处理失败' : '待处理'
   const showEntry = retouchTab === 'one-click' && !retouchMode && !image && !activeRetouchAssets.length && !job && !cloudResult
+  const guidedWorkflow = retouchTab === 'one-click' && Boolean(retouchMode)
+  const workflowSourceMode = retouchMode === 'batch' ? 'batch' : 'single'
+  const workflowModeName = retouchMode === 'batch' ? '批量精修' : retouchMode === 'template' ? '模板精修' : '单图精修'
+  const changeWorkflowStep = target => setWorkflowStep(Math.max(1, Math.min(5, target)))
+  const guidedContent = <section className="retouch-guided-workflow" aria-label={`${workflowModeName}工作流`}>
+    <div className="retouch-workflow-heading"><div><span className="kicker">智能产品精修 · image-edit-agent</span><h2>{workflowModeName}</h2><p>先确认图片与编辑要求，生成可修改的计划后，再由你确认调用模型。</p></div><button type="button" className="text-button" onClick={() => { setRetouchMode(''); setWorkflowStep(1); setJob(null); setCloudResult(null) }}>更换精修方式</button></div>
+    <RetouchWorkflowStepper step={workflowStep} onStep={changeWorkflowStep} />
+    {workflowStep > 1 && activeRetouchAssets.length > 0 && <div className="retouch-workflow-source-note"><ImagePlus size={15} /><span>当前素材：{activeRetouchAssets.map(asset => asset.name).join('、')}</span><button type="button" className="text-button" onClick={() => changeWorkflowStep(1)}>更换</button></div>}
+    {workflowStep === 1 && <article className="retouch-workflow-card"><h3>{retouchMode === 'batch' ? '选择要批量精修的产品图片' : '选择一张需要精修的产品图片'}</h3><p>{retouchMode === 'batch' ? '最多选择 10 张，将使用同一套比例、场景与保留要求。' : '可从云端资产库选择，或从电脑上传 PNG、JPG、WebP 图片。'}</p><div className="retouch-workflow-actions"><button className="primary-button" disabled={busy} onClick={() => openAssetPicker(workflowSourceMode)}><ImagePlus size={16} />从云端素材库选择</button><button className="secondary-button" disabled={busy} onClick={() => (retouchMode === 'batch' ? batchInput : fileInput).current?.click()}><Upload size={16} />从电脑上传</button></div>{activeRetouchAssets.length > 0 && <div className="retouch-workflow-assets">{activeRetouchAssets.map((asset, index) => <article key={asset.id} className="retouch-workflow-asset"><CachedImage asset={asset} src={asset.thumbnailUrl || asset.url} alt={asset.name} /><div><strong>{asset.name}</strong><small>{retouchMode === 'batch' ? `第 ${index + 1} 张批量素材` : '本次精修素材'}</small></div><button type="button" className="text-button" disabled={busy} onClick={() => removeActiveAsset(asset.id)}>移除</button></article>)}</div>}<footer><button className="primary-button" disabled={!image || busy || analyzing} onClick={() => changeWorkflowStep(2)}>{analyzing ? '正在识别素材…' : '下一步：确认尺寸与比例 →'}</button></footer></article>}
+    {workflowStep === 2 && <article className="retouch-workflow-card"><h3>输出尺寸与比例</h3><p>说明需要保留的原图比例，或填写需要输出的平台尺寸与格式。</p><label className="retouch-workflow-input"><span>尺寸与比例</span><AutoResizeTextarea label="尺寸与比例" value={size} disabled={busy} onChange={setSize} /></label><footer><button className="secondary-button" onClick={() => changeWorkflowStep(1)}>上一步</button><button className="primary-button" disabled={!size.trim() || busy} onClick={() => changeWorkflowStep(3)}>下一步：确认场景 →</button></footer></article>}
+    {workflowStep === 3 && <article className="retouch-workflow-card"><h3>场景与环境</h3><p>写明真实场景需要保留，或描述希望替换成的拍摄环境。</p><label className="retouch-workflow-input"><span>场景</span><AutoResizeTextarea label="场景" value={scene} disabled={busy} onChange={setScene} /></label><footer><button className="secondary-button" onClick={() => changeWorkflowStep(2)}>上一步</button><button className="primary-button" disabled={!scene.trim() || busy} onClick={() => changeWorkflowStep(4)}>下一步：装饰与保留 →</button></footer></article>}
+    {workflowStep === 4 && <article className="retouch-workflow-card"><h3>装饰、保留项与精修要求</h3><p>产品主体、文字、标签、Logo 与真实外形会按“必须保留”执行，不会被模板参考覆盖。</p><div className="retouch-workflow-fields"><label className="retouch-workflow-input"><span>装饰</span><AutoResizeTextarea label="装饰" value={decor} disabled={busy} onChange={setDecor} /></label><label className="retouch-workflow-input"><span>必须保留</span><AutoResizeTextarea label="必须保留" value={preserve} disabled={busy} onChange={setPreserve} /></label><label className="retouch-workflow-input"><span>精修要求</span><AutoResizeTextarea label="精修要求" value={requirements} disabled={busy} onChange={setRequirements} /></label></div>{retouchMode === 'template' && <div className="retouch-template-choice"><strong>模板参考（可选）</strong><span>{templateName ? `已选：${templateName}` : '参考图只影响光线、构图、色调和质感。'}</span><button type="button" className="secondary-button" disabled={busy} onClick={() => openAssetPicker('template')}>选择云端模板参考</button>{templateImage && <button type="button" className="text-button" onClick={() => { setTemplateImage(''); setTemplateName(''); setTemplateAssetId('') }}>移除模板</button>}</div>}<footer><button className="secondary-button" onClick={() => changeWorkflowStep(3)}>上一步</button><button className="primary-button" disabled={!image || !requirements.trim() || busy || analyzing} onClick={() => submit(false)}>{analyzing ? '正在识别素材…' : '生成精修计划'}</button></footer></article>}
+    {workflowStep === 5 && <article className="retouch-workflow-card retouch-plan-card"><h3>确认精修计划</h3><p>可直接修改提示词。点击确认后，才会将图片与计划发送给模型。</p>{job?.plan || finalPrompt ? <><label className="retouch-workflow-input"><span>结果图片名称</span><input value={activeRetouchAssets.length > 1 ? batchNamePrefix : resultName} maxLength="160" onChange={event => activeRetouchAssets.length > 1 ? setBatchNamePrefix(event.target.value) : setResultName(event.target.value)} placeholder={activeRetouchAssets.length > 1 ? '例如：咖啡新品' : '例如：山茶气泡饮-精修主图'} aria-label={activeRetouchAssets.length > 1 ? '批量命名前缀' : '结果图片名称'} /></label><label className="retouch-workflow-input"><span>最终精修提示词</span><AutoResizeTextarea label="最终精修提示词" value={finalPrompt || job?.plan || ''} disabled={busy || job?.status === 'done'} onChange={setFinalPrompt} /></label><footer><button className="secondary-button" disabled={busy} onClick={() => { setJob(null); setFinalPrompt(''); changeWorkflowStep(4) }}>返回修改</button>{job?.status !== 'done' && <button className="primary-button" disabled={busy || !(finalPrompt || job?.plan || '').trim()} onClick={() => submit(true)}>{sending ? '正在生成…' : '确认提示词并开始精修'}</button>}</footer></> : <div className="retouch-plan-pending"><LoaderCircle size={18} className="spin-icon" />正在生成可确认的精修计划…</div>}{cloudResult && <div className="retouch-result-summary"><CachedImage src={cloudResult.url} alt="精修完成结果" /><div><strong>{cloudResult.name || '精修完成'}</strong><a href={`/api/v1/assets/${cloudResult.id}/download`} download={cloudResult.downloadName || cloudResult.name}>下载图片</a></div></div>}</article>}
+    {(error || job?.error) && <p className="retouch-error" role="alert">{error || job.error}</p>}
+    {assetPickerOpen && <div className="asset-picker-modal" role="dialog" aria-label="从云端素材库选择图片"><div className="asset-picker-dialog"><div className="asset-picker-heading"><div><strong>{assetPickerMode === 'template' ? '选择云资产参考素材' : '从云端素材库选择'}</strong><small>{assetPickerMode === 'template' ? '仅作为修图模板参考，不会替换产品主体' : assetPickerMode === 'batch' ? '最多选择 10 张图片，确认后进入批量精修' : '单图模式：点击图片后进入下一步'}</small></div><button className="assistant-toggle" onClick={() => setAssetPickerOpen(false)} aria-label="关闭素材选择">×</button></div><div className="asset-picker-grid">{assetPickerAssets.map(asset => { const selectedIndex = selectedCloudAssets.findIndex(item => item.id === asset.id); return <button key={asset.id} className={selectedIndex >= 0 ? 'asset-select-card is-selected' : 'asset-select-card'} aria-pressed={selectedIndex >= 0} onClick={() => toggleCloudAsset(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><span className="asset-selection-index" aria-hidden="true">{selectedIndex >= 0 ? `✓ ${assetPickerMode === 'template' ? '模板' : selectedIndex + 1}` : ''}</span><span>{asset.name}</span><small>{asset.group}</small></button> })}</div><div className="asset-picker-footer"><span>{assetPickerMode === 'template' ? '点击图片即可设为模板参考' : assetPickerMode === 'single' ? '点击图片即可使用' : `已选 ${selectedCloudAssets.length} / 10 张`}</span><div className="asset-picker-pagination" aria-label="素材分页"><button type="button" className="secondary-button" disabled={assetPickerPage === 1} onClick={() => goToAssetPickerPage(assetPickerPage - 1)}>上一页</button><span>第 {assetPickerPage} / {assetPickerTotalPages} 页 · 每页 {ASSET_PICKER_PAGE_SIZE} 项</span><button type="button" className="secondary-button" disabled={assetPickerPage === assetPickerTotalPages} onClick={() => goToAssetPickerPage(assetPickerPage + 1)}>下一页</button></div>{assetPickerMode === 'batch' && <button className="primary-button" disabled={!selectedCloudAssets.length} onClick={() => applyCloudAssets(selectedCloudAssets, 'batch')}>使用已选 {selectedCloudAssets.length} 张素材</button>}</div></div></div>}
+  </section>
   return <section className="retouch-page integrated-retouch">
     <header className="workspace-header"><div><span className="breadcrumb">产品精修 / 创作任务</span><h1>产品精修</h1><p>先选择精修方式，再确认素材与可编辑需求。</p></div><span className="connection-note" title={connection}>{connection.includes('已连接') ? 'Codex 已连接' : connection}</span></header>
     <input hidden ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} disabled={busy} />
     <input hidden ref={batchInput} type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={upload} disabled={busy} />
-    <div className={showEntry ? 'retouch-layout is-entry-layout' : retouchTab === 'gallery' ? 'retouch-layout is-library-layout' : assistantOpen ? 'retouch-layout' : 'retouch-layout is-assistant-closed'}>
+    <div className={showEntry ? 'retouch-layout is-entry-layout' : guidedWorkflow ? 'retouch-layout is-guided-layout' : retouchTab === 'gallery' ? 'retouch-layout is-library-layout' : assistantOpen ? 'retouch-layout' : 'retouch-layout is-assistant-closed'}>
       <main className="canvas-area">
         <div className="section-tabs" role="tablist" aria-label="产品精修功能"><button className={retouchTab === 'one-click' ? 'primary-button' : 'secondary-button'} role="tab" aria-selected={retouchTab === 'one-click'} onClick={() => setRetouchTab('one-click')}>一键修图</button><button className={retouchTab === 'gallery' ? 'primary-button' : 'secondary-button'} role="tab" aria-selected={retouchTab === 'gallery'} onClick={() => setRetouchTab('gallery')}>图库</button></div>
         {retouchTab === 'gallery' && <div className="gallery-scope-note">产品精修图库 · 仅显示 retouch 资产与精修结果</div>}
-        {showEntry ? <section className="retouch-entry" aria-label="选择精修方式"><div><span className="kicker">智能产品精修 · image-edit-agent</span><p>选择一种精修方式后，再按步骤确认素材、比例、场景、装饰与必须保留项。</p></div><div className="retouch-mode-picker"><button type="button" className="retouch-mode-card" aria-label="选择单图精修流程" onClick={() => startRetouch('single')}><ImagePlus size={20} /><span><strong>单图精修</strong><small>为一张产品图确认规格、场景与细节</small></span></button><button type="button" className="retouch-mode-card" aria-label="选择批量精修流程" onClick={() => startRetouch('batch')}><Layers3 size={20} /><span><strong>批量精修</strong><small>一次选择多张素材，统一要求后批量处理</small></span></button><button type="button" className="retouch-mode-card" aria-label="选择模板精修流程" onClick={() => startRetouch('template')}><Sparkles size={20} /><span><strong>模板精修</strong><small>引用参考图的光线、构图与质感，不替换主体</small></span></button></div></section> : <>{retouchTab === 'one-click' ? <div className="canvas-toolbar"><div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto' }}><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('single')}><Upload size={16} />添加图片</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('batch')}><Layers3 size={16} />批量修图</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy || job?.status === 'awaiting_confirmation'} aria-expanded={templatesOpen} onClick={() => setTemplatesOpen(value => !value)}><Sparkles size={16} />修图模版</button>{activeRetouchAssets.length > 0 && <span className="retouch-selection-summary">已选择 {activeRetouchAssets.length} 张素材</span>}</div><Layers3 size={17} /></div> : <div className="canvas-toolbar gallery-toolbar"><span>产品精修图库 · 原图 / 参考图 / 精修结果 / 修图模版</span><button className="primary-button" onClick={() => setRetouchTab('one-click')}>去一键修图</button></div>}
+        {showEntry ? <section className="retouch-entry" aria-label="选择精修方式"><div><span className="kicker">智能产品精修 · image-edit-agent</span><p>选择一种精修方式后，再按步骤确认素材、比例、场景、装饰与必须保留项。</p></div><div className="retouch-mode-picker"><button type="button" className="retouch-mode-card" aria-label="选择单图精修流程" onClick={() => startRetouch('single')}><ImagePlus size={20} /><span><strong>单图精修</strong><small>为一张产品图确认规格、场景与细节</small></span></button><button type="button" className="retouch-mode-card" aria-label="选择批量精修流程" onClick={() => startRetouch('batch')}><Layers3 size={20} /><span><strong>批量精修</strong><small>一次选择多张素材，统一要求后批量处理</small></span></button><button type="button" className="retouch-mode-card" aria-label="选择模板精修流程" onClick={() => startRetouch('template')}><Sparkles size={20} /><span><strong>模板精修</strong><small>引用参考图的光线、构图与质感，不替换主体</small></span></button></div></section> : guidedWorkflow ? guidedContent : <>{retouchTab === 'one-click' ? <div className="canvas-toolbar"><div style={{ display: 'flex', alignItems: 'center', gap: 10, overflowX: 'auto' }}><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('single')}><Upload size={16} />添加图片</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy} onClick={() => openAssetPicker('batch')}><Layers3 size={16} />批量修图</button><button className="secondary-button" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={busy || job?.status === 'awaiting_confirmation'} aria-expanded={templatesOpen} onClick={() => setTemplatesOpen(value => !value)}><Sparkles size={16} />修图模版</button>{activeRetouchAssets.length > 0 && <span className="retouch-selection-summary">已选择 {activeRetouchAssets.length} 张素材</span>}</div><Layers3 size={17} /></div> : <div className="canvas-toolbar gallery-toolbar"><span>产品精修图库 · 原图 / 参考图 / 精修结果 / 修图模版</span><button className="primary-button" onClick={() => setRetouchTab('one-click')}>去一键修图</button></div>}
         {assetPickerOpen && <div className="asset-picker-modal" role="dialog" aria-label="从云端素材库选择图片"><div className="asset-picker-dialog"><div className="asset-picker-heading"><div><strong>{assetPickerMode === 'template' ? '选择云资产参考素材' : '从云端素材库选择'}</strong><small>{assetPickerMode === 'template' ? '仅作为修图模板参考，不会替换产品主体' : assetPickerMode === 'batch' ? '最多选择 10 张图片，确认后进入批量修图' : '单图模式：点击图片后立即进入精修助手'}</small></div><button className="assistant-toggle" onClick={() => setAssetPickerOpen(false)} aria-label="关闭素材选择">×</button></div><div className="asset-picker-grid">{assetPickerAssets.map(asset => { const selectedIndex = selectedCloudAssets.findIndex(item => item.id === asset.id); return <button key={asset.id} className={selectedIndex >= 0 ? 'asset-select-card is-selected' : 'asset-select-card'} aria-pressed={selectedIndex >= 0} onClick={() => toggleCloudAsset(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><span className="asset-selection-index" aria-hidden="true">{selectedIndex >= 0 ? `✓ ${assetPickerMode === 'template' ? '模板' : selectedIndex + 1}` : ''}</span><span>{asset.name}</span><small>{asset.group}</small></button> })}</div><div className="asset-picker-footer"><span>{assetPickerMode === 'template' ? '点击图片即可设为模板参考' : assetPickerMode === 'single' ? '点击图片即可使用' : `已选 ${selectedCloudAssets.length} / 10 张`}</span><div className="asset-picker-pagination" aria-label="素材分页"><button type="button" className="secondary-button" disabled={assetPickerPage === 1} onClick={() => goToAssetPickerPage(assetPickerPage - 1)}>上一页</button><span>第 {assetPickerPage} / {assetPickerTotalPages} 页 · 每页 {ASSET_PICKER_PAGE_SIZE} 项</span><button type="button" className="secondary-button" disabled={assetPickerPage === assetPickerTotalPages} onClick={() => goToAssetPickerPage(assetPickerPage + 1)}>下一页</button></div>{assetPickerMode === 'batch' && <button className="primary-button" disabled={!selectedCloudAssets.length} onClick={() => applyCloudAssets(selectedCloudAssets, 'batch')}>使用已选 {selectedCloudAssets.length} 张素材</button>}</div></div></div>}
         {templatesOpen && <div className="assistant-message template-panel" aria-label="修图模板"><p>模板参考只影响光线、构图、色调和质感，不替换当前商品主体。</p><div className="brand-agent-actions"><label className="secondary-button merch-upload">上传参考素材<input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadTemplate} /></label><button className="secondary-button" disabled={busy} onClick={() => openAssetPicker('template')}>选择云资产参考素材</button></div>{templateImage && <div className="template-reference-card"><img src={templateImage} alt={`模板参考：${templateName}`} /><div><strong>{templateName}</strong><small>{templateAssetId ? '来源：云资产' : '来源：本地上传'}</small></div><button className="secondary-button" onClick={() => { setTemplateImage(''); setTemplateName(''); setTemplateAssetId('') }}>移除</button></div>}</div>}
         <div className="retouch-feedback" role="status" aria-live="polite">{busy && <LoaderCircle size={15} className="spin-icon" />}{transferNotice || (activeRetouchAssets.length ? `已选择 ${activeRetouchAssets.length} 张素材 · ${activeRetouchAssets.length > 1 ? '批量精修准备就绪' : '单图精修准备就绪'}` : image ? status : cloudMode ? '上传产品照片，云端精修将通过 UseGoodAI 处理' : '上传产品照片，在精修助手中编辑要求')}{job?.status === 'done' && ' · 结果已更新到下方卡片'}</div>
@@ -407,7 +450,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
         </section>
         {retouchTab === 'gallery' && <div className="gallery-selection-bar"><span>已选 {gallerySelected.length} 张</span><button className="secondary-button" onClick={() => setGallerySelected([])}>清空</button><button className="primary-button" disabled={!gallerySelected.length} onClick={() => { const picked = retouchAssets.filter(asset => gallerySelected.includes(asset.id)); applyCloudAssets(picked, 'batch'); setRetouchTab('one-click') }}>使用已选素材</button></div>}</>}
       </main>
-      {!showEntry && <aside className={retouchTab === 'gallery' ? 'assistant-panel is-library' : assistantOpen ? 'assistant-panel' : 'assistant-panel is-collapsed'}>
+      {!showEntry && !guidedWorkflow && <aside className={retouchTab === 'gallery' ? 'assistant-panel is-library' : assistantOpen ? 'assistant-panel' : 'assistant-panel is-collapsed'}>
         <div className="assistant-title"><span className="assistant-avatar"><Sparkles size={18} /></span><span><strong>精修助手</strong><small><i />{busy ? status : '已就绪'}</small></span><button className="assistant-toggle" aria-label={assistantOpen ? '收起精修助手' : '展开精修助手'} aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}>{assistantOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}</button></div>
         <div className="assistant-body live-controls" hidden={!assistantOpen}>
         <div className="assistant-message"><p>{analyzing ? '正在根据当前素材识别商品、场景与可保留元素…' : '当前素材已生成可编辑的精修字段。锁定的字段在重新识别时不会被覆盖。'}</p>{image && cloudMode && <button className="text-button" disabled={analyzing || busy} onClick={() => void analyzeImage(image)}>重新识别当前素材</button>}</div>
