@@ -146,13 +146,20 @@ export default function RippleDistortion({
     if (typeof window.WebGLRenderingContext === 'undefined') return undefined
 
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    const renderer = new Renderer({ alpha: false, antialias: false, dpr: Math.min(window.devicePixelRatio || 1, 2) })
+    if (reduceMotion) return undefined
+    let renderer
+    try {
+      renderer = new Renderer({ alpha: false, antialias: false, dpr: Math.min(window.devicePixelRatio || 1, 2) })
+    } catch {
+      return undefined
+    }
     const gl = renderer.gl
     gl.clearColor(0, 0, 0, 1)
     const canvas = gl.canvas
     canvas.style.width = '100%'
     canvas.style.height = '100%'
     canvas.style.display = 'block'
+    canvas.style.opacity = '0'
     mount.appendChild(canvas)
 
     const imageTexture = new Texture(gl, {
@@ -186,7 +193,9 @@ export default function RippleDistortion({
       if (disposed) return
       imageTexture.image = image
       compositeUniforms.uTextureSize.value = [image.naturalWidth || 1, image.naturalHeight || 1]
+      canvas.classList.add('is-ready')
     }
+    image.onerror = () => { if (!disposed && canvas.parentNode === mount) mount.removeChild(canvas) }
     image.src = src
 
     const offsets = new Float32Array(MAX_WAVES * 2)
@@ -263,7 +272,7 @@ export default function RippleDistortion({
     }
     const onDown = event => {
       const cfg = configRef.current
-      if (!cfg.enabled || reduceMotion || cfg.trigger === 'hover') return
+      if (!cfg.enabled || reduceMotion || (cfg.trigger === 'hover' && event.pointerType === 'mouse')) return
       const point = localPoint(event.clientX, event.clientY)
       if (point) setNewWave(point[0], point[1], Math.max(1, cfg.clickStrength))
     }
