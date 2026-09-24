@@ -50,18 +50,18 @@ async function toImageDataUrl(source, errorMessage = '无法读取图片') {
   })
 }
 
-function AutoResizeTextarea({ value, onChange, disabled, label }) {
+function AutoResizeTextarea({ value, onChange, disabled, label, className = '', maxRows = 3, minHeight = 0 }) {
   const textarea = useRef(null)
   useEffect(() => {
     const element = textarea.current
     if (!element) return
     const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 21
-    const maximum = lineHeight * 3 + 24
+    const maximum = lineHeight * maxRows + 24
     element.style.height = 'auto'
-    element.style.height = `${Math.min(element.scrollHeight, maximum)}px`
+    element.style.height = `${Math.max(minHeight, Math.min(element.scrollHeight, maximum))}px`
     element.style.overflowY = element.scrollHeight > maximum ? 'auto' : 'hidden'
-  }, [value])
-  return <textarea ref={textarea} aria-label={label} aria-multiline="true" value={value} disabled={disabled} onChange={event => onChange(event.target.value)} />
+  }, [value, maxRows, minHeight])
+  return <textarea ref={textarea} className={className} aria-label={label} aria-multiline="true" value={value} disabled={disabled} onChange={event => onChange(event.target.value)} />
 }
 
 function RetouchField({ name, label, value, recommendation, locked, dirty, expanded, editing, onChange, onToggleLock, onReset, onToggleExpanded, onStartEditing, onFinishEditing, disabled }) {
@@ -227,8 +227,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
       setAssetNextCursor(value.nextCursor || null)
     } catch {} finally { setLoadingMoreAssets(false) }
   }
-  async function renameAsset(asset) {
-    const nextName = window.prompt('输入新的图片名称', asset.name)
+  async function saveAssetName(asset, nextName) {
     if (!nextName?.trim()) return
     try {
       const response = await fetch(`/api/v1/assets/${asset.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: nextName }) })
@@ -236,7 +235,12 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
       if (!response.ok) throw new Error(value.error || '重命名失败')
       setStoredAssets(current => current.map(item => item.id === asset.id ? { ...item, ...value.asset } : item))
       setCloudResult(current => current?.id === asset.id ? { ...current, ...value.asset } : current)
+      setResultName(value.asset.name || nextName)
     } catch (err) { setError(err.message) }
+  }
+  async function renameAsset(asset) {
+    const nextName = window.prompt('输入新的图片名称', asset.name)
+    if (nextName?.trim()) await saveAssetName(asset, nextName)
   }
   function openAssetPicker(mode = 'single') {
     setAssetPickerMode(mode)
@@ -399,6 +403,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           setStoredAssets(current => [...newAssets, ...current.filter(asset => !newAssets.some(item => item.id === asset.id))])
           void refreshStoredAssets()
           setCloudResult(resultAsset)
+          setResultName(resultAsset.name || resultName)
           setJob({ ...job, status: 'done', taskId: value.task?.id })
         }
         return
@@ -423,7 +428,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     {workflowStep === 2 && <article className="retouch-workflow-card"><h3>输出尺寸与比例</h3><p>说明需要保留的原图比例，或填写需要输出的平台尺寸与格式。</p><label className="retouch-workflow-input"><span>尺寸与比例</span><AutoResizeTextarea label="尺寸与比例" value={size} disabled={busy} onChange={setSize} /></label><footer><button className="secondary-button" onClick={() => changeWorkflowStep(1)}>上一步</button><button className="primary-button" disabled={!size.trim() || busy} onClick={() => changeWorkflowStep(3)}>下一步：确认场景 →</button></footer></article>}
     {workflowStep === 3 && <article className="retouch-workflow-card"><h3>场景与环境</h3><p>写明真实场景需要保留，或描述希望替换成的拍摄环境。</p><label className="retouch-workflow-input"><span>场景</span><AutoResizeTextarea label="场景" value={scene} disabled={busy} onChange={setScene} /></label><footer><button className="secondary-button" onClick={() => changeWorkflowStep(2)}>上一步</button><button className="primary-button" disabled={!scene.trim() || busy} onClick={() => changeWorkflowStep(4)}>下一步：装饰与保留 →</button></footer></article>}
     {workflowStep === 4 && <article className="retouch-workflow-card"><h3>装饰、保留项与精修要求</h3><p>产品主体、文字、标签、Logo 与真实外形会按“必须保留”执行，不会被模板参考覆盖。</p><div className="retouch-workflow-fields"><label className="retouch-workflow-input"><span>装饰</span><AutoResizeTextarea label="装饰" value={decor} disabled={busy} onChange={setDecor} /></label><label className="retouch-workflow-input"><span>必须保留</span><AutoResizeTextarea label="必须保留" value={preserve} disabled={busy} onChange={setPreserve} /></label><label className="retouch-workflow-input"><span>精修要求</span><AutoResizeTextarea label="精修要求" value={requirements} disabled={busy} onChange={setRequirements} /></label></div>{retouchMode === 'template' && <div className="retouch-template-choice"><strong>模板参考（可选）</strong><span>{templateName ? `已选：${templateName}` : '参考图只影响光线、构图、色调和质感。'}</span><button type="button" className="secondary-button" disabled={busy} onClick={() => openAssetPicker('template')}>选择云端模板参考</button>{templateImage && <button type="button" className="text-button" onClick={() => { setTemplateImage(''); setTemplateName(''); setTemplateAssetId('') }}>移除模板</button>}</div>}<footer><button className="secondary-button" onClick={() => changeWorkflowStep(3)}>上一步</button><button className="primary-button" disabled={!image || !requirements.trim() || busy || analyzing} onClick={() => submit(false)}>{analyzing ? '正在识别素材…' : '生成精修计划'}</button></footer></article>}
-    {workflowStep === 5 && <article className="retouch-workflow-card retouch-plan-card"><h3>确认精修计划</h3><p>可直接修改提示词。点击确认后，才会将图片与计划发送给模型。</p>{job?.plan || finalPrompt ? <><label className="retouch-workflow-input"><span>结果图片名称</span><input value={activeRetouchAssets.length > 1 ? batchNamePrefix : resultName} maxLength="160" onChange={event => activeRetouchAssets.length > 1 ? setBatchNamePrefix(event.target.value) : setResultName(event.target.value)} placeholder={activeRetouchAssets.length > 1 ? '例如：咖啡新品' : '例如：山茶气泡饮-精修主图'} aria-label={activeRetouchAssets.length > 1 ? '批量命名前缀' : '结果图片名称'} /></label><label className="retouch-workflow-input"><span>最终精修提示词</span><AutoResizeTextarea label="最终精修提示词" value={finalPrompt || job?.plan || ''} disabled={busy || job?.status === 'done'} onChange={setFinalPrompt} /></label><footer><button className="secondary-button" disabled={busy} onClick={() => { setJob(null); setFinalPrompt(''); changeWorkflowStep(4) }}>返回修改</button>{job?.status !== 'done' && <button className="primary-button" disabled={busy || !(finalPrompt || job?.plan || '').trim()} onClick={() => submit(true)}>{sending ? '正在生成…' : '确认提示词并开始精修'}</button>}</footer></> : <div className="retouch-plan-pending"><LoaderCircle size={18} className="spin-icon" />正在生成可确认的精修计划…</div>}{cloudResult && <div className="retouch-result-summary"><CachedImage src={cloudResult.url} alt="精修完成结果" /><div><strong>{cloudResult.name || '精修完成'}</strong><a href={`/api/v1/assets/${cloudResult.id}/download`} download={cloudResult.downloadName || cloudResult.name}>下载图片</a></div></div>}</article>}
+    {workflowStep === 5 && <section className={cloudResult ? 'retouch-plan-layout is-complete' : 'retouch-plan-layout'}><article className="retouch-workflow-card retouch-plan-card"><h3>确认精修计划</h3><p>可直接修改提示词。点击确认后，才会将图片与计划发送给模型。</p>{job?.plan || finalPrompt ? <>{!cloudResult && <label className="retouch-workflow-input"><span>结果图片名称</span><input value={activeRetouchAssets.length > 1 ? batchNamePrefix : resultName} maxLength="160" onChange={event => activeRetouchAssets.length > 1 ? setBatchNamePrefix(event.target.value) : setResultName(event.target.value)} placeholder={activeRetouchAssets.length > 1 ? '例如：咖啡新品' : '例如：山茶气泡饮-精修主图'} aria-label={activeRetouchAssets.length > 1 ? '批量命名前缀' : '结果图片名称'} /></label>}<label className="retouch-workflow-input"><span>最终精修提示词</span><AutoResizeTextarea className="retouch-final-prompt" label="最终精修提示词" value={finalPrompt || job?.plan || ''} disabled={busy || job?.status === 'done'} onChange={setFinalPrompt} minHeight={180} maxRows={12} /></label><footer><button className="secondary-button" disabled={busy} onClick={() => { setJob(null); setFinalPrompt(''); changeWorkflowStep(4) }}>返回修改</button>{job?.status !== 'done' && <button className="primary-button" disabled={busy || !(finalPrompt || job?.plan || '').trim()} onClick={() => submit(true)}>{sending ? '正在生成…' : '确认提示词并开始精修'}</button>}</footer></> : <div className="retouch-plan-pending"><LoaderCircle size={18} className="spin-icon" />正在生成可确认的精修计划…</div>}</article>{cloudResult && <aside className="retouch-result-preview" aria-label="精修结果预览"><button type="button" className="retouch-result-image" aria-label="放大查看精修结果" onClick={() => setViewerImage(cloudResult)}><CachedImage asset={cloudResult} src={cloudResult.url} alt="精修完成结果，点击放大查看" loading="eager" /><span>点击放大查看</span></button><div className="retouch-result-controls"><label><span>结果图片名称</span><input value={resultName || cloudResult.name || ''} maxLength="160" aria-label="修改结果图片名称" onChange={event => setResultName(event.target.value)} /></label><div><button type="button" className="secondary-button" disabled={busy || !resultName.trim() || resultName === cloudResult.name} onClick={() => saveAssetName(cloudResult, resultName)}>保存名称</button><a className="primary-button" href={`/api/v1/assets/${cloudResult.id}/download`} download={cloudResult.downloadName || cloudResult.name}>下载图片</a></div></div></aside>}</section>}
     {(error || job?.error) && <p className="retouch-error" role="alert">{error || job.error}</p>}
     {assetPickerOpen && <div className="asset-picker-modal" role="dialog" aria-label="从云端素材库选择图片"><div className="asset-picker-dialog"><div className="asset-picker-heading"><div><strong>{assetPickerMode === 'template' ? '选择云资产参考素材' : '从云端素材库选择'}</strong><small>{assetPickerMode === 'template' ? '仅作为修图模板参考，不会替换产品主体' : assetPickerMode === 'batch' ? '最多选择 10 张图片，确认后进入批量精修' : '单图模式：点击图片后进入下一步'}</small></div><button className="assistant-toggle" onClick={() => setAssetPickerOpen(false)} aria-label="关闭素材选择">×</button></div><div className="asset-picker-grid">{assetPickerAssets.map(asset => { const selectedIndex = selectedCloudAssets.findIndex(item => item.id === asset.id); return <button key={asset.id} className={selectedIndex >= 0 ? 'asset-select-card is-selected' : 'asset-select-card'} aria-pressed={selectedIndex >= 0} onClick={() => toggleCloudAsset(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><span className="asset-selection-index" aria-hidden="true">{selectedIndex >= 0 ? `✓ ${assetPickerMode === 'template' ? '模板' : selectedIndex + 1}` : ''}</span><span>{asset.name}</span><small>{asset.group}</small></button> })}</div><div className="asset-picker-footer"><span>{assetPickerMode === 'template' ? '点击图片即可设为模板参考' : assetPickerMode === 'single' ? '点击图片即可使用' : `已选 ${selectedCloudAssets.length} / 10 张`}</span><div className="asset-picker-pagination" aria-label="素材分页"><button type="button" className="secondary-button" disabled={assetPickerPage === 1} onClick={() => goToAssetPickerPage(assetPickerPage - 1)}>上一页</button><span>第 {assetPickerPage} / {assetPickerTotalPages} 页 · 每页 {ASSET_PICKER_PAGE_SIZE} 项</span><button type="button" className="secondary-button" disabled={assetPickerPage === assetPickerTotalPages} onClick={() => goToAssetPickerPage(assetPickerPage + 1)}>下一页</button></div>{assetPickerMode === 'batch' && <button className="primary-button" disabled={!selectedCloudAssets.length} onClick={() => applyCloudAssets(selectedCloudAssets, 'batch')}>使用已选 {selectedCloudAssets.length} 张素材</button>}</div></div></div>}
   </section>

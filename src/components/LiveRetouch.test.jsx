@@ -58,7 +58,10 @@ it('从本机上传后可五步推进，生成计划后才确认调用模型', a
   fireEvent.click(screen.getByRole('button', { name: '下一步：装饰与保留 →' }))
   fireEvent.click(screen.getByRole('button', { name: '生成精修计划' }))
 
-  expect(await screen.findByRole('textbox', { name: '最终精修提示词' })).toHaveValue('保留原比例与产品文字，清理背景杂物并提亮主体。')
+  const finalPrompt = await screen.findByRole('textbox', { name: '最终精修提示词' })
+  expect(finalPrompt).toHaveValue('保留原比例与产品文字，清理背景杂物并提亮主体。')
+  expect(finalPrompt).toHaveClass('retouch-final-prompt')
+  expect(finalPrompt).toHaveStyle({ height: '180px' })
   expect(fetch.mock.calls.some(([url]) => url === '/api/retouch/plan-1/confirm')).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: '确认提示词并开始精修' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/retouch/plan-1/confirm', expect.objectContaining({ method: 'POST' })))

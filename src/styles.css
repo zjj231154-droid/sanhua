@@ -1372,7 +1372,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .retouch-entry > div:first-child p { margin: 0; color: var(--workbench-muted); font-size: 13px; line-height: 1.55; }
 .integrated-retouch .is-guided-layout { grid-template-columns: minmax(0, 1fr); }
 .integrated-retouch .is-guided-layout .canvas-area { overflow: auto; background: #f5f6f8; }
-.retouch-guided-workflow { width: min(100% - 48px, 920px); margin: 16px auto 40px; display: grid; gap: 16px; }
+.retouch-guided-workflow { width: min(100% - 48px, 1120px); margin: 16px auto 40px; display: grid; gap: 16px; }
 .retouch-workflow-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .retouch-workflow-heading > div { display: grid; gap: 4px; }
 .retouch-workflow-heading h2, .retouch-workflow-card h3 { margin: 0; color: var(--color-text, #2d2926); }
@@ -1387,6 +1387,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .retouch-workflow-input { display: grid; gap: 8px; color: var(--color-text, #2d2926); font-size: 13px; font-weight: 700; }
 .retouch-workflow-input textarea, .retouch-workflow-input input { width: 100%; min-height: 46px; padding: 11px 12px; box-sizing: border-box; border: 1px solid var(--color-border-strong, #cfd4da); border-radius: 10px; color: var(--color-text, #2d2926); background: #fff; font: inherit; font-weight: 400; line-height: 1.55; resize: vertical; }
 .retouch-workflow-input textarea:focus, .retouch-workflow-input input:focus { outline: 2px solid rgba(147, 58, 56, .18); border-color: var(--color-brand-primary, #933a38); }
+.retouch-final-prompt { min-height: 180px !important; font-size: 19.5px !important; line-height: 1.6 !important; }
 .retouch-workflow-fields { display: grid; gap: 13px; }
 .retouch-workflow-assets { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
 .retouch-workflow-asset { min-width: 0; display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px; border: 1px solid #e4e6e9; border-radius: 10px; background: #fafbfc; }
@@ -1399,6 +1400,23 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .retouch-template-choice { padding: 13px; border: 1px dashed #d4b6aa; border-radius: 10px; color: #705a51; background: #fffaf7; font-size: 12px; }
 .retouch-template-choice span { margin-right: auto; color: var(--color-text-muted, #757b84); }
 .retouch-plan-pending { display: flex; align-items: center; gap: 9px; color: var(--color-text-muted, #757b84); font-size: 13px; }
+.retouch-plan-layout { width: min(100%, 620px); display: grid; gap: 16px; }
+.retouch-plan-layout.is-complete { width: 100%; grid-template-columns: minmax(0, 620px) minmax(300px, 1fr); align-items: start; }
+.retouch-plan-layout .retouch-workflow-card { width: auto; }
+.retouch-result-preview { min-width: 0; overflow: hidden; border: 1px solid var(--color-border, #e1e4e8); border-radius: 16px; background: #fff; box-shadow: 0 5px 14px rgba(37, 39, 43, .05); }
+.retouch-result-image { position: relative; width: 100%; min-height: 350px; padding: 0; display: grid; place-items: center; overflow: hidden; border: 0; color: #fff; background: #eef0f2; cursor: zoom-in; }
+.retouch-result-image .cached-image, .retouch-result-image img { width: 100%; min-height: 350px; display: block; object-fit: contain; }
+.retouch-result-image span { position: absolute; right: 12px; bottom: 12px; padding: 7px 10px; border-radius: 999px; color: #fff; background: rgba(31, 31, 31, .68); font-size: 12px; font-weight: 700; opacity: 0; transition: opacity .18s ease; }
+.retouch-result-image:hover span, .retouch-result-image:focus-visible span { opacity: 1; }
+.retouch-result-controls { display: grid; gap: 11px; padding: 16px; border-top: 1px solid #e9ebee; }
+.retouch-result-controls label { display: grid; gap: 7px; color: var(--color-text, #2d2926); font-size: 13px; font-weight: 700; }
+.retouch-result-controls input { width: 100%; min-height: 42px; padding: 9px 11px; box-sizing: border-box; border: 1px solid var(--color-border-strong, #cfd4da); border-radius: 9px; color: var(--color-text, #2d2926); background: #fff; font: inherit; }
+.retouch-result-controls > div { display: flex; gap: 9px; }
+.retouch-result-controls .primary-button { text-decoration: none; }
+@media (max-width: 900px) {
+  .retouch-plan-layout.is-complete { grid-template-columns: minmax(0, 1fr); }
+  .retouch-result-image, .retouch-result-image .cached-image, .retouch-result-image img { min-height: 280px; }
+}
 .retouch-result-summary { display: flex; gap: 12px; align-items: center; padding-top: 4px; border-top: 1px solid #eceef0; }
 .retouch-result-summary .cached-image { width: 72px; height: 72px; overflow: hidden; border-radius: 9px; }
 .retouch-result-summary img { width: 100%; height: 100%; object-fit: cover; }
