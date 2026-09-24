@@ -1949,3 +1949,26 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-night .retouch-template-choice span { color: #cfb89d; }
 .app-shell.time-night .retouch-template-choice { border-color: rgba(222,179,116,.5); color: #f0d7b3; background: rgba(70,40,27,.48); }
 .app-shell.time-night .retouch-result-controls { border-top-color: rgba(235,211,179,.16); }
+
+/* 日间产品图库与品牌产品库统一为白色工作台层级。 */
+.app-shell.time-day .integrated-retouch .is-library-layout,
+.app-shell.time-day .integrated-retouch .is-library-layout .canvas-area { background: #f5f6f8; }
+.app-shell.time-day .integrated-retouch .is-library-layout .section-tabs { border-bottom: 1px solid var(--color-border-subtle); background: #fff; }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-scope-note { color: var(--color-text-muted); background: #fff; }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-toolbar { margin: 12px 14px 0; padding: 12px 14px; border: 1px solid var(--color-border-subtle); border-radius: 12px; color: var(--color-text-secondary); background: #fff; box-shadow: var(--shadow-surface-soft); }
+.app-shell.time-day .integrated-retouch .is-library-layout .live-photo-grid { margin-top: 2px; background: #f5f6f8; }
+.app-shell.time-day .integrated-retouch .is-library-layout .photo-card,
+.app-shell.time-day .integrated-retouch .is-library-layout .upload-card { border-color: var(--color-border-subtle); color: var(--color-text-primary); background: #fff; box-shadow: var(--shadow-surface-soft); }
+.app-shell.time-day .integrated-retouch .is-library-layout .upload-card { border-style: dashed; color: var(--color-text-muted); }
+.app-shell.time-day .integrated-retouch .is-library-layout .upload-card:hover { border-color: var(--color-brand-primary); color: var(--color-brand-primary); background: #fbf5f3; }
+.app-shell.time-day .integrated-retouch .is-library-layout .upload-card span { color: var(--color-brand-primary); background: rgba(139,58,58,.09); }
+.app-shell.time-day .integrated-retouch .is-library-layout .photo-info small { color: var(--color-text-muted); }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-asset-card:hover { box-shadow: 0 10px 24px rgba(15,23,42,.1); transform: translateY(-2px); }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-asset-card.is-selected { box-shadow: 0 0 0 2px var(--color-brand-primary), 0 14px 30px rgba(139,58,58,.16); }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-checkbox { background: var(--color-brand-primary); }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-asset-card:not(.is-selected) .gallery-checkbox { border-color: #fff; background: rgba(45,53,61,.34); }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-card-actions a,
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-card-actions button { border: 1px solid var(--color-border-subtle); color: var(--color-text-secondary); background: #fff; }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-card-actions a:hover,
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-card-actions button:hover { color: var(--color-brand-primary); border-color: var(--color-brand-primary); background: #fbf5f3; }
+.app-shell.time-day .integrated-retouch .is-library-layout .gallery-selection-bar { border-color: var(--color-border-subtle); color: var(--color-text-primary); background: #fff; box-shadow: 0 10px 28px rgba(15,23,42,.1); }
