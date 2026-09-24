@@ -130,7 +130,8 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
   const [loadingMoreAssets, setLoadingMoreAssets] = useState(false)
   const [assetPickerPage, setAssetPickerPage] = useState(1)
   const [retouchTab, setRetouchTab] = useState('one-click')
-  const [retouchMode, setRetouchMode] = useState('')
+  // 一键修图不再经过空白的方式准备页：默认直接进入单图精修的第一步。
+  const [retouchMode, setRetouchMode] = useState('single')
   const [workflowStep, setWorkflowStep] = useState(1)
   const [openSections, setOpenSections] = useState(() => {
     try { return { product: true, requirements: true, ...JSON.parse(localStorage.getItem('sanhua-retouch-open-sections') || '{}') } } catch { return { product: true, requirements: true } }
