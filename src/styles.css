@@ -1587,6 +1587,15 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .disabled-reason:focus-within > span[role="tooltip"], .disabled-reason:hover > span[role="tooltip"] { opacity: 1; transform: translateY(0); }
 
 .script-workspace { position: relative; background-image: linear-gradient(rgba(45,28,21,.84), rgba(45,28,21,.9)), url('/assets/script-teahouse-cases-v1.png'); background-size: cover; background-position: center; }
+.script-asset-units { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 22px; }
+.script-asset-unit { min-width: 0; min-height: 92px; padding: 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: start; gap: 9px 10px; border: 1px solid rgba(245,224,197,.18); border-radius: 14px; color: #f5e8d7; background: rgba(24,14,11,.48); text-align: left; cursor: pointer; box-shadow: inset 0 1px rgba(255,245,232,.04); transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease; }
+.script-asset-unit > svg { color: #e0b77e; }
+.script-asset-unit > span:nth-child(2) { min-width: 0; display: grid; gap: 5px; }
+.script-asset-unit strong, .script-asset-unit small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.script-asset-unit strong { font-size: 15px; }
+.script-asset-unit small { color: #cdb79e; font-size: 11px; }
+.script-asset-unit-action { grid-column: 2; justify-self: start; padding: 4px 8px; border-radius: 999px; color: #e3c28f; background: rgba(225,189,134,.14); font-size: 10px; font-weight: 700; }
+.script-asset-unit:hover, .script-asset-unit.is-selected { border-color: #ddb477; background: rgba(82,44,30,.72); box-shadow: 0 0 0 2px rgba(225,189,134,.13), inset 0 1px rgba(255,245,232,.07); transform: translateY(-1px); }
 .script-workspace-grid { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(260px,.95fr); gap: 14px; }
 .script-input-panel { min-width: 0; display: grid; align-content: start; gap: 10px; }
 .script-input-panel label { display: grid; gap: 7px; color: #f4e5d3; font-size: 12px; font-weight: 700; }
@@ -1838,6 +1847,11 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .script-workspace-header p { margin: 5px 0 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; }
 .app-shell.time-day .script-asset-picker { margin: 18px 0 22px; padding: 14px; border: 1px solid var(--color-border-subtle); border-radius: 12px; background: var(--color-surface-muted); }
 .app-shell.time-day .script-asset-picker > strong { color: var(--color-text-primary); font-size: 13px; }
+.app-shell.time-day .script-asset-unit { border-color: var(--color-border-subtle); color: var(--color-text-primary); background: var(--color-surface-muted); box-shadow: none; }
+.app-shell.time-day .script-asset-unit > svg { color: var(--color-brand-primary); }
+.app-shell.time-day .script-asset-unit small { color: var(--color-text-muted); }
+.app-shell.time-day .script-asset-unit-action { color: var(--color-brand-primary); background: rgba(139,58,58,.09); }
+.app-shell.time-day .script-asset-unit:hover, .app-shell.time-day .script-asset-unit.is-selected { border-color: var(--color-brand-primary); background: #fbf5f3; box-shadow: 0 0 0 2px rgba(139,58,58,.1); }
 .app-shell.time-day .script-workspace-grid { grid-template-columns: minmax(320px, .35fr) minmax(620px, .65fr); gap: 24px; align-items: stretch; }
 .app-shell.time-day .script-input-panel { gap: 12px; }
 .app-shell.time-day .script-input-panel label { gap: 8px; color: var(--color-text-primary); font-size: 14px; }
@@ -1892,9 +1906,46 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 @media (max-width: 760px) {
   .retouch-entry { width: min(100% - 32px, 760px); }
   .retouch-mode-picker { grid-template-columns: 1fr; }
+  .script-asset-units { grid-template-columns: 1fr; }
   .app-shell.time-day .script-workspace { padding: 16px; }
   .app-shell.time-day .workflow-stepper { display: flex; width: max-content; min-width: 100%; }
   .app-shell.time-day .workflow-stepper li { flex: 0 0 92px; }
   .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-step-actions { align-items: stretch; flex-direction: column-reverse; }
   .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-step-actions > *, .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-step-actions button { width: 100%; }
 }
+
+/* 夜酒模式：产品精修与品牌创作共用深棕、暖金的工作台层级。 */
+.app-shell.time-night .integrated-retouch { color: #f5e5d1; }
+.app-shell.time-night .retouch-page,
+.app-shell.time-night .retouch-layout { background: #100b09; }
+.app-shell.time-night .integrated-retouch .is-guided-layout .canvas-area,
+.app-shell.time-night .integrated-retouch .is-entry-layout .canvas-area { background: radial-gradient(circle at 34% 22%, rgba(90,58,40,.28), transparent 42%), linear-gradient(115deg, rgba(8,6,5,.96), rgba(24,15,11,.91)), url('/assets/workbench-texture-v2.png') center / cover; }
+.app-shell.time-night .retouch-entry > div:first-child .kicker,
+.app-shell.time-night .retouch-workflow-heading .kicker { color: #d8ae71; }
+.app-shell.time-night .retouch-entry > div:first-child p,
+.app-shell.time-night .retouch-workflow-heading p,
+.app-shell.time-night .retouch-workflow-card > p { color: #d0bb9f; }
+.app-shell.time-night .retouch-workflow-heading h2,
+.app-shell.time-night .retouch-workflow-card h3,
+.app-shell.time-night .retouch-workflow-input,
+.app-shell.time-night .retouch-result-controls label { color: #f7ead8; }
+.app-shell.time-night .retouch-mode-card { border-color: rgba(237,211,176,.22); color: #f4e1c8; background: rgba(45,28,21,.82); box-shadow: inset 0 1px rgba(255,239,214,.05); }
+.app-shell.time-night .retouch-mode-card > svg { color: #deb374; }
+.app-shell.time-night .retouch-mode-card small { color: #c8b095; }
+.app-shell.time-night .retouch-mode-card:hover,
+.app-shell.time-night .retouch-mode-card.is-active { border-color: #e1bd86; background: rgba(72,35,25,.9); box-shadow: 0 0 0 2px rgba(224,177,112,.16), inset 0 1px rgba(255,239,214,.08); }
+.app-shell.time-night .retouch-workflow-source-note,
+.app-shell.time-night .retouch-workflow-card,
+.app-shell.time-night .retouch-result-preview { border-color: rgba(235,211,179,.22); color: #f5e5d1; background: linear-gradient(145deg, rgba(43,28,22,.94), rgba(24,16,13,.96)); box-shadow: 0 16px 36px rgba(0,0,0,.3), inset 0 1px rgba(255,239,214,.05); }
+.app-shell.time-night .retouch-workflow-source-note { color: #d9c1a5; }
+.app-shell.time-night .retouch-workflow-input textarea,
+.app-shell.time-night .retouch-workflow-input input,
+.app-shell.time-night .retouch-result-controls input { border-color: rgba(235,211,179,.25); color: #f6e5d0; background: rgba(11,8,7,.55); }
+.app-shell.time-night .retouch-workflow-input textarea:focus,
+.app-shell.time-night .retouch-workflow-input input:focus,
+.app-shell.time-night .retouch-result-controls input:focus { border-color: #e1bd86; outline-color: rgba(225,189,134,.22); }
+.app-shell.time-night .retouch-workflow-asset { border-color: rgba(235,211,179,.18); background: rgba(14,10,8,.46); }
+.app-shell.time-night .retouch-workflow-asset small,
+.app-shell.time-night .retouch-template-choice span { color: #cfb89d; }
+.app-shell.time-night .retouch-template-choice { border-color: rgba(222,179,116,.5); color: #f0d7b3; background: rgba(70,40,27,.48); }
+.app-shell.time-night .retouch-result-controls { border-top-color: rgba(235,211,179,.16); }

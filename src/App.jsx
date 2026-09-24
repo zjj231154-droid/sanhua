@@ -839,6 +839,66 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
   </div>
 }
 
+function ScriptAssetUnitPicker({ selectedScene, selectedCharacter, selectedProp, onSelectScene, onSelectCharacter, onSelectProp }) {
+  const [activeType, setActiveType] = useState('')
+  const [remoteAssets, setRemoteAssets] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const unitDefinitions = [
+    { id: 'scene', label: '场景资产', description: '绑定真实茶馆空间', selected: selectedScene, select: onSelectScene },
+    { id: 'character', label: '角色资产', description: '选择出场人物参考', selected: selectedCharacter, select: onSelectCharacter },
+    { id: 'prop', label: '道具资产', description: '选择关键物件参考', selected: selectedProp, select: onSelectProp },
+  ]
+  const activeUnit = unitDefinitions.find(item => item.id === activeType)
+  const sceneFallback = useMemo(() => CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => ({ ...asset, videoAssetType: 'scene', isDemo: true })), [])
+  useEffect(() => {
+    if (!activeType) return undefined
+    let cancelled = false
+    setLoading(true); setError('')
+    fetch('/api/v1/assets?workspace=script&limit=80')
+      .then(async response => {
+        const value = await response.json()
+        if (!response.ok) throw new Error(value.error || '资产库读取失败')
+        return Array.isArray(value.assets) ? value.assets : []
+      })
+      .then(assets => { if (!cancelled) setRemoteAssets(assets) })
+      .catch(reason => { if (!cancelled) { setRemoteAssets([]); setError(reason.message || '资产库暂时不可用') } })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [activeType])
+  const shownAssets = useMemo(() => {
+    const typedAssets = remoteAssets.filter(asset => asset.videoAssetType === activeType)
+    if (activeType !== 'scene') return typedAssets
+    const knownIds = new Set(sceneFallback.map(asset => asset.id))
+    return [...sceneFallback, ...typedAssets.filter(asset => !knownIds.has(asset.id))]
+  }, [activeType, remoteAssets, sceneFallback])
+  const openPicker = type => setActiveType(type)
+  const chooseAsset = asset => {
+    activeUnit?.select(asset)
+    setActiveType('')
+  }
+  return <>
+    <section className="script-asset-units" aria-label="短剧资产分类">
+      {unitDefinitions.map(unit => <button key={unit.id} type="button" className={unit.selected ? 'script-asset-unit is-selected' : 'script-asset-unit'} onClick={() => openPicker(unit.id)} aria-label={`选择${unit.label}`}>
+        <FolderOpen size={19} /><span><strong>{unit.label}</strong><small>{unit.selected ? `已选：${unit.selected.name}` : unit.description}</small></span><span className="script-asset-unit-action">选择图片</span>
+      </button>)}
+    </section>
+    {activeUnit && <div className="asset-picker-modal" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setActiveType('') }}>
+      <section className="asset-picker-dialog" role="dialog" aria-modal="true" aria-label={`${activeUnit.label}图片库`}>
+        <header className="asset-picker-heading"><div><strong>{activeUnit.label}图片库</strong><small>{activeType === 'scene' ? '场景沿用原有短剧茶馆素材，也可选择云端场景资产。' : `从云端资产库选择${activeUnit.label.replace('资产', '')}参考。`}</small></div><button type="button" className="icon-button" aria-label="关闭图片库" onClick={() => setActiveType('')}><X size={18} /></button></header>
+        <div className="asset-picker-grid">
+          {loading && <p className="asset-picker-loading">正在读取云端图片库…</p>}
+          {!loading && shownAssets.map(asset => <button key={asset.id} type="button" className={activeUnit.selected?.id === asset.id ? 'asset-select-card is-selected' : 'asset-select-card'} onClick={() => chooseAsset(asset)}>
+            <CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><span>{asset.name}</span><small>{asset.isDemo ? '短剧场景素材' : '云端资产'}</small><b className="asset-selection-index">已选</b>
+          </button>)}
+          {!loading && !shownAssets.length && <p className="asset-picker-loading">暂无{activeUnit.label}。请先在资产库上传并标记为{activeUnit.label.replace('资产', '')}。</p>}
+        </div>
+        <footer className="asset-picker-footer"><span>{error ? `${error}；当前显示可用场景素材。` : `点击图片即可选为${activeUnit.label}。`}</span><button type="button" className="secondary-button" onClick={() => setActiveType('')}>取消</button></footer>
+      </section>
+    </div>}
+  </>
+}
+
 function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, onIncomingContextConsumed }) {
   const [editor, setEditor] = useState(null)
   const [toolbarTab, setToolbarTab] = useState(0)
@@ -850,6 +910,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   const [brandError, setBrandError] = useState('')
   const [viewerImage, setViewerImage] = useState('')
   const [selectedAsset, setSelectedAsset] = useState(null)
+  const [selectedCharacterAsset, setSelectedCharacterAsset] = useState(null)
+  const [selectedPropAsset, setSelectedPropAsset] = useState(null)
   const [scriptPrompt, setScriptPrompt] = useState('围绕茶馆真实空间写一个 3 分钟短剧开场：一位年轻掌柜用一杯新茶解决老顾客之间的误会。')
   const [scriptPlan, setScriptPlan] = useState('')
   const [scripts, setScripts] = useState([])
@@ -916,14 +978,15 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     setEditor({ pendingConfirmation: true, sourceTaskId: taskId, title: '待确认茶馆短剧计划', kind: '短剧故事规划', summary: scriptPrompt, outline: plan })
   }
   const persistScript = async values => {
-    const body = JSON.stringify({ ...values, sourceAssetIds: selectedAsset ? [selectedAsset.id] : [] })
+    const sourceAssetIds = [selectedAsset, selectedCharacterAsset, selectedPropAsset].filter(Boolean).map(asset => asset.id)
+    const body = JSON.stringify({ ...values, sourceAssetIds })
     const value = editor?.id
       ? await requestScript(`/api/v1/scripts/${editor.id}`, { method: 'PATCH', body })
       : await requestScript('/api/v1/scripts', { method: 'POST', body })
     setScripts(current => [value.script, ...current.filter(item => item.id !== value.script.id)])
     setActiveId(value.script.id)
     setScriptPlan(values.outline)
-    void archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script_outline', title: value.script.title || '短剧脚本大纲', content: values.outline || values.content || values.summary, contentFormat: 'markdown', sourceAssetIds: selectedAsset ? [selectedAsset.id] : [], scriptId: value.script.id, scriptVersionId: value.script.currentVersionId })
+    void archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script_outline', title: value.script.title || '短剧脚本大纲', content: values.outline || values.content || values.summary, contentFormat: 'markdown', sourceAssetIds, scriptId: value.script.id, scriptVersionId: value.script.currentVersionId })
     if (editor?.pendingConfirmation) {
       setToolbarTab(1)
       if (editor.sourceTaskId) {
@@ -992,7 +1055,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   const generateScriptPlan = async () => {
     setBrandBusy(true); setBrandError('')
     try {
-      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}`, assets: selectedAsset ? [selectedAsset.id] : [] }) })
+      const sourceAssets = [selectedAsset, selectedCharacterAsset, selectedPropAsset].filter(Boolean)
+      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}\n角色素材：${selectedCharacterAsset?.name || '待选择'}\n道具素材：${selectedPropAsset?.name || '待选择'}`, assets: sourceAssets.map(asset => asset.id) }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '编导助手暂不可用')
       const plan = value.plan || ''
@@ -1011,7 +1075,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
         <main className="showcase-main">
           <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成', '文本记录'] : ['素材创作', '产品库', '提示词记录']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
           {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} />}
-          {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card script-workspace"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属场景资产发起创作，脚本计划会绑定真实场景，不虚构不存在的区域和道具。</p></div>{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}<div className="asset-picker"><strong>仅引用短剧资产</strong><div>{CLOUD_ASSETS.filter(asset => asset.category === 'script').slice(0, 6).map(asset => <button key={asset.id} className={selectedAsset?.id === asset.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => setSelectedAsset(asset)}><img src={asset.url} alt={asset.name} /><small>{asset.name}</small></button>)}</div></div><div className="script-workspace-grid"><div className="script-input-panel"><label>短剧创作需求<textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && scriptPrompt.trim() && !brandBusy) { event.preventDefault(); generateScriptPlan() } }} aria-label="短剧脚本需求" placeholder="描述人物、冲突、场景与时长" /></label><div className="script-inspiration" aria-label="创作灵感">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button type="button" key={item} className="secondary-button" onClick={() => appendScriptInspiration(item)}>{item}</button>)}</div><DisabledReasonTooltip reason={!scriptPrompt.trim() ? '请先填写短剧创作需求' : ''}><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={generateScriptPlan}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button></DisabledReasonTooltip><small>按 Ctrl + Enter 或 Command + Enter 快速提交</small></div>{scriptPrompt.trim() && <aside className="script-preview-canvas" aria-label="短剧实时预览"><span className="kicker">实时预览画布</span><article><strong>剧情概要</strong><p>{scriptPrompt.slice(0, 88)}{scriptPrompt.length > 88 ? '…' : ''}</p></article><div><article><strong>角色设定</strong><p>掌柜、老顾客与来访者将围绕一个真实冲突展开。</p></article><article><strong>茶馆场景</strong><p>{selectedAsset?.name || '选择场景素材后将绑定真实空间。'}</p></article></div><article><strong>分镜预览</strong><p>开场钩子 → 人物对峙 → 茶饮转机 → 结尾反转</p></article></aside>}</div>{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
+          {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card script-workspace"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属资产发起创作。场景、角色与道具会分别绑定到脚本计划，不虚构未选择的参考内容。</p></div>{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}<ScriptAssetUnitPicker selectedScene={selectedAsset} selectedCharacter={selectedCharacterAsset} selectedProp={selectedPropAsset} onSelectScene={setSelectedAsset} onSelectCharacter={setSelectedCharacterAsset} onSelectProp={setSelectedPropAsset} /><div className="script-workspace-grid"><div className="script-input-panel"><label>短剧创作需求<textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && scriptPrompt.trim() && !brandBusy) { event.preventDefault(); generateScriptPlan() } }} aria-label="短剧脚本需求" placeholder="描述人物、冲突、场景与时长" /></label><div className="script-inspiration" aria-label="创作灵感">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button type="button" key={item} className="secondary-button" onClick={() => appendScriptInspiration(item)}>{item}</button>)}</div><DisabledReasonTooltip reason={!scriptPrompt.trim() ? '请先填写短剧创作需求' : ''}><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={generateScriptPlan}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button></DisabledReasonTooltip><small>按 Ctrl + Enter 或 Command + Enter 快速提交</small></div>{scriptPrompt.trim() && <aside className="script-preview-canvas" aria-label="短剧实时预览"><span className="kicker">实时预览画布</span><article><strong>剧情概要</strong><p>{scriptPrompt.slice(0, 88)}{scriptPrompt.length > 88 ? '…' : ''}</p></article><div><article><strong>角色设定</strong><p>{selectedCharacterAsset?.name || '掌柜、老顾客与来访者将围绕一个真实冲突展开。'}</p></article><article><strong>茶馆场景</strong><p>{selectedAsset?.name || '选择场景素材后将绑定真实空间。'}</p></article></div><article><strong>关键道具</strong><p>{selectedPropAsset?.name || '选择道具素材后将作为剧情关键物件。'}</p></article><article><strong>分镜预览</strong><p>开场钩子 → 人物对峙 → 茶饮转机 → 结尾反转</p></article></aside>}</div>{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
           {type === 'script' && toolbarTab === 2 && <VideoWorkbench scripts={scripts} activeId={activeId} scriptPlan={scriptPlan} />}
           {type === 'brand' && toolbarTab === 2 && <PromptRecordPage workspace="brand" title="品牌提示词记录" description="设计计划与最终提示词会自动同步到云端文本库。" filters={[["brand_plan", "设计计划"], ["brand_final_prompt", "最终提示词"]]} onReuse={record => { setBrandPlan(record.content); setToolbarTab(0) }} />}

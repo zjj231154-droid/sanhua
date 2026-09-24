@@ -107,6 +107,28 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByLabelText('短剧实时预览')).toHaveTextContent(assetName)
   })
 
+  it('短剧创作将场景、角色和道具分开选择，并弹出对应图片库', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (url === '/api/v1/assets?workspace=script&limit=80') return { ok: true, json: async () => ({ assets: [{ id: 'character-1', name: '年轻掌柜', videoAssetType: 'character', url: '/character.png' }, { id: 'prop-1', name: '紫砂茶壶', videoAssetType: 'prop', url: '/prop.png' }] }) }
+      return { ok: true, json: async () => ({ scripts: [] }) }
+    }))
+    render(<App initialAuthenticated initialPage="script" />)
+
+    expect(screen.getByRole('button', { name: '选择场景资产' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择角色资产' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择道具资产' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '选择场景资产' }))
+    const sceneLibrary = await screen.findByRole('dialog', { name: '场景资产图片库' })
+    fireEvent.click(within(sceneLibrary).getByRole('button', { name: /茶馆场景 1/ }))
+    expect(screen.queryByRole('dialog', { name: '场景资产图片库' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择场景资产' })).toHaveTextContent('已选：茶馆场景 1')
+
+    fireEvent.click(screen.getByRole('button', { name: '选择角色资产' }))
+    const characterLibrary = await screen.findByRole('dialog', { name: '角色资产图片库' })
+    fireEvent.click(within(characterLibrary).getByRole('button', { name: /年轻掌柜/ }))
+    expect(screen.getByRole('button', { name: '选择角色资产' })).toHaveTextContent('已选：年轻掌柜')
+  })
+
   it('选中产品精修时会展开模块内的二级导航', () => {
     render(<App initialAuthenticated initialPage="retouch" />)
 
