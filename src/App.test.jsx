@@ -143,6 +143,7 @@ describe('AI 创作工作台 Demo', () => {
 
   it('品牌产品选择可再次点击取消并清空后续步骤', () => {
     render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: '选择做产品工作流' }))
     const product = screen.getByRole('button', { name: '杯垫' })
     fireEvent.click(product)
     expect(screen.getByText('当前产品：杯垫。下一步会据此更新可量产材质建议。')).toBeInTheDocument()
@@ -163,12 +164,34 @@ describe('AI 创作工作台 Demo', () => {
 
   it('自定义产品标签按回车后会立即选中并保存到会话', () => {
     render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: '选择做产品工作流' }))
     const input = screen.getByRole('textbox', { name: '自定义文创产品类型' })
     fireEvent.change(input, { target: { value: '香牌' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(screen.getByText('当前产品：香牌。下一步会据此更新可量产材质建议。')).toBeInTheDocument()
     expect(localStorage.getItem('sanhua-custom-products')).toContain('香牌')
+  })
+
+  it('平面创作按素材、方向、输出、保留与画幅进入提示词步骤', async () => {
+    const onPlan = vi.fn(async () => 'FINAL_IMAGE_PROMPT: 茶猫四季系列')
+    const asset = { id: 'tea-cat', name: '茶猫 IP 原图', url: 'data:image/png;base64,iVBORw0KGgo=' }
+    render(<BrandMerchWorkflow assets={[asset]} selectedAsset={asset} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={onPlan} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '选择做平面工作流' }))
+    expect(screen.getByRole('button', { name: '1 素材' })).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('button', { name: '2 二创方向' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '下一步：选择二创方向 →' }))
+    fireEvent.click(screen.getByRole('button', { name: '场景延展' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步：选择输出形式 →' }))
+    fireEvent.click(screen.getByRole('button', { name: '系列海报' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步：锁定保留元素 →' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '平面创作必须保留元素' }), { target: { value: '猫咪主体、竹桌茶具、水墨线稿' } })
+    fireEvent.click(screen.getByRole('button', { name: '4:5' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成最终提示词 →' }))
+
+    await waitFor(() => expect(onPlan).toHaveBeenCalledWith(expect.stringContaining('创作模式：平面二创')))
+    expect(screen.getByRole('textbox', { name: '品牌最终提示词' })).toHaveValue('FINAL_IMAGE_PROMPT: 茶猫四季系列')
   })
 
   it('任务进度可删除已完成任务而不显示运行中任务的删除按钮', async () => {

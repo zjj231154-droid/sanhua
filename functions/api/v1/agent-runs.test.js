@@ -23,3 +23,18 @@ it('archives a brand design plan before returning the awaiting-confirmation task
   expect(value.textRecordId).toBeTruthy()
   expect(JSON.parse(stored[1].value)).toMatchObject({ id: value.textRecordId, workspace: 'brand', recordType: 'brand_plan', content: 'FINAL_IMAGE_PROMPT: 茶纹礼盒主视觉', sourceTaskId: value.id, sourceAssetIds: ['brand-asset-1'] })
 })
+
+it('uses the v3.1 graphic workflow and locks IP consistency for a flat-design plan', async () => {
+  const bucket = new MemoryBucket()
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'FINAL_IMAGE_PROMPT: 茶猫四季海报' } }] }), { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  const request = new Request('https://example.test/api/v1/agent-runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', requirements: '创作模式：平面二创\n二创方向：四季 / 节气延展\n输出形式：四张独立插画\n画幅比例：4:5', assets: ['tea-cat'] }) })
+
+  const response = await onRequestPost({ request, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+
+  expect(response.status).toBe(202)
+  expect(body.messages[0].content).toContain('v3.1.0')
+  expect(body.messages[0].content).toContain('唯一角色视觉基准')
+  expect(body.messages[0].content).toContain('不得重新设计角色')
+})

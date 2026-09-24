@@ -1280,6 +1280,14 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .brand-agent-card { margin: 14px 0 0; padding: 18px; display: grid; gap: 12px; border-radius: 22px; }
 .brand-agent-card p { margin: 6px 0 0; color: var(--workbench-muted); font-size: 11px; line-height: 1.6; }
 .brand-merch-workflow { max-width: 920px; }
+.brand-mode-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.brand-mode-card { min-height: 92px; padding: 16px; display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--glass-line); border-radius: 16px; color: inherit; background: rgba(255,255,255,.06); text-align: left; cursor: pointer; }
+.brand-mode-card > svg { flex: 0 0 auto; color: #cfa46f; }
+.brand-mode-card > span { display: grid; gap: 5px; }
+.brand-mode-card strong { font-size: 15px; }
+.brand-mode-card small { color: var(--workbench-muted); font-size: 11px; line-height: 1.5; }
+.brand-mode-card:hover, .brand-mode-card.is-selected { border-color: var(--brand-deep); background: rgba(126,49,34,.13); box-shadow: 0 0 0 2px rgba(126,49,34,.14); }
+.brand-subquestion { margin-top: 4px; font-size: 12px; }
 .merch-steps { display: flex; gap: 8px; padding: 0; margin: 2px 0 4px; list-style: none; overflow-x: auto; }
 .merch-steps li { flex: 0 0 auto; padding: 6px 10px; border-radius: 999px; color: #4a3328; background: rgba(255,255,255,.16); font-size: 11px; font-weight: 700; }
 .merch-steps li.is-active { color: #fff8ed; background: var(--brand-deep); font-weight: 800; }
@@ -1616,6 +1624,8 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
   .script-preview-canvas > div { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 760px) { .brand-mode-picker { grid-template-columns: 1fr; } }
+
 /* v1.5: neutral tool surfaces and lightweight brand workflow */
 .app-shell.time-day {
   --color-page-bg: #f7f8fa;
@@ -1677,6 +1687,11 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .brand-merch-workflow { max-width: 980px; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .app-shell.time-day .brand-merch-workflow > div:first-child { padding: 0 0 8px; }
 .app-shell.time-day .brand-merch-workflow > div:first-child p { color: var(--color-text-muted); font-size: 13px; }
+.app-shell.time-day .brand-mode-picker { margin: 2px 0 6px; }
+.app-shell.time-day .brand-mode-card { border-color: var(--color-border-subtle); color: var(--color-text-primary); background: var(--color-surface); box-shadow: var(--shadow-surface-soft); }
+.app-shell.time-day .brand-mode-card > svg { color: var(--color-brand-primary); }
+.app-shell.time-day .brand-mode-card small { color: var(--color-text-muted); }
+.app-shell.time-day .brand-mode-card:hover, .app-shell.time-day .brand-mode-card.is-selected { border-color: var(--color-brand-primary); background: #fbf5f3; box-shadow: 0 0 0 2px rgba(148,56,53,.12); }
 .app-shell.time-day .brand-workspace-canvas { margin-top: 12px; }
 .app-shell.time-day .brand-workspace-canvas.is-active { gap: 20px; }
 .app-shell.time-day .brand-merch-workflow section.brand-step-card { gap: 20px; padding: 24px; border: 1px solid rgba(15,23,42,.06); border-radius: 16px; background: var(--color-surface); box-shadow: var(--shadow-surface-soft); }
