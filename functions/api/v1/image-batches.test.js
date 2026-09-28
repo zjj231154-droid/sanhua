@@ -49,7 +49,7 @@ describe('four-image batch generation', () => {
     expect(referenceResponse.status).toBe(400)
     expect(await referenceResponse.json()).toMatchObject({ error: 'REFERENCE_IMAGE_REQUIRED' })
 
-    const missingDieline = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', prompt: '冰箱贴效果图', count: 1, images: ['data:image/png;base64,iVBORw0KGgo='], metadata: { brandPhase: 'product-effect' } }) })
+    const missingDieline = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', prompt: '礼盒效果图', count: 1, images: ['data:image/png;base64,iVBORw0KGgo='], metadata: { brandPhase: 'product-effect', dielineRequired: true } }) })
     const dielineResponse = await onRequestPost({ request: missingDieline, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
     expect(dielineResponse.status).toBe(409)
     expect(await dielineResponse.json()).toMatchObject({ error: 'DIELINE_CONFIRMATION_REQUIRED' })

@@ -1775,6 +1775,13 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .merch-options .secondary-button { min-height: 38px; border-radius: 999px; }
 .app-shell.time-day .merch-options .secondary-button.is-selected { border-color: var(--color-brand-primary); color: #fff; background: var(--color-brand-primary); box-shadow: none; }
 .app-shell.time-day .merch-options .secondary-button:active { transform: translateY(1px); }
+.app-shell.time-day .brand-merch-workflow section.dialog-step { gap: 14px; max-width: 720px; padding: 20px; }
+.app-shell.time-day .dialog-step-label { margin: 0; color: var(--color-text-primary); font-size: 14px; }
+.app-shell.time-day .dialog-choice-list { display: grid; gap: 4px; padding: 4px 0; }
+.app-shell.time-day .dialog-choice-list label { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 5px 9px; border-radius: 9px; color: var(--color-text-primary); cursor: pointer; transition: background .18s ease, color .18s ease; }
+.app-shell.time-day .dialog-choice-list label:hover, .app-shell.time-day .dialog-choice-list label.is-selected { background: var(--color-surface-subtle); }
+.app-shell.time-day .dialog-choice-list input { width: 18px; min-height: 18px; margin: 0; accent-color: var(--color-brand-primary); }
+.app-shell.time-day .dialog-step .next-step-button { width: 100%; justify-content: center; }
 .app-shell.time-day .merch-custom-field { gap: 8px; color: var(--color-text-secondary); font-size: 13px; }
 .app-shell.time-day .brand-merch-workflow input { min-height: 40px; padding: 9px 2px; border: 0; border-bottom: 1px solid var(--color-border-strong); border-radius: 0; color: var(--color-text-primary); background: transparent; font-size: 14px; }
 .app-shell.time-day .brand-merch-workflow input:focus { outline: 0; border-bottom: 2px solid var(--color-brand-primary); }

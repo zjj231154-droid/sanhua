@@ -24,7 +24,7 @@ it('archives a brand design plan before returning the awaiting-confirmation task
   expect(JSON.parse(stored[1].value)).toMatchObject({ id: value.textRecordId, workspace: 'brand', recordType: 'brand_plan', content: 'FINAL_IMAGE_PROMPT: 茶纹礼盒主视觉', sourceTaskId: value.id, sourceAssetIds: ['brand-asset-1'] })
 })
 
-it('uses the v3.4 graphic workflow and locks IP consistency for a flat-design plan', async () => {
+it('uses the v4.0 graphic workflow and locks IP consistency for a flat-design plan', async () => {
   const bucket = new MemoryBucket()
   const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'FINAL_IMAGE_PROMPT: 茶猫四季海报' } }] }), { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
@@ -34,7 +34,7 @@ it('uses the v3.4 graphic workflow and locks IP consistency for a flat-design pl
   const body = JSON.parse(fetchMock.mock.calls[0][1].body)
 
   expect(response.status).toBe(202)
-  expect(body.messages[0].content).toContain('v3.4.0')
+  expect(body.messages[0].content).toContain('v4.0.0')
   expect(body.messages[0].content).toContain('唯一角色视觉基准')
   expect(body.messages[0].content).toContain('不得重新设计角色')
 })
@@ -49,7 +49,7 @@ it('creates a separate concept-dieline prompt before a product effect plan', asy
   const body = JSON.parse(fetchMock.mock.calls[0][1].body)
 
   expect(response.status).toBe(202)
-  expect(body.messages[0].content).toContain('刀版图先于效果图')
+  expect(body.messages[0].content).toContain('结构确认优先')
   expect(body.messages[0].content).toContain('FINAL_DIELINE_PROMPT:')
   expect(body.messages[0].content).toContain('生产前由厂家/CAD 校核')
 })

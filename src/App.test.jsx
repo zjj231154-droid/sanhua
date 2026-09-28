@@ -163,15 +163,13 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('heading', { name: '品牌创作' })).toBeInTheDocument()
   })
 
-  it('品牌产品选择可再次点击取消并清空后续步骤', () => {
+  it('品牌产品以对话单选方式选择并进入材质步骤', () => {
     render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: '选择做产品工作流' }))
-    const product = screen.getByRole('button', { name: '杯垫' })
+    const product = screen.getByRole('radio', { name: '杯垫' })
     fireEvent.click(product)
-    expect(screen.getByText('当前产品：杯垫。下一步会据此更新可量产材质建议。')).toBeInTheDocument()
-    fireEvent.click(product)
-    expect(screen.queryByText(/当前产品：杯垫/)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '下一步：选择材质' })).toBeDisabled()
+    expect(product).toBeChecked()
+    expect(screen.getByRole('button', { name: '下一步：选择材质' })).toBeEnabled()
   })
 
   it('五步流程标识当前步骤、完成步骤和未完成步骤', () => {
@@ -191,7 +189,8 @@ describe('AI 创作工作台 Demo', () => {
     fireEvent.change(input, { target: { value: '香牌' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(screen.getByText('当前产品：香牌。下一步会据此更新可量产材质建议。')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '香牌' })).toBeChecked()
+    expect(screen.getByRole('button', { name: '下一步：选择材质' })).toBeEnabled()
     expect(localStorage.getItem('sanhua-custom-products')).toContain('香牌')
   })
 
@@ -204,20 +203,22 @@ describe('AI 创作工作台 Demo', () => {
     render(<BrandMerchWorkflow assets={[asset]} selectedAsset={asset} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={onPlan} onGenerate={onGenerate} onViewImage={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: '选择做产品工作流' }))
-    fireEvent.click(screen.getByRole('button', { name: '冰箱贴' }))
+    fireEvent.click(screen.getByRole('radio', { name: '礼盒包装' }))
     fireEvent.click(screen.getByRole('button', { name: '下一步：选择材质' }))
-    fireEvent.click(screen.getByRole('button', { name: /亚克力：通透轻盈/ }))
-    fireEvent.click(screen.getByRole('button', { name: '下一步：确认尺寸 →' }))
+    fireEvent.click(screen.getByRole('radio', { name: /特种纸：适合烫金/ }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('radio', { name: '需要，先生成概念结构图并确认' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     fireEvent.change(screen.getByRole('textbox', { name: '文创产品尺寸' }), { target: { value: '90 × 90 mm' } })
-    fireEvent.click(screen.getByRole('button', { name: '下一步：选择素材 →' }))
-    fireEvent.click(screen.getByRole('button', { name: '生成刀版图提示词 →' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成概念刀版图提示词 →' }))
 
     await waitFor(() => expect(onPlan).toHaveBeenCalledWith(expect.stringContaining('流程阶段：产品刀版图')))
     expect(screen.getByRole('textbox', { name: '文创刀版图提示词' })).toHaveValue('FINAL_DIELINE_PROMPT: 茶猫冰箱贴概念刀版示意')
-    fireEvent.click(screen.getByRole('button', { name: '生成刀版图' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成概念刀版图' }))
     await waitFor(() => expect(onGenerate).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.any(String), expect.objectContaining({ phase: 'dieline', sourceAsset: asset })))
-    expect(screen.getByRole('button', { name: '确认刀版图，生成效果图提示词 →' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '确认刀版图，生成效果图提示词 →' }))
+    expect(screen.getByRole('button', { name: '刀版确认，生成效果图提示词 →' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '刀版确认，生成效果图提示词 →' }))
 
     await waitFor(() => expect(onPlan).toHaveBeenLastCalledWith(expect.stringContaining('刀版图状态：已生成并经用户确认')))
     expect(screen.getByRole('button', { name: '确认并生成效果图' })).toBeEnabled()
