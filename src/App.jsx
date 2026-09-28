@@ -93,7 +93,22 @@ const CREATION_CARDS = [
   },
 ]
 
-function Login({ onLogin }) {
+function Login({ onLogin, previewOnly = false }) {
+  const [mode, setMode] = useState('login')
+  const [form, setForm] = useState({ name: '', workspaceName: '', email: '', password: '' })
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const update = key => event => setForm(current => ({ ...current, [key]: event.target.value }))
+  const submit = async event => {
+    event.preventDefault(); setBusy(true); setMessage('')
+    try {
+      if (previewOnly) { onLogin({}); return }
+      const response = await fetch(mode === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const value = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(value.hint || value.error || '无法登录，请稍后重试。')
+      onLogin(value)
+    } catch (error) { setMessage(error.message) } finally { setBusy(false) }
+  }
   return (
     <main className="login-page">
       <div className="login-background" aria-hidden="true">
@@ -130,40 +145,46 @@ function Login({ onLogin }) {
         <p>从一杯咖啡的光影，到一杯特调的故事。</p>
       </section>
 
-      <form className="login-card login-card--glass" onSubmit={(event) => { event.preventDefault(); onLogin() }}>
+      <form className="login-card login-card--glass" noValidate={previewOnly} onSubmit={submit}>
         <div className="login-card-heading">
           <div>
-            <h2>欢迎回来</h2>
-            <p>登录你的专属创作工作台</p>
+            <h2>{mode === 'login' ? '欢迎回来' : '创建工作台'}</h2>
+            <p>{mode === 'login' ? '登录你的专属创作工作台' : '创建独立账号与第一个私有工作空间'}</p>
           </div>
         </div>
 
         <div className="login-fields">
+          {mode === 'register' && <><label>
+            <div className="input-shell"><span className="input-label">姓名</span><input value={form.name} onChange={update('name')} maxLength={80} aria-label="姓名" required /></div>
+          </label><label>
+            <div className="input-shell"><span className="input-label">工作台</span><input value={form.workspaceName} onChange={update('workspaceName')} maxLength={100} aria-label="工作台名称" placeholder="例如：叁花品牌组" /></div>
+          </label></>}
           <label>
             <div className="input-shell">
               <Mail size={17} />
               <span className="input-label">账号</span>
-              <input type="email" defaultValue="designer@sanhua.demo" aria-label="账号" />
+              <input type="email" value={form.email} onChange={update('email')} autoComplete="email" aria-label="账号" required />
             </div>
           </label>
           <label>
             <div className="input-shell">
               <LockKeyhole size={17} />
               <span className="input-label">密码</span>
-              <input type="password" defaultValue="creative-demo" aria-label="密码" />
+              <input type="password" value={form.password} onChange={update('password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={10} aria-label="密码" required />
             </div>
           </label>
         </div>
 
         <div className="login-options">
-          <label><input type="checkbox" defaultChecked /> <span>保持登录</span></label>
-          <button type="button">遇到问题？</button>
+          <span>{mode === 'register' ? '密码至少 10 位' : '安全会话将在 14 天后自动失效'}</span>
+          <button type="button" onClick={() => { setMode(current => current === 'login' ? 'register' : 'login'); setMessage('') }}>{mode === 'login' ? '创建账号' : '已有账号，登录'}</button>
         </div>
 
         <button className="primary-button primary-button--wide login-submit" type="submit">
-          进入演示工作台 <ArrowUpRight size={18} />
+          {busy ? '正在验证…' : previewOnly ? '进入演示工作台' : mode === 'login' ? '登录工作台' : '创建并进入工作台'} <ArrowUpRight size={18} />
         </button>
-        <p className="demo-disclaimer"><ShieldCheck size={15} /> 演示环境不会上传或保存真实客户素材</p>
+        <p className="demo-disclaimer"><ShieldCheck size={15} /> 账号、工作空间与素材均由服务端隔离；个人密钥仅加密保存。</p>
+        {message && <p className="login-error" role="alert">{message}</p>}
       </form>
 
       <footer className="login-footer">
@@ -342,7 +363,7 @@ export function TaskProgress() {
   </div>
 }
 
-function Topbar({ timeMode, onToggleTimeMode, onLogout }) {
+function Topbar({ timeMode, onToggleTimeMode, onLogout, session, onSwitchWorkspace }) {
   const isNight = timeMode === 'night'
   return (
     <header className="topbar">
@@ -352,14 +373,14 @@ function Topbar({ timeMode, onToggleTimeMode, onLogout }) {
         <ChevronDown size={16} />
       </button>
       <div className="top-actions">
-        <span className="demo-tag">演示数据</span>
         <button className="icon-button" aria-label="帮助"><CircleHelp size={19} /></button>
         <button className="icon-button notification-button" aria-label="消息"><MessageSquareText size={19} /><i /></button>
         <div className="top-profile" aria-label="当前设计师">
-          <span className="avatar">林</span>
-          <span><strong>林设计</strong><small>设计师</small></span>
+          <span className="avatar">{(session?.user?.name || '林').slice(0, 1)}</span>
+          <span><strong>{session?.user?.name || '林设计'}</strong><small>{session?.workspace?.name || '独立工作台'}</small></span>
         </div>
-        <button className="icon-button logout-button" aria-label="退出演示账号" onClick={onLogout} title="退出演示账号"><LogOut size={18} /></button>
+        {session?.workspaces?.length > 1 && <select className="workspace-select" value={session.workspace?.id || ''} onChange={event => onSwitchWorkspace?.(event.target.value)} aria-label="切换工作空间">{session.workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name} · {workspace.role}</option>)}</select>}
+        <button className="icon-button logout-button" aria-label="退出演示账号" onClick={onLogout} title="退出账号"><LogOut size={18} /></button>
       </div>
     </header>
   )
@@ -1234,14 +1255,27 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   const previewParams = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
   const previewPage = previewParams.get('preview')
   const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'assets', 'settings'].includes(previewPage) ? previewPage : null
-  const [authenticated, setAuthenticated] = useState(initialAuthenticated || Boolean(validPreviewPage))
+  const [authenticated, setAuthenticated] = useState(initialAuthenticated)
+  const [sessionReady, setSessionReady] = useState(initialAuthenticated || demoRetouch)
+  const [session, setSession] = useState(null)
   const [page, setPage] = useState(validPreviewPage || initialPage)
   const [subRoute, setSubRoute] = useState(DEFAULT_SUB_ROUTE[validPreviewPage || initialPage] || '')
   const [timeMode, setTimeMode] = useState(previewParams.get('theme') === 'night' ? 'night' : 'day')
   const [retouchContext, setRetouchContext] = useState(null)
   const [creationContext, setCreationContext] = useState(null)
 
-  if (!authenticated) return <Login onLogin={() => setAuthenticated(true)} />
+  useEffect(() => {
+    if (initialAuthenticated || demoRetouch) return
+    let active = true
+    fetch('/api/v1/session').then(async response => ({ ok: response.ok, value: await response.json().catch(() => ({})) })).then(result => {
+      if (!active) return
+      if (result.ok) { setSession(result.value); setAuthenticated(true) }
+    }).catch(() => {}).finally(() => { if (active) setSessionReady(true) })
+    return () => { active = false }
+  }, [initialAuthenticated, demoRetouch])
+
+  if (!sessionReady) return <main className="login-page"><p className="session-loading">正在恢复安全会话…</p></main>
+  if (!authenticated) return <Login previewOnly={demoRetouch} onLogin={value => { setSession(value); setAuthenticated(true) }} />
 
   const navigate = (nextPage, nextSubRoute = DEFAULT_SUB_ROUTE[nextPage] || '', context = null) => {
     const route = nextPage === 'retouch' && nextSubRoute === 'assistant' ? 'one-click' : nextSubRoute
@@ -1253,14 +1287,14 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
     <div className={`app-shell time-${timeMode}`}>
       <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} />
       <div className="app-main">
-        <Topbar timeMode={timeMode} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { setAuthenticated(false); navigate('home') }} />
+        <Topbar timeMode={timeMode} session={session} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
           {page === 'home' && <HomePage onNavigate={navigate} />}
           {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_plan", "精修计划"], ["retouch_final_prompt", "最终提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
           {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} />}
-          {page === 'settings' && <ApiSettings />}
+          {page === 'settings' && <ApiSettings session={session} />}
         </div>
       </div>
       <TaskProgress />

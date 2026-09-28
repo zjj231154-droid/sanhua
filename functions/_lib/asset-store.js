@@ -1,4 +1,5 @@
 import { json } from './tokenspace.js'
+import { requireIdentity } from './collaboration.js'
 
 const MAX_ASSET_BYTES = 20 * 1024 * 1024
 const dateParts = date => {
@@ -43,6 +44,8 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
   if (!bucket) return { error: json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' }) }
   const allowedWorkspace = ['retouch', 'brand'].includes(workspace) ? workspace : null
   if (!allowedWorkspace) return { error: json(400, { error: 'INVALID_ASSET_WORKSPACE' }) }
+  const identity = await requireIdentity(context, 'use')
+  if (identity.error) return { error: identity.error }
   const [year, month, day] = dateParts()
   const assets = []
   for (let index = 0; index < outputs.length; index += 1) {
@@ -56,7 +59,8 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
       ? `${normalizeAssetName(namePrefix || requestedName || datedDefault)}-${String(index + 1).padStart(2, '0')}`
       : normalizeAssetName(requestedName || `${datedDefault}-01`)
     const asset = {
-      id, tenantId: 'default', storeId: 'day-coffee-night-bar', assetSpace: allowedWorkspace,
+      id, tenantId: identity.workspaceId, workspaceId: identity.workspaceId, projectId: allowedWorkspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1,
+      storeId: 'day-coffee-night-bar', assetSpace: allowedWorkspace,
       folderType: 'ai-temp', category: 'generated', name: baseName, displayName: baseName,
       originalName: `${defaultTitle}-${index + 1}.${converted.extension}`,
       downloadName: downloadFileName(baseName, converted.extension),
@@ -70,7 +74,7 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
     }
     await bucket.put(storageKey, converted.bytes, { httpMetadata: { contentType: converted.mimeType }, customMetadata: { assetId: id, taskId, workspace: allowedWorkspace } })
     await putJson(bucket, assetMetadataKey(id), asset)
-    await putJson(bucket, `metadata/master-assets/${id}.json`, { assetId: id, tenantId: asset.tenantId, storeId: asset.storeId, assetSpace: allowedWorkspace, sourceTaskId: taskId, syncStatus: 'synced', createdAt: asset.createdAt })
+    await putJson(bucket, `metadata/master-assets/${id}.json`, { assetId: id, tenantId: asset.tenantId, workspaceId: identity.workspaceId, projectId: allowedWorkspace, createdBy: identity.user.id, storeId: asset.storeId, assetSpace: allowedWorkspace, sourceTaskId: taskId, syncStatus: 'synced', createdAt: asset.createdAt })
     assets.push(asset)
   }
   return { assets }

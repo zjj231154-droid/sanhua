@@ -2,10 +2,13 @@ import { json, tokenSpaceRequest } from '../../_lib/tokenspace.js'
 import { archiveImageOutputs, assetsBucket } from '../../_lib/asset-store.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
+import { requireIdentity } from '../../_lib/collaboration.js'
 
 const workspaceFor = value => ['retouch', 'brand'].includes(value) ? value : null
 
 export async function onRequestPost(context) {
+  const identity = await requireIdentity(context, 'edit')
+  if (identity.error) return identity.error
   if (!assetsBucket(context)) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' })
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
@@ -27,13 +30,13 @@ export async function onRequestPost(context) {
   const requestedName = String(input.requestedName || input.requested_name || '').trim().slice(0, 160)
   const namePrefix = String(input.namePrefix || input.name_prefix || '').trim().slice(0, 160)
   const task = await saveTask(context, {
-    id: crypto.randomUUID(), workspace, type: 'image-batch', status: 'running', progress: 25,
+    id: crypto.randomUUID(), workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'image-batch', status: 'running', progress: 25,
     stage: `模型处理中（0/${count}）`, heartbeatAt: new Date().toISOString(), requirements: prompt,
     finalPrompt: String(input.metadata?.finalPrompt || prompt).slice(0, 12000), originalPlan: String(input.metadata?.originalPlan || '').slice(0, 12000), model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
   })
   const textRecord = await createTextRecord(context, {
     workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_final_prompt' : 'retouch_final_prompt',
-    title: requestedName || (workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: String(input.metadata?.finalPrompt || prompt), contentFormat: 'prompt', model, provider: 'usegoodai', sourceTaskId: task.id,
+    workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, title: requestedName || (workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: String(input.metadata?.finalPrompt || prompt), contentFormat: 'prompt', model, provider: 'usegoodai', sourceTaskId: task.id,
     sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds : [], referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds : [],
   })
   await updateTask(context, task.id, { textRecordId: textRecord?.id || null })

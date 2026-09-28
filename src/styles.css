@@ -164,6 +164,16 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .api-settings .api-toggle { display: flex; align-items: center; }
 .api-settings p { font-size: 12px; line-height: 1.8; }
 .api-settings button { margin-right: 12px; }
+.workspace-members { max-width: 760px; margin-top: 36px; padding-top: 24px; border-top: 1px solid rgba(154,128,102,.26); }
+.workspace-invite { display: grid; grid-template-columns: minmax(180px, 1fr) 130px auto; gap: 10px; align-items: end; }
+.workspace-invite input, .workspace-invite select, .member-row select, .workspace-select { min-height: 38px; border: 1px solid rgba(154,128,102,.42); border-radius: 10px; padding: 0 10px; color: inherit; background: var(--glass-bg); }
+.member-list { display: grid; gap: 8px; margin-top: 18px; }
+.member-row { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid rgba(154,128,102,.24); border-radius: 12px; }
+.member-row > span { display: grid; gap: 3px; margin-right: auto; }
+.member-row small { color: var(--muted); font-size: 11px; }
+.member-row em { color: var(--muted); font-size: 12px; font-style: normal; }
+.workspace-select { max-width: 180px; font-size: 11px; }
+.login-error { margin-top: 12px; color: #ffd1c5; font-size: 12px; line-height: 1.5; }
 .integrated-retouch .connection-note { font-size: 11px; color: var(--workbench-muted); }
 .integrated-retouch .retouch-feedback { padding: 4px 24px 8px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--workbench-muted); }
 .integrated-retouch .retouch-error { margin: 8px 20px; padding: 12px; max-height: 120px; overflow: auto; color: #c75d4e; white-space: pre-wrap; }

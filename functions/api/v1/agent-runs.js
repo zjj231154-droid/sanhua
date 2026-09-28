@@ -2,6 +2,7 @@ import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL } from '../../_lib/tok
 import { registryFor } from '../../_lib/skills.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
+import { requireIdentity } from '../../_lib/collaboration.js'
 const allowed = new Set(['retouch', 'brand', 'script'])
 const brandTextFor = requirements => {
   const dielineMode = /流程阶段：产品刀版图/.test(requirements)
@@ -17,13 +18,15 @@ const textFor = (workspace, input = {}) => {
   return `你是产品精修助手，遵循 image-edit-agent 1.1.0：先确认尺寸/比例、场景、装饰和保留项，再形成图片编辑计划。默认保护杯瓶轮廓、标签、Logo、文字和饮品质感，默认不新增道具。不要直接执行图片编辑。需求：${requirements}`
 }
 export async function onRequestPost(context) {
+  const identity = await requireIdentity(context, 'edit')
+  if (identity.error) return identity.error
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const workspace = String(input.workspace || '')
   const skill = registryFor(workspace)
   if (!allowed.has(workspace) || !skill || skill.status !== 'enabled') return json(400, { error: 'SKILL_NOT_AVAILABLE', workspace })
   const model = input.model || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
-  const task = await saveTask(context, { id: crypto.randomUUID(), workspace, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model, createdAt: new Date().toISOString() })
+  const task = await saveTask(context, { id: crypto.randomUUID(), workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model, createdAt: new Date().toISOString() })
   const prompt = textFor(workspace, input)
   const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai-reasoning', payload: { model, messages: [{ role: 'system', content: prompt }, { role: 'user', content: requirementsText(input) }], temperature: 0.35 } })
   if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'UseGoodAI 请求失败' }); return result.response }
@@ -31,7 +34,7 @@ export async function onRequestPost(context) {
   const textRecord = await createTextRecord(context, {
     workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_plan' : workspace === 'script' ? 'script_outline' : 'retouch_plan',
     title: workspace === 'brand' ? '品牌设计计划' : workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content, contentFormat: 'prompt',
-    model, provider: 'usegoodai-reasoning', sourceTaskId: task.id, sourceAssetIds: Array.isArray(input.assets) ? input.assets : [], referenceAssetIds: Array.isArray(input.reference_asset_ids) ? input.reference_asset_ids : [],
+    workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, model, provider: 'usegoodai-reasoning', sourceTaskId: task.id, sourceAssetIds: Array.isArray(input.assets) ? input.assets : [], referenceAssetIds: Array.isArray(input.reference_asset_ids) ? input.reference_asset_ids : [],
   })
   const updatedTask = await updateTask(context, task.id, { status: 'waiting_user', progress: 15, stage: '等待用户确认', plan: content, textRecordId: textRecord?.id || null })
   return json(202, { id: task.id, status: 'waiting_user', workspace, skill, plan: content, textRecordId: textRecord?.id || null, task: updatedTask, input: { assetCount: Array.isArray(input.assets) ? input.assets.length : 0 } })

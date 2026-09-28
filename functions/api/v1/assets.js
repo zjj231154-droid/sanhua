@@ -1,7 +1,10 @@
 import { json } from '../../_lib/tokenspace.js'
 import { assetsBucket, assetUrl, listJson } from '../../_lib/asset-store.js'
+import { requireIdentity, hasPermission } from '../../_lib/collaboration.js'
 
 export async function onRequestGet(context) {
+  const identity = await requireIdentity(context, 'view')
+  if (identity.error) return identity.error
   const bucket = assetsBucket(context)
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' })
   const url = new URL(context.request.url)
@@ -23,6 +26,8 @@ export async function onRequestGet(context) {
     return { ...asset, assetType: asset.assetType || 'image', videoAssetType: asset.videoAssetType || inferredType, usableFor: Array.isArray(asset.usableFor) ? asset.usableFor : ['script', 'video'], inferred: asset.videoAssetType ? Boolean(asset.inferred) : true, tags: Array.isArray(asset.tags) ? asset.tags : [] }
   }
   const allAssets = (await listJson(bucket, 'metadata/assets/')).map(normalize)
+    .filter(asset => identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
+    .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
     .filter(asset => !workspace || asset.assetSpace === workspace)
     .filter(asset => !assetType || asset.assetType === assetType)
     .filter(asset => !videoAssetType || asset.videoAssetType === videoAssetType)

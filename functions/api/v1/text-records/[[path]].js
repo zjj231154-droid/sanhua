@@ -1,6 +1,7 @@
 import { json } from '../../../_lib/tokenspace.js'
 import { createTextRecord, getTextRecord, listTextRecords, setTextRecordDeleted, updateTextRecord } from '../../../_lib/text-record-store.js'
 import { listTasks } from '../../../_lib/task-store.js'
+import { requireIdentity } from '../../../_lib/collaboration.js'
 
 const read = async request => { try { return await request.json() } catch { return null } }
 const parts = context => (Array.isArray(context.params?.path) ? context.params.path : String(context.params?.path || '').split('/')).filter(Boolean)
@@ -32,14 +33,17 @@ async function backfillTaskPromptRecords(context) {
 }
 
 export async function onRequestGet(context) {
+  const identity = await requireIdentity(context, 'view'); if (identity.error) return identity.error
   const [id] = parts(context)
-  if (id) { const record = await getTextRecord(context, id); return record ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' }) }
+  if (id) { const record = await getTextRecord(context, id); return record && (identity.compatibilityMode || record.workspaceId === identity.workspaceId) ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' }) }
   const url = new URL(context.request.url)
   const result = await listTextRecords(context, { workspace: url.searchParams.get('workspace') || undefined, recordType: url.searchParams.get('recordType') || undefined, q: url.searchParams.get('q') || undefined, includeDeleted: url.searchParams.get('includeDeleted') === 'true', limit: url.searchParams.get('limit'), cursor: url.searchParams.get('cursor') || undefined })
+  if (result && !identity.compatibilityMode) result.records = result.records.filter(record => record.workspaceId === identity.workspaceId)
   return unavailable(result) || json(200, result)
 }
 
 export async function onRequestPost(context) {
+  const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const [id, action] = parts(context)
   if (id === 'backfill' && !action) {
     const result = await backfillTaskPromptRecords(context)
@@ -49,22 +53,28 @@ export async function onRequestPost(context) {
   if (id) return json(404, { error: 'TEXT_RECORD_ROUTE_NOT_FOUND' })
   const input = await read(context.request)
   if (!input) return json(400, { error: '请求格式必须是 JSON' })
-  const record = await createTextRecord(context, input)
+  const record = await createTextRecord(context, { ...input, workspaceId: identity.workspaceId, projectId: input.workspace, createdBy: identity.user.id, updatedBy: identity.user.id })
   if (record?.invalid) return json(400, { error: record.invalid })
   return unavailable(record) || json(201, { record })
 }
 
 export async function onRequestPatch(context) {
+  const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const [id] = parts(context); const input = await read(context.request)
   if (!id || !input) return json(400, { error: !id ? 'TEXT_RECORD_ID_REQUIRED' : '请求格式必须是 JSON' })
-  const record = await updateTextRecord(context, id, input)
+  const existing = await getTextRecord(context, id); if (!existing || (!identity.compatibilityMode && existing.workspaceId !== identity.workspaceId)) return json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
+  if (!identity.compatibilityMode && !Number.isInteger(input.expectedVersion)) return json(400, { error: 'EXPECTED_VERSION_REQUIRED' })
+  const record = await updateTextRecord(context, id, { ...input, updatedBy: identity.user.id })
+  if (record?.conflict) return json(409, { error: 'VERSION_CONFLICT', currentVersion: record.conflict.version, updatedBy: record.conflict.updatedBy, updatedAt: record.conflict.updatedAt })
   if (record?.invalid) return json(400, { error: record.invalid })
   return record ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
 }
 
 export async function onRequestDelete(context) {
+  const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const [id] = parts(context)
   if (!id) return json(400, { error: 'TEXT_RECORD_ID_REQUIRED' })
-  const record = await setTextRecordDeleted(context, id, true)
+  const existing = await getTextRecord(context, id); if (!existing || (!identity.compatibilityMode && existing.workspaceId !== identity.workspaceId)) return json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
+  const record = await setTextRecordDeleted(context, id, true, identity.user.id)
   return record ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
 }

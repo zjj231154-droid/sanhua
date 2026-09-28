@@ -1,55 +1,63 @@
 import { useEffect, useState } from 'react'
-import { isCloudDeployment } from '../lib/deployment'
-export default function ApiSettings() {
-  const [config, setConfig] = useState({ enabled: false, model: 'gpt-image-2', hasKey: false })
-  const [key, setKey] = useState('')
+
+export default function ApiSettings({ session }) {
+  const [connection, setConnection] = useState(null)
+  const [form, setForm] = useState({ provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: '' })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [models, setModels] = useState([])
-  const [cloudStatus, setCloudStatus] = useState(null)
-  const cloudMode = isCloudDeployment()
-  async function call(suffix = '', data) {
-    const res = await fetch(`/api/retouch/settings${suffix}`, data === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-    const raw = await res.text()
-    let value
-    try { value = JSON.parse(raw) } catch { throw new Error(res.ok ? '服务返回了无效响应' : '线上版本暂未部署本地精修服务；UseGoodAI 云端接口需要配置 USEGOODAI_API_KEY') }
-    if (!res.ok) throw new Error(value.error || '请求失败')
-    return value
+  const [members, setMembers] = useState([])
+  const [invite, setInvite] = useState({ email: '', role: 'editor' })
+  const [memberMessage, setMemberMessage] = useState('')
+  const load = async () => {
+    const response = await fetch('/api/v1/me/provider-connection')
+    const value = await response.json().catch(() => ({}))
+    if (response.ok) { setConnection(value.connection); if (value.connection) setForm(current => ({ ...current, provider: value.connection.provider, baseUrl: value.connection.baseUrl })) }
   }
-  useEffect(() => { if (!cloudMode) call().then(setConfig).catch(error => setMessage(error.message)) }, [cloudMode])
-  useEffect(() => { if (cloudMode) fetch('/api/debug/tokenspace').then(async response => { const text = await response.text(); return JSON.parse(text) }).then(setCloudStatus).catch(() => setCloudStatus(null)) }, [cloudMode])
-  async function testCloud() {
+  useEffect(() => { load().catch(() => setMessage('无法读取个人模型连接。')) }, [])
+  const loadMembers = async () => {
+    if (!session?.workspace?.id || !session.workspace.permissions?.includes('manage')) return
+    const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/members`)
+    const value = await response.json().catch(() => ({})); if (response.ok) setMembers(value.members || [])
+  }
+  useEffect(() => { loadMembers().catch(() => setMemberMessage('无法读取协作者。')) }, [session?.workspace?.id])
+  const update = key => event => setForm(current => ({ ...current, [key]: event.target.value }))
+  const save = async () => {
     setBusy(true); setMessage('')
     try {
-      const res = await fetch('/api/tokenspace/test')
-      const raw = await res.text()
-      let value
-      try { value = JSON.parse(raw) } catch { throw new Error('云端服务返回了无效响应，请刷新后重试。') }
-      if (!res.ok) throw new Error(`${value.upstream || '服务'} HTTP ${value.status || res.status}: ${value.error || '请求失败'}`)
-      const seconds = Number.isFinite(Number(value.elapsedMs)) ? `，耗时 ${(Number(value.elapsedMs) / 1000).toFixed(1)} 秒` : ''
-      const reply = value.reply ? ` 返回“${value.reply}”` : ''
-      setMessage(`UseGoodAI 已实际调用 ${value.respondedModel || value.requestedModel || '推理模型'} 并收到响应${seconds}。${reply} 未生成图片。`)
-    } catch (error) { setMessage(error.message) }
-    finally { setBusy(false) }
+      const response = await fetch('/api/v1/me/provider-connection/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const value = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(value.hint || value.error || '保存失败')
+      setConnection(value.connection); setForm(current => ({ ...current, apiKey: '' })); setMessage('连接已验证并加密保存。后续任务将使用你的个人模型连接。')
+    } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
-  async function save(test) {
+  const remove = async () => {
+    if (!window.confirm('确定删除已保存的个人模型密钥吗？这不会影响其他成员。')) return
     setBusy(true); setMessage('')
-    try {
-      const value = await call('', { ...config, apiKey: key })
-      setConfig(value); setKey('')
-      if (test) { const result = await call('/test', {}); setModels(result.models); setMessage(result.message) }
-      else setMessage('配置已保存，后续新建精修任务使用此设置。')
-    } catch (error) { setMessage(error.message) }
-    finally { setBusy(false) }
+    try { const response = await fetch('/api/v1/me/provider-connection', { method: 'DELETE' }); if (!response.ok) throw new Error('删除失败'); setConnection(null); setForm(current => ({ ...current, apiKey: '' })); setMessage('个人模型连接已删除。') } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
-  return <section className="page-content api-settings"><h1>管理设置</h1><h2>模型服务 API</h2><p>服务：UseGoodAI · https://api.usegoodai.com/v1</p><p>推理、生图与图片编辑均通过 UseGoodAI 服务端中转；图片请求最长等待 30 分钟。</p>
-    <form onSubmit={event => { event.preventDefault(); if (!cloudMode) save(false) }}><fieldset disabled={busy}>
-      {cloudMode ? <p className="api-cloud-notice">{cloudStatus?.configured ? 'UseGoodAI API 密钥已由服务端环境变量管理' : '未检测到 USEGOODAI_API_KEY'}{cloudStatus && ` · ${cloudStatus.keyLength} 位 · ${cloudStatus.startsWithSk ? 'sk- 格式' : '非 sk- 格式'}`}</p> : <label>API Key<input type="password" autoComplete="new-password" value={key} onChange={e => setKey(e.target.value)} placeholder="仅本地开发模式使用" /></label>}
-      <label>图片编辑模型<input list="image-model-options" value={config.model} onChange={e => setConfig({ ...config, model: e.target.value })} placeholder="输入中转站支持的图片编辑模型 ID" /></label>
-      <datalist id="image-model-options">{models.map(id => <option key={id} value={id} />)}</datalist>
-      <label className="api-toggle"><input type="checkbox" checked={config.enabled} onChange={e => setConfig({ ...config, enabled: e.target.checked })} />启用中转 API（关闭时使用本地 Codex）</label>
-      <p>启用后，推理、生成和精修请求会由服务端发送给 UseGoodAI，费用按中转站规则计算。密钥不会返回浏览器；请勿共享 storage/private 目录。</p>
-      <p className="api-test-note">测试会由 Railway 发送一条最小推理请求并等待模型响应，不会生成图片。</p>
-      <div>{!cloudMode && <button className="primary-button" type="submit">保存设置</button>}<button className="secondary-button" type="button" onClick={testCloud}>{busy ? '正在调用模型…' : '测试模型连接'}</button></div>
-    </fieldset></form><p role="status">{message}</p></section>
+  const sendInvite = async event => {
+    event.preventDefault(); setMemberMessage('')
+    try {
+      const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/invites`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(invite) })
+      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.error || '邀请创建失败')
+      setInvite(current => ({ ...current, email: '' })); setMemberMessage(`已创建给 ${value.invite.email} 的 ${value.invite.role} 邀请。请通过受控邀请渠道发送接受链接。`)
+    } catch (error) { setMemberMessage(error.message) }
+  }
+  const updateMember = async (member, patch) => {
+    const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/members/${member.userId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
+    const value = await response.json().catch(() => ({})); if (!response.ok) { setMemberMessage(value.error || '成员更新失败'); return }; await loadMembers()
+  }
+  return <section className="page-content api-settings"><span className="kicker">SECURITY & CONNECTIONS</span><h1>管理设置</h1><h2>个人模型服务连接</h2><p>每位用户只能管理自己的 API Key。密钥只在提交时通过 HTTPS 发送，由服务端加密保存；界面、日志、链接和资产记录不会显示完整密钥。</p>
+    <form onSubmit={event => { event.preventDefault(); save() }}><fieldset disabled={busy}>
+      <label>服务商<input value={form.provider} onChange={update('provider')} maxLength={40} /></label>
+      <label>HTTPS 服务地址<input type="url" value={form.baseUrl} onChange={update('baseUrl')} placeholder="https://api.usegoodai.com/v1" required /></label>
+      <label>API Key<input type="password" value={form.apiKey} onChange={update('apiKey')} autoComplete="new-password" placeholder={connection ? `已保存（末尾 ${connection.apiKeyLast4}）；输入新密钥才会覆盖` : '输入你的个人 API Key'} required={!connection} /></label>
+      {connection && <p className="api-cloud-notice">当前连接：{connection.provider} · {connection.baseUrl} · 末尾 {connection.apiKeyLast4} · {connection.verificationStatus === 'verified' ? '已验证' : '待验证'}</p>}
+      <p>验证会向你填写的 HTTPS 公网服务发起一次低成本的模型列表请求。内网、localhost 和非 HTTPS 地址会被拒绝，避免服务端请求伪造风险。</p>
+      <div><button className="primary-button" type="submit">{busy ? '正在验证…' : '验证并保存'}</button>{connection && <button className="secondary-button" type="button" onClick={remove}>删除个人连接</button>}</div>
+    </fieldset></form><p role="status">{message}</p>
+    {session?.workspace && <section className="workspace-members"><span className="kicker">WORKSPACE ACCESS</span><h2>工作空间成员</h2><p>当前工作空间：{session.workspace.name} · 你的角色：{session.workspace.role}</p>
+      {session.workspace.permissions?.includes('manage') ? <><form className="workspace-invite" onSubmit={sendInvite}><input type="email" value={invite.email} onChange={event => setInvite(current => ({ ...current, email: event.target.value }))} placeholder="协作者邮箱" required /><select value={invite.role} onChange={event => setInvite(current => ({ ...current, role: event.target.value }))}><option value="admin">管理员</option><option value="editor">编辑者</option><option value="viewer">查看者</option></select><button className="secondary-button" type="submit">创建邀请</button></form><div className="member-list">{members.map(member => <div className="member-row" key={member.userId}><span><strong>{member.user?.name || member.userId}</strong><small>{member.user?.email || '未提供邮箱'} · {member.status}</small></span>{member.role === 'owner' ? <em>所有者</em> : <><select value={member.role} aria-label={`变更 ${member.user?.name || member.userId} 的角色`} onChange={event => updateMember(member, { role: event.target.value })}><option value="admin">管理员</option><option value="editor">编辑者</option><option value="viewer">查看者</option></select><button className="text-button" type="button" onClick={() => updateMember(member, { status: 'revoked' })}>移除</button></>}</div>)}</div></> : <p>你可以查看当前权限；只有所有者和管理员可以邀请成员或调整访问权。</p>}
+      <p role="status">{memberMessage}</p>
+    </section>}</section>
 }

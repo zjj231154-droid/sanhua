@@ -1,6 +1,6 @@
 const USEGOODAI_BASE_URL = 'https://api.usegoodai.com'
 export const DEFAULT_REASONING_MODEL = 'gpt-5.5'
-export const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+export const json = (status, body) => new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 export const providerFrom = (context, preferred) => {
   const useGoodKey = String(context.env?.USEGOODAI_API_KEY || '').trim()
   const reasoningKey = String(context.env?.USEGOODAI_REASONING_API_KEY || '').trim() || useGoodKey
@@ -11,18 +11,24 @@ export const providerFrom = (context, preferred) => {
 }
 export const apiKeyFrom = context => providerFrom(context).apiKey
 export async function tokenSpaceRequest(context, endpoint, { model, payload, form, provider: preferred } = {}) {
-  const provider = providerFrom(context, preferred)
-  if (!provider.apiKey) return { response: json(503, { error: 'API_KEY_NOT_CONFIGURED' }) }
-  console.log({ provider: provider.name, apiKeyConfigured: true, apiKeyLength: provider.apiKey.length, endpoint, model })
+  const identity = await requireIdentity(context, 'use')
+  if (identity.error) return { response: identity.error }
+  const personalProvider = await resolvedProviderConnection(context, identity.user.id)
+  const provider = personalProvider || (identity.compatibilityMode ? providerFrom(context, preferred) : null)
+  if (!provider?.apiKey) return { response: json(409, { error: 'PERSONAL_API_KEY_NOT_CONFIGURED', hint: '请先在管理设置中验证并保存你的个人模型连接。' }) }
+  console.log({ provider: provider.name, apiKeyConfigured: true, endpoint, model })
   try {
-    const response = await fetch(`${provider.baseUrl}/v1/${endpoint}`, {
+    const baseUrl = provider.baseUrl.replace(/\/$/, '')
+    const apiPath = /\/v1$/.test(baseUrl) ? `${baseUrl}/${endpoint}` : `${baseUrl}/v1/${endpoint}`
+    const response = await fetch(apiPath, {
       method: 'POST',
       headers: form ? { Authorization: `Bearer ${provider.apiKey}` } : { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
       body: form || JSON.stringify(payload),
       signal: AbortSignal.timeout(1800000),
     })
     const text = await response.text()
-    if (!response.ok) { console.error({ provider: provider.name, status: response.status, response: text }); return { response: json(response.status, { provider: provider.name, status: response.status, error: text }) } }
+    if (!response.ok) { console.error({ provider: provider.name, status: response.status }); return { response: json(response.status, { provider: provider.name, status: response.status, error: 'PROVIDER_REQUEST_FAILED' }) } }
     try { return { data: JSON.parse(text) } } catch { return { response: json(502, { provider: provider.name, status: 502, error: 'Provider returned invalid JSON' }) } }
   } catch (error) { console.error({ provider: provider.name, status: 502, response: error.message }); return { response: json(502, { provider: provider.name, status: 502, error: error.cause?.code || error.message }) } }
 }
+import { requireIdentity, resolvedProviderConnection } from './collaboration.js'

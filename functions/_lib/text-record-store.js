@@ -34,7 +34,7 @@ export async function createTextRecord(context, input = {}) {
   if (!content) return { invalid: 'TEXT_RECORD_CONTENT_REQUIRED' }
   const createdAt = now()
   const record = {
-    id: crypto.randomUUID(), tenantId: 'default', storeId: 'day-coffee-night-bar',
+    id: crypto.randomUUID(), tenantId: input.workspaceId || 'default', workspaceId: input.workspaceId || 'default', projectId: input.projectId || input.workspace || 'script', storeId: 'day-coffee-night-bar',
     workspace: ['retouch', 'brand', 'script', 'video'].includes(input.workspace) ? input.workspace : 'script',
     sourceModule: text(input.sourceModule, 100) || 'assets.text', recordType: text(input.recordType, 100) || 'note',
     title: text(input.title, 160) || '未命名文本记录', summary: text(input.summary, 300) || summaryFor(content), content,
@@ -43,7 +43,7 @@ export async function createTextRecord(context, input = {}) {
     sourceAssetIds: strings(input.sourceAssetIds), referenceAssetIds: strings(input.referenceAssetIds), generatedAssetIds: strings(input.generatedAssetIds),
     scriptId: text(input.scriptId, 160), scriptVersionId: text(input.scriptVersionId, 160), videoTaskId: text(input.videoTaskId, 160),
     status: 'active', starred: Boolean(input.starred), readonlyLegacy: Boolean(input.readonlyLegacy),
-    createdBy: 'demo-designer', updatedBy: 'demo-designer', createdAt, updatedAt: createdAt, deletedAt: null,
+    createdBy: input.createdBy || 'demo-designer', updatedBy: input.updatedBy || input.createdBy || 'demo-designer', version: 1, createdAt, updatedAt: createdAt, deletedAt: null,
   }
   await putJson(bucket, key(record.id), record)
   return record
@@ -56,16 +56,17 @@ export async function updateTextRecord(context, id, input = {}) {
   const content = input.content === undefined ? current.content : text(input.content, 20000)
   if (!content) return { invalid: 'TEXT_RECORD_CONTENT_REQUIRED' }
   const status = ['active', 'archived'].includes(input.status) ? input.status : current.status
-  const next = { ...current, title: input.title === undefined ? current.title : text(input.title, 160) || current.title, content, summary: input.summary === undefined ? (input.content === undefined ? current.summary : summaryFor(content)) : text(input.summary, 300) || summaryFor(content), starred: input.starred === undefined ? current.starred : Boolean(input.starred), status, updatedBy: 'demo-designer', updatedAt: now() }
+  if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) return { conflict: current }
+  const next = { ...current, title: input.title === undefined ? current.title : text(input.title, 160) || current.title, content, summary: input.summary === undefined ? (input.content === undefined ? current.summary : summaryFor(content)) : text(input.summary, 300) || summaryFor(content), starred: input.starred === undefined ? current.starred : Boolean(input.starred), status, updatedBy: input.updatedBy || 'demo-designer', version: Number(current.version || 0) + 1, updatedAt: now() }
   await putJson(bucket, key(id), next)
   return next
 }
 
-export async function setTextRecordDeleted(context, id, deleted) {
+export async function setTextRecordDeleted(context, id, deleted, actorId = 'demo-designer') {
   const bucket = assetsBucket(context)
   const current = bucket ? await getJson(bucket, key(id)) : null
   if (!current) return null
-  const next = { ...current, status: deleted ? 'deleted' : 'active', deletedAt: deleted ? now() : null, updatedBy: 'demo-designer', updatedAt: now() }
+  const next = { ...current, status: deleted ? 'deleted' : 'active', deletedAt: deleted ? now() : null, updatedBy: actorId, version: Number(current.version || 0) + 1, updatedAt: now() }
   await putJson(bucket, key(id), next)
   return next
 }
