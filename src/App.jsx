@@ -363,7 +363,7 @@ export function TaskProgress() {
   </div>
 }
 
-function Topbar({ timeMode, onToggleTimeMode, onLogout, session, onSwitchWorkspace }) {
+function Topbar({ timeMode, onToggleTimeMode, onLogout, session, onSwitchWorkspace, onOpenProfile }) {
   const isNight = timeMode === 'night'
   return (
     <header className="topbar">
@@ -375,10 +375,10 @@ function Topbar({ timeMode, onToggleTimeMode, onLogout, session, onSwitchWorkspa
       <div className="top-actions">
         <button className="icon-button" aria-label="帮助"><CircleHelp size={19} /></button>
         <button className="icon-button notification-button" aria-label="消息"><MessageSquareText size={19} /><i /></button>
-        <div className="top-profile" aria-label="当前设计师">
-          <span className="avatar">{(session?.user?.name || '林').slice(0, 1)}</span>
+        <button className="top-profile" aria-label="当前设计师" onClick={onOpenProfile} title="账户设置">
+          <span className="avatar">{session?.user?.avatarUrl ? <img src={session.user.avatarUrl} alt="" /> : (session?.user?.name || '林').slice(0, 1)}</span>
           <span><strong>{session?.user?.name || '林设计'}</strong><small>{session?.workspace?.name || '独立工作台'}</small></span>
-        </div>
+        </button>
         {session?.workspaces?.length > 1 && <select className="workspace-select" value={session.workspace?.id || ''} onChange={event => onSwitchWorkspace?.(event.target.value)} aria-label="切换工作空间">{session.workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name} · {workspace.role}</option>)}</select>}
         <button className="icon-button logout-button" aria-label="退出演示账号" onClick={onLogout} title="退出账号"><LogOut size={18} /></button>
       </div>
@@ -1287,14 +1287,14 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
     <div className={`app-shell time-${timeMode}`}>
       <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} />
       <div className="app-main">
-        <Topbar timeMode={timeMode} session={session} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
+        <Topbar timeMode={timeMode} session={session} onOpenProfile={() => navigate('settings')} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
           {page === 'home' && <HomePage onNavigate={navigate} />}
           {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_plan", "精修计划"], ["retouch_final_prompt", "最终提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
           {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} />}
-          {page === 'settings' && <ApiSettings session={session} />}
+          {page === 'settings' && <ApiSettings session={session} onSessionChange={setSession} />}
         </div>
       </div>
       <TaskProgress />

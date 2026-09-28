@@ -18,6 +18,7 @@ export const workspaceKey = id => `metadata/collaboration/workspaces/${id}.json`
 export const memberKey = (workspaceId, userId) => `metadata/collaboration/members/${workspaceId}/${userId}.json`
 const sessionKey = hash => `metadata/collaboration/sessions/${hash}.json`
 const connectionKey = id => `metadata/collaboration/connections/${id}.json`
+const avatarKey = (id, extension) => `metadata/collaboration/avatars/${id}.${extension}`
 const inviteKey = tokenHash => `metadata/collaboration/invites/${tokenHash}.json`
 
 export const rolePermissions = {
@@ -60,6 +61,45 @@ export async function verifyUserPassword(bucket, email, password) {
   if (!user || user.status !== 'active') return null
   const candidate = await passwordHash(password, user.passwordSalt)
   return candidate.hash === user.passwordHash ? user : null
+}
+
+export async function updateUserProfile(bucket, user, { name, email }) {
+  const nextName = name === undefined ? user.name : text(name).slice(0, 80)
+  const nextEmail = email === undefined ? user.email : text(email).toLowerCase()
+  if (!nextName) return { error: 'NAME_REQUIRED' }
+  if (!/^\S+@\S+\.\S+$/.test(nextEmail)) return { error: 'INVALID_EMAIL' }
+  if (nextEmail !== user.email && (await listUsers(bucket)).some(item => item.id !== user.id && item.email === nextEmail)) return { error: 'EMAIL_ALREADY_REGISTERED' }
+  const value = { ...user, name: nextName, email: nextEmail, updatedAt: now() }
+  await putJson(bucket, userKey(user.id), value)
+  return { user: value }
+}
+
+export async function changeUserPassword(bucket, user, currentPassword, newPassword) {
+  if (String(newPassword || '').length < 10) return { error: 'PASSWORD_TOO_SHORT' }
+  const candidate = await passwordHash(currentPassword, user.passwordSalt)
+  if (candidate.hash !== user.passwordHash) return { error: 'CURRENT_PASSWORD_INCORRECT' }
+  const credential = await passwordHash(newPassword)
+  const value = { ...user, passwordHash: credential.hash, passwordSalt: credential.salt, passwordChangedAt: now(), updatedAt: now() }
+  await putJson(bucket, userKey(user.id), value)
+  return { user: value }
+}
+
+const avatarFromDataUrl = value => {
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(value || ''))
+  if (!match) return null
+  const bytes = Uint8Array.from(atob(match[2]), char => char.charCodeAt(0))
+  if (!bytes.byteLength || bytes.byteLength > 2 * 1024 * 1024) return null
+  return { bytes, mimeType: match[1], extension: match[1] === 'image/jpeg' ? 'jpg' : match[1].split('/')[1] }
+}
+
+export async function saveUserAvatar(bucket, user, dataUrl) {
+  const avatar = avatarFromDataUrl(dataUrl)
+  if (!avatar) return { error: 'INVALID_AVATAR_IMAGE' }
+  const storageKey = avatarKey(user.id, avatar.extension)
+  await bucket.put(storageKey, avatar.bytes, { httpMetadata: { contentType: avatar.mimeType } })
+  const value = { ...user, avatar: { storageKey, mimeType: avatar.mimeType, updatedAt: now() }, updatedAt: now() }
+  await putJson(bucket, userKey(user.id), value)
+  return { user: value }
 }
 
 export async function createWorkspace(bucket, { name, ownerId }) {
@@ -125,7 +165,7 @@ export async function requireIdentity(context, permission = 'view') {
   return identity
 }
 
-export const publicUser = user => user && ({ id: user.id, name: user.name, email: user.email, createdAt: user.createdAt })
+export const publicUser = user => user && ({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatar?.storageKey ? `/api/v1/me/avatar?v=${encodeURIComponent(user.avatar.updatedAt || user.updatedAt || '')}` : null, createdAt: user.createdAt })
 export const publicWorkspace = (workspace, member) => workspace && ({ id: workspace.id, name: workspace.name, createdAt: workspace.createdAt, updatedAt: workspace.updatedAt, version: workspace.version, role: member?.role, permissions: permissionForRole(member?.role) })
 
 export async function updateVersioned(bucket, key, current, change, actorId, expectedVersion) {

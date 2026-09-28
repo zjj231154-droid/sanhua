@@ -25,6 +25,7 @@ const apiRoutes = {
   '/api/v1/workspaces': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/invites': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/me/provider-connection': () => import('../functions/api/v1/collaboration/[[path]].js'),
+  '/api/v1/me': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/assets': () => import('../functions/api/assets/[[key]].js'),
   '/api/v1/tasks': () => import('../functions/api/v1/tasks.js'),
   '/api/debug/tokenspace': () => import('../functions/api/debug/tokenspace.js'),

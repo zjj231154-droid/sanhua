@@ -1,5 +1,5 @@
 import { getJson, putJson } from '../../../_lib/asset-store.js'
-import { clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveProviderConnection, updateVersioned, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
+import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveProviderConnection, saveUserAvatar, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
 import { json } from '../../../_lib/tokenspace.js'
 
 const body = async request => { try { return await request.json() } catch { return {} } }
@@ -23,6 +23,18 @@ export async function onRequestGet(context) {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const record = await getJson(identity.bucket, collaborationPaths.connectionKey(identity.user.id))
     return json(200, { connection: record ? { provider: record.provider, baseUrl: record.baseUrl, apiKeyLast4: record.apiKeyLast4, verificationStatus: record.verificationStatus, updatedAt: record.updatedAt } : null })
+  }
+  if (pathname === '/api/v1/me/avatar') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const avatar = identity.user.avatar
+    if (!avatar?.storageKey) return json(404, { error: 'AVATAR_NOT_FOUND' })
+    const object = await identity.bucket.get(avatar.storageKey)
+    if (!object) return json(404, { error: 'AVATAR_NOT_FOUND' })
+    return new Response(object.body, { headers: { 'content-type': avatar.mimeType || object.httpMetadata?.contentType || 'image/png', 'cache-control': 'private, max-age=3600' } })
+  }
+  if (pathname === '/api/v1/me') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    return json(200, { user: publicUser(identity.user) })
   }
   if (/^\/api\/v1\/workspaces\/[^/]+\/members$/.test(pathname)) {
     const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
@@ -60,6 +72,16 @@ export async function onRequestPost(context) {
     return withCookie(json(200, { user: publicUser(user), workspace: publicWorkspace(selected.workspace, selected.member) }), session.cookie)
   }
   if (pathname === '/api/v1/auth/logout') return withCookie(json(204, {}), clearSessionCookie(context))
+  if (pathname === '/api/v1/me/password') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const changed = await changeUserPassword(identity.bucket, identity.user, input.currentPassword, input.newPassword)
+    return changed.error ? json(400, { error: changed.error }) : json(200, { user: publicUser(changed.user) })
+  }
+  if (pathname === '/api/v1/me/avatar') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const saved = await saveUserAvatar(identity.bucket, identity.user, input.avatar)
+    return saved.error ? json(400, { error: saved.error, hint: '请上传 2MB 以内的 PNG、JPG 或 WebP 图片。' }) : json(200, { user: publicUser(saved.user) })
+  }
   if (pathname === '/api/v1/workspaces') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const name = safeWorkspaceName(input.name); if (!name) return json(400, { error: 'WORKSPACE_NAME_REQUIRED' })
@@ -113,6 +135,11 @@ export async function onRequestPost(context) {
 
 export async function onRequestPatch(context) {
   const pathname = route(context.request); const input = await body(context.request)
+  if (pathname === '/api/v1/me') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const saved = await updateUserProfile(identity.bucket, identity.user, input)
+    return saved.error ? json(saved.error === 'EMAIL_ALREADY_REGISTERED' ? 409 : 400, { error: saved.error }) : json(200, { user: publicUser(saved.user) })
+  }
   const match = /^\/api\/v1\/workspaces\/([^/]+)\/members\/([^/]+)$/.exec(pathname)
   if (!match) return json(404, { error: 'NOT_FOUND' })
   const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error

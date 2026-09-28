@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export default function ApiSettings({ session }) {
+export default function ApiSettings({ session, onSessionChange }) {
   const [connection, setConnection] = useState(null)
   const [form, setForm] = useState({ provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: '' })
   const [message, setMessage] = useState('')
@@ -8,12 +8,17 @@ export default function ApiSettings({ session }) {
   const [members, setMembers] = useState([])
   const [invite, setInvite] = useState({ email: '', role: 'editor' })
   const [memberMessage, setMemberMessage] = useState('')
+  const [profile, setProfile] = useState({ name: session?.user?.name || '', email: session?.user?.email || '' })
+  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
+  const [profileMessage, setProfileMessage] = useState('')
+  const [profileBusy, setProfileBusy] = useState(false)
   const load = async () => {
     const response = await fetch('/api/v1/me/provider-connection')
     const value = await response.json().catch(() => ({}))
     if (response.ok) { setConnection(value.connection); if (value.connection) setForm(current => ({ ...current, provider: value.connection.provider, baseUrl: value.connection.baseUrl })) }
   }
   useEffect(() => { load().catch(() => setMessage('无法读取个人模型连接。')) }, [])
+  useEffect(() => { setProfile({ name: session?.user?.name || '', email: session?.user?.email || '' }) }, [session?.user?.name, session?.user?.email])
   const loadMembers = async () => {
     if (!session?.workspace?.id || !session.workspace.permissions?.includes('manage')) return
     const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/members`)
@@ -47,7 +52,38 @@ export default function ApiSettings({ session }) {
     const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/members/${member.userId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
     const value = await response.json().catch(() => ({})); if (!response.ok) { setMemberMessage(value.error || '成员更新失败'); return }; await loadMembers()
   }
-  return <section className="page-content api-settings"><span className="kicker">SECURITY & CONNECTIONS</span><h1>管理设置</h1><h2>个人模型服务连接</h2><p>每位用户只能管理自己的 API Key。密钥只在提交时通过 HTTPS 发送，由服务端加密保存；界面、日志、链接和资产记录不会显示完整密钥。</p>
+  const refreshSession = async () => {
+    const response = await fetch('/api/v1/session'); if (response.ok) onSessionChange?.(await response.json())
+  }
+  const saveProfile = async event => {
+    event.preventDefault(); setProfileBusy(true); setProfileMessage('')
+    try {
+      const response = await fetch('/api/v1/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) })
+      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.error || '账户资料保存失败')
+      await refreshSession(); setProfileMessage('账户资料已更新。')
+    } catch (error) { setProfileMessage(error.message) } finally { setProfileBusy(false) }
+  }
+  const uploadAvatar = async event => {
+    const file = event.target.files?.[0]; if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setProfileMessage('头像仅支持 2MB 内的 PNG、JPG 或 WebP 图片。'); event.target.value = ''; return }
+    setProfileBusy(true); setProfileMessage('')
+    try {
+      const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file) })
+      const response = await fetch('/api/v1/me/avatar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar: dataUrl }) })
+      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.hint || value.error || '头像上传失败')
+      await refreshSession(); setProfileMessage('头像已更新。')
+    } catch (error) { setProfileMessage(error.message) } finally { setProfileBusy(false); event.target.value = '' }
+  }
+  const changePassword = async event => {
+    event.preventDefault(); if (passwords.newPassword !== passwords.confirmPassword) { setProfileMessage('两次输入的新密码不一致。'); return }
+    setProfileBusy(true); setProfileMessage('')
+    try {
+      const response = await fetch('/api/v1/me/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(passwords) })
+      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.error === 'CURRENT_PASSWORD_INCORRECT' ? '当前密码不正确。' : value.error || '密码更新失败')
+      setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' }); setProfileMessage('密码已更新，请妥善保管。')
+    } catch (error) { setProfileMessage(error.message) } finally { setProfileBusy(false) }
+  }
+  return <section className="page-content api-settings"><span className="kicker">ACCOUNT & SECURITY</span><h1>管理设置</h1><section className="account-settings"><h2>账户资料</h2><p>点击右上角头像也可进入这里。资料仅对当前账号生效。</p><div className="account-avatar"><span>{session?.user?.avatarUrl ? <img src={session.user.avatarUrl} alt="当前头像" /> : (session?.user?.name || '我').slice(0, 1)}</span><label className="secondary-button">更换头像<input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadAvatar} hidden /></label></div><form onSubmit={saveProfile}><fieldset disabled={profileBusy}><label>显示名称<input value={profile.name} onChange={event => setProfile(current => ({ ...current, name: event.target.value }))} maxLength={80} required /></label><label>登录邮箱<input type="email" value={profile.email} onChange={event => setProfile(current => ({ ...current, email: event.target.value }))} required /></label><button className="primary-button" type="submit">保存账户资料</button></fieldset></form><form onSubmit={changePassword}><fieldset disabled={profileBusy}><h3>修改密码</h3><label>当前密码<input type="password" value={passwords.currentPassword} onChange={event => setPasswords(current => ({ ...current, currentPassword: event.target.value }))} autoComplete="current-password" required /></label><label>新密码<input type="password" value={passwords.newPassword} onChange={event => setPasswords(current => ({ ...current, newPassword: event.target.value }))} autoComplete="new-password" minLength={10} required /></label><label>确认新密码<input type="password" value={passwords.confirmPassword} onChange={event => setPasswords(current => ({ ...current, confirmPassword: event.target.value }))} autoComplete="new-password" minLength={10} required /></label><button className="secondary-button" type="submit">更新密码</button></fieldset></form><p role="status">{profileMessage}</p></section><h2>个人模型服务连接</h2><p>每位用户只能管理自己的 API Key。密钥只在提交时通过 HTTPS 发送，由服务端加密保存；界面、日志、链接和资产记录不会显示完整密钥。</p>
     <form onSubmit={event => { event.preventDefault(); save() }}><fieldset disabled={busy}>
       <label>服务商<input value={form.provider} onChange={update('provider')} maxLength={40} /></label>
       <label>HTTPS 服务地址<input type="url" value={form.baseUrl} onChange={update('baseUrl')} placeholder="https://api.usegoodai.com/v1" required /></label>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { onRequestGet, onRequestPost } from './[[path]].js'
+import { onRequestGet, onRequestPatch, onRequestPost } from './[[path]].js'
 import { onRequestGet as listAssets } from '../assets.js'
 import { putJson } from '../../../_lib/asset-store.js'
 
@@ -38,5 +38,19 @@ describe('workspace collaboration boundaries', () => {
     expect(response.status).toBe(200); expect(JSON.stringify(value)).not.toContain('sk-secret-never-return'); expect(value.connection.apiKeyLast4).toBe('turn')
     const listed = await onRequestGet({ env, request: request('/api/v1/me/provider-connection', 'GET', null, cookie) })
     expect(JSON.stringify(await listed.json())).not.toContain('sk-secret-never-return')
+  })
+
+  it('lets only the signed-in user update profile and password after current-password verification', async () => {
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
+    const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '原名称', email: 'profile@example.com', password: 'secure-password-4' }) })
+    const cookie = account.headers.get('set-cookie').split(';')[0]
+    const profile = await onRequestPatch({ env, request: request('/api/v1/me', 'PATCH', { name: '新名称', email: 'renamed@example.com' }, cookie) })
+    expect((await profile.json()).user).toMatchObject({ name: '新名称', email: 'renamed@example.com' })
+    const denied = await onRequestPost({ env, request: request('/api/v1/me/password', 'POST', { currentPassword: 'incorrect-password', newPassword: 'secure-password-5' }, cookie) })
+    expect(denied.status).toBe(400)
+    const changed = await onRequestPost({ env, request: request('/api/v1/me/password', 'POST', { currentPassword: 'secure-password-4', newPassword: 'secure-password-5' }, cookie) })
+    expect(changed.status).toBe(200)
+    const login = await onRequestPost({ env, request: request('/api/v1/auth/login', 'POST', { email: 'renamed@example.com', password: 'secure-password-5' }) })
+    expect(login.status).toBe(200)
   })
 })
