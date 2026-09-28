@@ -215,6 +215,7 @@ describe('AI 创作工作台 Demo', () => {
 
     await waitFor(() => expect(onPlan).toHaveBeenCalledWith(expect.stringContaining('流程阶段：产品刀版图')))
     expect(screen.getByRole('textbox', { name: '文创刀版图提示词' })).toHaveValue('FINAL_DIELINE_PROMPT: 茶猫冰箱贴概念刀版示意')
+    expect(screen.getByRole('textbox', { name: '文创刀版图提示词' }).closest('.brand-workspace-canvas')).toHaveClass('is-dieline-step')
     fireEvent.click(screen.getByRole('button', { name: '生成概念刀版图' }))
     await waitFor(() => expect(onGenerate).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.any(String), expect.objectContaining({ phase: 'dieline', sourceAsset: asset })))
     expect(screen.getByRole('button', { name: '刀版确认，生成效果图提示词 →' })).toBeInTheDocument()

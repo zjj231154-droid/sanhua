@@ -1900,6 +1900,12 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-step-actions { margin-top: auto; justify-content: space-between; }
 .app-shell.time-day .brand-workspace-canvas.is-material-step .next-step-button { min-width: 156px; color: #fff; background: var(--color-brand-primary); }
 .app-shell.time-day .brand-workspace-canvas.is-material-step .next-step-button:disabled { color: var(--color-text-disabled); background: #f3f4f6; }
+.app-shell.time-day .brand-workspace-canvas.is-dieline-step { align-items: stretch; }
+.app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-canvas-preview,
+.app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-step-card { min-height: 540px; box-sizing: border-box; }
+.app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-plan { min-height: 318px; display: grid; }
+.app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-plan textarea { min-height: 318px; height: 100%; resize: vertical; }
+.app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-agent-actions { margin-top: auto; }
 
 @media (max-width: 1200px) {
   .app-shell.time-day .script-workspace-grid { grid-template-columns: minmax(300px, .4fr) minmax(0, .6fr); gap: 18px; }
@@ -1908,7 +1914,7 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 @media (max-width: 900px) {
   .app-shell.time-day .script-workspace-grid, .app-shell.time-day .brand-workspace-canvas.is-material-step { grid-template-columns: 1fr; }
   .app-shell.time-day .script-preview-canvas { min-height: 360px; }
-  .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-canvas-preview, .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-step-card { min-height: 0; }
+  .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-canvas-preview, .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-step-card, .app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-canvas-preview, .app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-step-card { min-height: 0; }
 }
 @media (max-width: 760px) {
   .retouch-entry { width: min(100% - 32px, 760px); }
