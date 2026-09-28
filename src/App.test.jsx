@@ -115,6 +115,18 @@ describe('AI 创作工作台 Demo', () => {
     expect(toolbar.queryByRole('button', { name: '文本' })).not.toBeInTheDocument()
   })
 
+  it('资产库按三排显示，并可翻到下一页', () => {
+    render(<App initialAuthenticated initialPage="assets" />)
+
+    const pagination = screen.getByRole('navigation', { name: '资产库分页' })
+    expect(pagination).toHaveTextContent('第 1 / 3 页 · 每页 18 项')
+    expect(screen.queryByText('茶馆场景 8')).not.toBeInTheDocument()
+
+    fireEvent.click(within(pagination).getByRole('button', { name: '下一页' }))
+    expect(pagination).toHaveTextContent('第 2 / 3 页 · 每页 18 项')
+    expect(screen.getAllByText('茶馆场景 8')).toHaveLength(2)
+  })
+
   it('从资产库用于写剧本时会带入短剧脚本编辑区', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ assets: [], scripts: [] }) })))
     render(<App initialAuthenticated initialPage="assets" />)

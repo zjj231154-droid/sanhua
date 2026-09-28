@@ -10,6 +10,8 @@ import {
   Copy,
   BookOpenText,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
   Clock3,
   Download,
@@ -1189,6 +1191,9 @@ function AssetLibraryPage({ onNavigate, initialCategory = 'images' }) {
   const [storedAssets, setStoredAssets] = useState([])
   const [query, setQuery] = useState('')
   const [viewerAsset, setViewerAsset] = useState(null)
+  const [page, setPage] = useState(1)
+  const [gridColumns, setGridColumns] = useState(6)
+  const gridRef = useRef(null)
   useEffect(() => {
     let active = true
     fetch('/api/v1/assets').then(async response => {
@@ -1206,17 +1211,42 @@ function AssetLibraryPage({ onNavigate, initialCategory = 'images' }) {
     return () => { active = false }
   }, [])
   useEffect(() => setCategory(initialCategory), [initialCategory])
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return undefined
+
+    const updateColumns = () => {
+      const template = window.getComputedStyle(grid).gridTemplateColumns
+      const columns = template.split(' ').filter(Boolean).length
+      if (columns > 0) setGridColumns(columns)
+    }
+
+    updateColumns()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumns)
+    observer?.observe(grid)
+    window.addEventListener('resize', updateColumns)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updateColumns)
+    }
+  }, [category])
+  useEffect(() => setPage(1), [category, query])
   if (category === 'text') return <PromptRecordPage title="文本库" description="产品精修、品牌创作、短剧脚本与视频生成的文本记录共用同一云端数据源。" filters={[["workspace:retouch", "产品精修"], ["workspace:brand", "品牌创作"], ["workspace:script", "短剧脚本"], ["video_prompt", "视频生成"]]} onReuse={record => onNavigate(record.workspace === 'brand' ? 'brand' : record.workspace === 'retouch' ? 'retouch' : 'script', undefined, { target: record.workspace || 'script', record, source: 'text-library', createdAt: new Date().toISOString() })} />
   const allAssets = [...storedAssets, ...CLOUD_ASSETS.filter(asset => !storedAssets.some(item => item.id === asset.id)).map(asset => ({ ...asset, isDemo: true }))]
   const matches = asset => category === 'images' ? Boolean(asset.url || asset.thumbnailUrl) : category === 'brand' ? asset.category === 'brand' : category === 'script' ? asset.category === 'script' : category === 'generated' ? asset.category.endsWith('-generated') : false
   const visible = allAssets.filter(matches).filter(asset => !query.trim() || `${asset.name} ${asset.group} ${asset.assetSpace || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const pageSize = Math.max(1, gridColumns * 3)
+  const totalPages = Math.max(1, Math.ceil(visible.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pagedAssets = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   return <div className="page-content asset-library-page">
     <header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按业务归属管理咖啡场景、茶馆文创、短剧场景和 AI 创作成果。</p></div><span className="connection-note">云端资产 · {allAssets.length} 项</span></header>
-    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['images', '图片'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材</small></div>
-    <section className="asset-grid" aria-label="云端资产列表">
-      {visible.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{asset.isDemo ? `${asset.group} · 演示素材` : asset.group}</small></span><span className="asset-card-actions">{!asset.isDemo && <a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>}<button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch', undefined, { asset, assetId: asset.id, source: 'asset-library', focusAssistant: true })}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}
+    <div className="showcase-toolbar glass-card asset-toolbar"><div>{[['images', '图片'], ['brand', '茶馆文创'], ['script', '短剧'], ['generated', 'AI 成果']].map(([id, label]) => <button key={id} className={category === id ? 'primary-button' : 'secondary-button'} onClick={() => setCategory(id)}>{label}</button>)}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索名称、业务或来源" aria-label="搜索资产" /></label><small>{visible.length} 项素材 · 每页 3 排</small></div>
+    <section ref={gridRef} className="asset-grid" aria-label="云端资产列表">
+      {pagedAssets.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{asset.isDemo ? `${asset.group} · 演示素材` : asset.group}</small></span><span className="asset-card-actions">{!asset.isDemo && <a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>}<button className="secondary-button" onClick={() => onNavigate(asset.category === 'script' ? 'script' : asset.category === 'brand' || asset.assetSpace === 'brand' ? 'brand' : 'retouch', undefined, { asset, assetId: asset.id, source: 'asset-library', focusAssistant: true })}>{asset.category === 'script' ? '用于写剧本' : asset.category === 'brand' || asset.assetSpace === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}
     </section>
     {!visible.length && <p className="empty-state">未找到匹配资产，请调整搜索词或分类。</p>}
+    {visible.length > pageSize && <nav className="asset-pagination" aria-label="资产库分页"><button className="secondary-button" disabled={currentPage === 1} onClick={() => setPage(current => Math.max(1, current - 1))}><ChevronLeft size={16} /> 上一页</button><span>第 {currentPage} / {totalPages} 页 · 每页 {pageSize} 项</span><button className="secondary-button" disabled={currentPage === totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}>下一页 <ChevronRight size={16} /></button></nav>}
     {viewerAsset && <ImageViewer src={viewerAsset.url} alt={viewerAsset.name} downloadUrl={viewerAsset.isDemo ? viewerAsset.url : `/api/v1/assets/${viewerAsset.id}/download`} downloadName={viewerAsset.downloadName || viewerAsset.name} onClose={() => setViewerAsset(null)} />}
   </div>
 }

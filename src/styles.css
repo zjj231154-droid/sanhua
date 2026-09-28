@@ -1522,6 +1522,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .asset-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
 .asset-card small { color: var(--workbench-muted); font-size: 14px; }
 .asset-card .secondary-button { flex-shrink: 0; padding: 8px 10px; }
+.asset-pagination { margin: -8px 0 28px; display: flex; align-items: center; justify-content: center; gap: 14px; color: var(--workbench-muted); font-size: 14px; }
+.asset-pagination .secondary-button { min-height: 38px; display: inline-flex; align-items: center; gap: 4px; }
+.asset-pagination .secondary-button:disabled { cursor: not-allowed; opacity: .45; }
 
 @media (max-width: 800px) { .product-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
@@ -1572,6 +1575,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   .top-actions > .icon-button:not(.logout-button) { display: none; }
   .top-profile { margin-left: 0; border-left: 0; }
   .asset-grid { grid-template-columns: 1fr; }
+  .asset-pagination { gap: 8px; font-size: 12px; }
   .asset-picker-modal { padding: 10px; }
   .asset-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .product-library-grid { grid-template-columns: 1fr; }
