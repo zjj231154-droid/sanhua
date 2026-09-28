@@ -204,10 +204,10 @@ export async function decryptSecret(context, encrypted) {
   } catch { return null }
 }
 
-export async function saveProviderConnection(context, userId, { provider, baseUrl, apiKey, verificationStatus = 'verified' }) {
+export async function saveProviderConnection(context, userId, { provider, baseUrl, apiKey, reasoningModel, imageModel, verificationStatus = 'verified' }) {
   const encrypted = await encryptSecret(context, apiKey)
   if (!encrypted) return { error: json(503, { error: 'CONNECTION_ENCRYPTION_NOT_CONFIGURED', hint: '请配置 SANHUA_CONNECTION_ENCRYPTION_KEY 后再保存个人密钥。' }) }
-  const record = { userId, provider: text(provider) || 'usegoodai', baseUrl, encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, createdAt: now(), updatedAt: now() }
+  const record = { userId, provider: text(provider) || 'usegoodai', baseUrl, reasoningModel: text(reasoningModel).slice(0, 160), imageModel: text(imageModel).slice(0, 160), encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, createdAt: now(), updatedAt: now() }
   await putJson(collaborationBucket(context), connectionKey(userId), record)
   return { record }
 }
@@ -217,7 +217,7 @@ export async function resolvedProviderConnection(context, userId) {
   const record = await providerConnection(context, userId)
   if (!record || record.verificationStatus !== 'verified') return null
   const apiKey = await decryptSecret(context, record.encrypted)
-  return apiKey ? { name: record.provider, baseUrl: record.baseUrl, apiKey } : null
+  return apiKey ? { name: record.provider, baseUrl: record.baseUrl, reasoningModel: record.reasoningModel || '', imageModel: record.imageModel || '', apiKey } : null
 }
 
 export async function saveVideoProviderConnection(context, userId, { provider, baseUrl, apiKey, model, verificationStatus = 'verified' }) {

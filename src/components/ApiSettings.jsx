@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 export default function ApiSettings({ session, onSessionChange }) {
   const [connection, setConnection] = useState(null)
-  const [form, setForm] = useState({ provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: '' })
+  const [form, setForm] = useState({ provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', reasoningModel: 'gpt-5.5', imageModel: 'gpt-image-2', apiKey: '' })
   const [videoConnection, setVideoConnection] = useState(null)
   const [videoForm, setVideoForm] = useState({ provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', model: 'doubao-seedance-2-0-260128', apiKey: '' })
   const [message, setMessage] = useState('')
@@ -19,7 +19,7 @@ export default function ApiSettings({ session, onSessionChange }) {
   const load = async () => {
     const [response, videoResponse] = await Promise.all([fetch('/api/v1/me/provider-connection'), fetch('/api/v1/me/video-provider-connection')])
     const [value, videoValue] = await Promise.all([response.json().catch(() => ({})), videoResponse.json().catch(() => ({}))])
-    if (response.ok) { setConnection(value.connection); if (value.connection) setForm(current => ({ ...current, provider: value.connection.provider, baseUrl: value.connection.baseUrl })) }
+    if (response.ok) { setConnection(value.connection); if (value.connection) setForm(current => ({ ...current, provider: value.connection.provider, baseUrl: value.connection.baseUrl, reasoningModel: value.connection.reasoningModel || current.reasoningModel, imageModel: value.connection.imageModel || current.imageModel })) }
     if (videoResponse.ok) { setVideoConnection(videoValue.connection); if (videoValue.connection) setVideoForm(current => ({ ...current, provider: videoValue.connection.provider, baseUrl: videoValue.connection.baseUrl, model: videoValue.connection.model })) }
   }
   useEffect(() => { load().catch(() => setMessage('无法读取个人模型连接。')) }, [])
@@ -107,8 +107,10 @@ export default function ApiSettings({ session, onSessionChange }) {
     <form onSubmit={event => { event.preventDefault(); save() }}><fieldset disabled={busy}>
       <label>服务商<input value={form.provider} onChange={update('provider')} maxLength={40} /></label>
       <label>HTTPS 服务地址<input type="url" value={form.baseUrl} onChange={update('baseUrl')} placeholder="https://api.usegoodai.com/v1" required /></label>
+      <label>推理模型 ID<input value={form.reasoningModel} onChange={update('reasoningModel')} maxLength={160} placeholder="例如：gpt-5.5" /></label>
+      <label>生图模型 ID<input value={form.imageModel} onChange={update('imageModel')} maxLength={160} placeholder="例如：gpt-image-2" /></label>
       <label>API Key<input type="password" value={form.apiKey} onChange={update('apiKey')} autoComplete="new-password" placeholder={connection ? `已保存（末尾 ${connection.apiKeyLast4}）；输入新密钥才会覆盖` : '输入你的个人 API Key'} required={!connection} /></label>
-      {connection && <p className="api-cloud-notice">当前连接：{connection.provider} · {connection.baseUrl} · 末尾 {connection.apiKeyLast4} · {connection.verificationStatus === 'verified' ? '已验证' : '待验证'}</p>}
+      {connection && <p className="api-cloud-notice">当前连接：{connection.provider} · 推理 {connection.reasoningModel || '未预填'} · 生图 {connection.imageModel || '未预填'} · 末尾 {connection.apiKeyLast4} · {connection.verificationStatus === 'verified' ? '已验证' : '待验证'}</p>}
       <p>验证会向你填写的 HTTPS 公网服务发起一次低成本的模型列表请求。内网、localhost 和非 HTTPS 地址会被拒绝，避免服务端请求伪造风险。</p>
       <div><button className="primary-button" type="submit">{busy ? '正在验证…' : '验证并保存'}</button>{connection && <button className="secondary-button" type="button" onClick={remove}>删除个人连接</button>}</div>
     </fieldset></form><p role="status">{message}</p>

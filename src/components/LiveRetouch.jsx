@@ -393,7 +393,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           const submittedPrompt = `${finalPrompt || job?.plan || ''}\n${editPrompt}`.trim()
           const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(sourceUrl => toImageDataUrl(sourceUrl, '无法读取所选素材，请重新选择')))
           const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-            workspace: 'retouch', model: 'gpt-image-2', prompt: submittedPrompt,
+            workspace: 'retouch', prompt: submittedPrompt,
             images: [...sourceImages, templateSource].filter(Boolean), count: Math.max(1, activeRetouchAssets.length), size: '1024x1024', title: activeRetouchAssets.length > 1 ? '批量产品精修' : '产品精修', requestedName: activeRetouchAssets.length > 1 ? '' : resultName, namePrefix: activeRetouchAssets.length > 1 ? batchNamePrefix : '', promptSummary: editPrompt, referenceAssetIds: templateAssetId ? [templateAssetId] : [], sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean),
           }) })
           const value = await response.json()

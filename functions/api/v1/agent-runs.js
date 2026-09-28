@@ -2,7 +2,7 @@ import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL } from '../../_lib/tok
 import { registryFor } from '../../_lib/skills.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
-import { requireIdentity } from '../../_lib/collaboration.js'
+import { requireIdentity, resolvedProviderConnection } from '../../_lib/collaboration.js'
 const allowed = new Set(['retouch', 'brand', 'script'])
 const brandTextFor = requirements => {
   const dielineMode = /流程阶段：产品刀版图/.test(requirements)
@@ -25,7 +25,8 @@ export async function onRequestPost(context) {
   const workspace = String(input.workspace || '')
   const skill = registryFor(workspace)
   if (!allowed.has(workspace) || !skill || skill.status !== 'enabled') return json(400, { error: 'SKILL_NOT_AVAILABLE', workspace })
-  const model = input.model || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
+  const providerConnection = await resolvedProviderConnection(context, identity.user.id)
+  const model = input.model || providerConnection?.reasoningModel || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
   const task = await saveTask(context, { id: crypto.randomUUID(), workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model, createdAt: new Date().toISOString() })
   const prompt = textFor(workspace, input)
   const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai-reasoning', payload: { model, messages: [{ role: 'system', content: prompt }, { role: 'user', content: requirementsText(input) }], temperature: 0.35 } })

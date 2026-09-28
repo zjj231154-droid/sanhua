@@ -2,7 +2,7 @@ import { json, tokenSpaceRequest } from '../../_lib/tokenspace.js'
 import { archiveImageOutputs, assetsBucket } from '../../_lib/asset-store.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
-import { requireIdentity } from '../../_lib/collaboration.js'
+import { requireIdentity, resolvedProviderConnection } from '../../_lib/collaboration.js'
 
 const workspaceFor = value => ['retouch', 'brand'].includes(value) ? value : null
 
@@ -26,7 +26,8 @@ export async function onRequestPost(context) {
   if (workspace === 'brand' && ['product-effect', 'graphic-effect'].includes(brandPhase) && !submittedImages.length) return json(400, { error: 'REFERENCE_IMAGE_REQUIRED', hint: '品牌效果图必须携带原始参考图。' })
   if (workspace === 'brand' && brandPhase === 'product-effect' && input.metadata?.dielineRequired && (!input.metadata?.dielineConfirmed || !input.metadata?.dielineAssetId)) return json(409, { error: 'DIELINE_CONFIRMATION_REQUIRED', hint: '已选择生成新刀版图，请先确认刀版图，再生成产品效果图。' })
   const images = submittedImages
-  const model = String(input.model || 'gpt-image-2').slice(0, 160)
+  const providerConnection = await resolvedProviderConnection(context, identity.user.id)
+  const model = String(input.model || providerConnection?.imageModel || 'gpt-image-2').slice(0, 160)
   const requestedName = String(input.requestedName || input.requested_name || '').trim().slice(0, 160)
   const namePrefix = String(input.namePrefix || input.name_prefix || '').trim().slice(0, 160)
   const task = await saveTask(context, {

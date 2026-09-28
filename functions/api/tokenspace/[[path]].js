@@ -1,4 +1,5 @@
 import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL, providerFrom } from '../../_lib/tokenspace.js'
+import { requireIdentity, resolvedProviderConnection } from '../../_lib/collaboration.js'
 const dataUrlToBlob = value => {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
   if (!match) return null
@@ -43,8 +44,11 @@ export async function onRequestPost(context) {
   if (path) return json(404, { error: 'NOT_FOUND' })
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
+  const identity = await requireIdentity(context, 'use')
+  if (identity.error) return identity.error
+  const providerConnection = await resolvedProviderConnection(context, identity.user.id)
   const type = ['prompt', 'analyze', 'image', 'edit', 'video'].includes(input.type) ? input.type : 'prompt'
-  const model = String(input.model || (type === 'image' || type === 'edit' ? 'gpt-image-2' : type === 'video' ? 'sora-2' : context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL)).slice(0, 160)
+  const model = String(input.model || (type === 'image' || type === 'edit' ? providerConnection?.imageModel || 'gpt-image-2' : type === 'video' ? 'sora-2' : providerConnection?.reasoningModel || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL)).slice(0, 160)
   const prompt = String(input.prompt || '').slice(0, 10000)
   if (!prompt) return json(400, { error: '请填写提示词' })
   if (type === 'analyze') {

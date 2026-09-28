@@ -22,7 +22,7 @@ export async function onRequestGet(context) {
   if (pathname === '/api/v1/me/provider-connection') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const record = await getJson(identity.bucket, collaborationPaths.connectionKey(identity.user.id))
-    return json(200, { connection: record ? { provider: record.provider, baseUrl: record.baseUrl, apiKeyLast4: record.apiKeyLast4, verificationStatus: record.verificationStatus, updatedAt: record.updatedAt } : null })
+    return json(200, { connection: record ? { provider: record.provider, baseUrl: record.baseUrl, reasoningModel: record.reasoningModel || '', imageModel: record.imageModel || '', apiKeyLast4: record.apiKeyLast4, verificationStatus: record.verificationStatus, updatedAt: record.updatedAt } : null })
   }
   if (pathname === '/api/v1/me/video-provider-connection') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
@@ -131,9 +131,11 @@ export async function onRequestPost(context) {
         if (!response.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', status: response.status })
       } catch { return json(400, { error: 'PROVIDER_VERIFICATION_FAILED' }) }
     }
-    const saved = await saveProviderConnection(context, identity.user.id, { provider: input.provider || 'usegoodai', baseUrl, apiKey, verificationStatus: 'verified' })
+    const reasoningModel = String(input.reasoningModel || '').trim().slice(0, 160)
+    const imageModel = String(input.imageModel || '').trim().slice(0, 160)
+    const saved = await saveProviderConnection(context, identity.user.id, { provider: input.provider || 'usegoodai', baseUrl, apiKey, reasoningModel, imageModel, verificationStatus: 'verified' })
     if (saved.error) return saved.error
-    return json(200, { connection: { provider: saved.record.provider, baseUrl: saved.record.baseUrl, apiKeyLast4: saved.record.apiKeyLast4, verificationStatus: saved.record.verificationStatus, updatedAt: saved.record.updatedAt } })
+    return json(200, { connection: { provider: saved.record.provider, baseUrl: saved.record.baseUrl, reasoningModel: saved.record.reasoningModel, imageModel: saved.record.imageModel, apiKeyLast4: saved.record.apiKeyLast4, verificationStatus: saved.record.verificationStatus, updatedAt: saved.record.updatedAt } })
   }
   if (pathname === '/api/v1/me/video-provider-connection/verify' || pathname === '/api/v1/me/video-provider-connection') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
