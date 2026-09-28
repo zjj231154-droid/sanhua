@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ScriptEditor from './components/ScriptEditor'
 import ApiSettings from './components/ApiSettings'
+import UserProfile from './components/UserProfile'
 import {
   ArrowLeftRight,
   ArrowUpRight,
@@ -55,7 +56,7 @@ const NAV_ITEMS = [
   { id: 'assets', label: '资产库', icon: FolderOpen, children: [['images', '图片'], ['video', '视频'], ['audio', '音频'], ['text', '文本'], ['generated', 'AI 成果'], ['trash', '回收站']] },
 ]
 
-const DEFAULT_SUB_ROUTE = { home: '', retouch: 'one-click', brand: 'create', script: 'create', assets: 'images', settings: '' }
+const DEFAULT_SUB_ROUTE = { home: '', retouch: 'one-click', brand: 'create', script: 'create', assets: 'images', settings: '', profile: '' }
 
 const DEMO_PHOTOS = [
   { id: 'americano', name: '冰美式', meta: '3024 × 4032 · 18.2 MB', tone: 'amber', status: '待处理' },
@@ -1284,7 +1285,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   }, [])
   const previewParams = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
   const previewPage = previewParams.get('preview')
-  const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'assets', 'settings'].includes(previewPage) ? previewPage : null
+  const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'assets', 'settings', 'profile'].includes(previewPage) ? previewPage : null
   const [authenticated, setAuthenticated] = useState(initialAuthenticated)
   const [sessionReady, setSessionReady] = useState(initialAuthenticated || demoRetouch)
   const [session, setSession] = useState(null)
@@ -1317,14 +1318,15 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
     <div className={`app-shell time-${timeMode}`}>
       <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} />
       <div className="app-main">
-        <Topbar timeMode={timeMode} session={session} onOpenProfile={() => navigate('settings')} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
+        <Topbar timeMode={timeMode} session={session} onOpenProfile={() => navigate('profile')} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
           {page === 'home' && <HomePage onNavigate={navigate} />}
           {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_plan", "精修计划"], ["retouch_final_prompt", "最终提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
           {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} />}
-          {page === 'settings' && <ApiSettings session={session} onSessionChange={setSession} />}
+          {page === 'settings' && <ApiSettings />}
+          {page === 'profile' && <UserProfile session={session} onSessionChange={setSession} />}
         </div>
       </div>
       <TaskProgress />

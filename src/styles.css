@@ -157,15 +157,21 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 @keyframes task-toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 760px) { .task-progress-button span { display: none; } .task-progress-button { padding: 0 9px; } .task-progress-popover { position: fixed; top: 76px; right: 12px; left: 12px; width: auto; max-height: calc(100vh - 88px); } .task-progress-popover--portal { top: 76px !important; right: 12px !important; left: 12px !important; } }
 .api-settings { margin: 16px; border-radius: 28px; max-height: calc(100vh - 115px); overflow: auto; color: var(--workbench-cream); }
+.user-profile { margin: 16px; border-radius: 28px; max-height: calc(100vh - 115px); overflow: auto; color: var(--workbench-cream); }
 .api-settings form { max-width: 640px; }
+.user-profile form { max-width: 640px; }
 .api-settings fieldset { border: 0; padding: 0; }
+.user-profile fieldset { border: 0; padding: 0; }
 .api-settings label { display: grid; gap: 8px; margin: 18px 0; }
+.user-profile label { display: grid; gap: 8px; margin: 18px 0; }
 .api-settings input:not([type=checkbox]) { padding: 12px; border: 1px solid #aa927c; border-radius: 12px; color: inherit; background: var(--glass-bg); }
+.user-profile input:not([type=checkbox]) { padding: 12px; border: 1px solid #aa927c; border-radius: 12px; color: inherit; background: var(--glass-bg); }
 .api-settings .api-toggle { display: flex; align-items: center; }
 .api-settings p { font-size: 12px; line-height: 1.8; }
 .api-settings button { margin-right: 12px; }
 .workspace-members { max-width: 760px; margin-top: 36px; padding-top: 24px; border-top: 1px solid rgba(154,128,102,.26); }
 .account-settings { max-width: 640px; margin: 18px 0 38px; padding: 22px; border: 1px solid rgba(154,128,102,.28); border-radius: 18px; background: rgba(255,255,255,.04); }
+.key-settings-section { max-width: 640px; margin: 28px 0; padding-top: 24px; border-top: 1px solid rgba(154,128,102,.26); }
 .account-settings form { margin-top: 18px; }
 .account-settings h3 { margin: 26px 0 0; font-size: 15px; }
 .account-avatar { display: flex; align-items: center; gap: 14px; margin: 16px 0 8px; }

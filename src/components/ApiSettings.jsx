@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export default function ApiSettings({ session, onSessionChange }) {
+export default function ApiSettings() {
   const [connection, setConnection] = useState(null)
   const [form, setForm] = useState({ provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', reasoningModel: 'gpt-5.5', imageModel: 'gpt-image-2', apiKey: '' })
   const [videoConnection, setVideoConnection] = useState(null)
@@ -9,27 +9,21 @@ export default function ApiSettings({ session, onSessionChange }) {
   const [busy, setBusy] = useState(false)
   const [videoMessage, setVideoMessage] = useState('')
   const [videoBusy, setVideoBusy] = useState(false)
-  const [members, setMembers] = useState([])
-  const [invite, setInvite] = useState({ email: '', role: 'editor' })
-  const [memberMessage, setMemberMessage] = useState('')
-  const [profile, setProfile] = useState({ name: session?.user?.name || '', email: session?.user?.email || '' })
-  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
-  const [profileMessage, setProfileMessage] = useState('')
-  const [profileBusy, setProfileBusy] = useState(false)
+
   const load = async () => {
     const [response, videoResponse] = await Promise.all([fetch('/api/v1/me/provider-connection'), fetch('/api/v1/me/video-provider-connection')])
     const [value, videoValue] = await Promise.all([response.json().catch(() => ({})), videoResponse.json().catch(() => ({}))])
-    if (response.ok) { setConnection(value.connection); if (value.connection) setForm(current => ({ ...current, provider: value.connection.provider, baseUrl: value.connection.baseUrl, reasoningModel: value.connection.reasoningModel || current.reasoningModel, imageModel: value.connection.imageModel || current.imageModel })) }
-    if (videoResponse.ok) { setVideoConnection(videoValue.connection); if (videoValue.connection) setVideoForm(current => ({ ...current, provider: videoValue.connection.provider, baseUrl: videoValue.connection.baseUrl, model: videoValue.connection.model })) }
+    if (response.ok) {
+      setConnection(value.connection)
+      if (value.connection) setForm(current => ({ ...current, provider: value.connection.provider, baseUrl: value.connection.baseUrl, reasoningModel: value.connection.reasoningModel || current.reasoningModel, imageModel: value.connection.imageModel || current.imageModel }))
+    }
+    if (videoResponse.ok) {
+      setVideoConnection(videoValue.connection)
+      if (videoValue.connection) setVideoForm(current => ({ ...current, provider: videoValue.connection.provider, baseUrl: videoValue.connection.baseUrl, model: videoValue.connection.model }))
+    }
   }
+
   useEffect(() => { load().catch(() => setMessage('无法读取个人模型连接。')) }, [])
-  useEffect(() => { setProfile({ name: session?.user?.name || '', email: session?.user?.email || '' }) }, [session?.user?.name, session?.user?.email])
-  const loadMembers = async () => {
-    if (!session?.workspace?.id || !session.workspace.permissions?.includes('manage')) return
-    const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/members`)
-    const value = await response.json().catch(() => ({})); if (response.ok) setMembers(value.members || [])
-  }
-  useEffect(() => { loadMembers().catch(() => setMemberMessage('无法读取协作者。')) }, [session?.workspace?.id])
   const update = key => event => setForm(current => ({ ...current, [key]: event.target.value }))
   const updateVideo = key => event => setVideoForm(current => ({ ...current, [key]: event.target.value }))
   const save = async () => {
@@ -44,7 +38,11 @@ export default function ApiSettings({ session, onSessionChange }) {
   const remove = async () => {
     if (!window.confirm('确定删除已保存的个人模型密钥吗？这不会影响其他成员。')) return
     setBusy(true); setMessage('')
-    try { const response = await fetch('/api/v1/me/provider-connection', { method: 'DELETE' }); if (!response.ok) throw new Error('删除失败'); setConnection(null); setForm(current => ({ ...current, apiKey: '' })); setMessage('个人模型连接已删除。') } catch (error) { setMessage(error.message) } finally { setBusy(false) }
+    try {
+      const response = await fetch('/api/v1/me/provider-connection', { method: 'DELETE' })
+      if (!response.ok) throw new Error('删除失败')
+      setConnection(null); setForm(current => ({ ...current, apiKey: '' })); setMessage('个人模型连接已删除。')
+    } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
   const saveVideo = async () => {
     setVideoBusy(true); setVideoMessage('')
@@ -58,53 +56,15 @@ export default function ApiSettings({ session, onSessionChange }) {
   const removeVideo = async () => {
     if (!window.confirm('确定删除已保存的视频模型密钥吗？这不会影响图片和文本模型连接。')) return
     setVideoBusy(true); setVideoMessage('')
-    try { const response = await fetch('/api/v1/me/video-provider-connection', { method: 'DELETE' }); if (!response.ok) throw new Error('删除失败'); setVideoConnection(null); setVideoForm(current => ({ ...current, apiKey: '' })); setVideoMessage('视频模型连接已删除。') } catch (error) { setVideoMessage(error.message) } finally { setVideoBusy(false) }
-  }
-  const sendInvite = async event => {
-    event.preventDefault(); setMemberMessage('')
     try {
-      const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/invites`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(invite) })
-      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.error || '邀请创建失败')
-      setInvite(current => ({ ...current, email: '' })); setMemberMessage(`已创建给 ${value.invite.email} 的 ${value.invite.role} 邀请。请通过受控邀请渠道发送接受链接。`)
-    } catch (error) { setMemberMessage(error.message) }
+      const response = await fetch('/api/v1/me/video-provider-connection', { method: 'DELETE' })
+      if (!response.ok) throw new Error('删除失败')
+      setVideoConnection(null); setVideoForm(current => ({ ...current, apiKey: '' })); setVideoMessage('视频模型连接已删除。')
+    } catch (error) { setVideoMessage(error.message) } finally { setVideoBusy(false) }
   }
-  const updateMember = async (member, patch) => {
-    const response = await fetch(`/api/v1/workspaces/${session.workspace.id}/members/${member.userId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
-    const value = await response.json().catch(() => ({})); if (!response.ok) { setMemberMessage(value.error || '成员更新失败'); return }; await loadMembers()
-  }
-  const refreshSession = async () => {
-    const response = await fetch('/api/v1/session'); if (response.ok) onSessionChange?.(await response.json())
-  }
-  const saveProfile = async event => {
-    event.preventDefault(); setProfileBusy(true); setProfileMessage('')
-    try {
-      const response = await fetch('/api/v1/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) })
-      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.error || '账户资料保存失败')
-      await refreshSession(); setProfileMessage('账户资料已更新。')
-    } catch (error) { setProfileMessage(error.message) } finally { setProfileBusy(false) }
-  }
-  const uploadAvatar = async event => {
-    const file = event.target.files?.[0]; if (!file) return
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setProfileMessage('头像仅支持 2MB 内的 PNG、JPG 或 WebP 图片。'); event.target.value = ''; return }
-    setProfileBusy(true); setProfileMessage('')
-    try {
-      const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file) })
-      const response = await fetch('/api/v1/me/avatar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar: dataUrl }) })
-      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.hint || value.error || '头像上传失败')
-      await refreshSession(); setProfileMessage('头像已更新。')
-    } catch (error) { setProfileMessage(error.message) } finally { setProfileBusy(false); event.target.value = '' }
-  }
-  const changePassword = async event => {
-    event.preventDefault(); if (passwords.newPassword !== passwords.confirmPassword) { setProfileMessage('两次输入的新密码不一致。'); return }
-    setProfileBusy(true); setProfileMessage('')
-    try {
-      const response = await fetch('/api/v1/me/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(passwords) })
-      const value = await response.json().catch(() => ({})); if (!response.ok) throw new Error(value.error === 'CURRENT_PASSWORD_INCORRECT' ? '当前密码不正确。' : value.error || '密码更新失败')
-      setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' }); setProfileMessage('密码已更新，请妥善保管。')
-    } catch (error) { setProfileMessage(error.message) } finally { setProfileBusy(false) }
-  }
-  return <section className="page-content api-settings"><span className="kicker">ACCOUNT & SECURITY</span><h1>管理设置</h1><section className="account-settings"><h2>账户资料</h2><p>点击右上角头像也可进入这里。资料仅对当前账号生效。</p><div className="account-avatar"><span>{session?.user?.avatarUrl ? <img src={session.user.avatarUrl} alt="当前头像" /> : (session?.user?.name || '我').slice(0, 1)}</span><label className="secondary-button">更换头像<input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadAvatar} hidden /></label></div><form onSubmit={saveProfile}><fieldset disabled={profileBusy}><label>显示名称<input value={profile.name} onChange={event => setProfile(current => ({ ...current, name: event.target.value }))} maxLength={80} required /></label><label>登录邮箱<input type="email" value={profile.email} onChange={event => setProfile(current => ({ ...current, email: event.target.value }))} required /></label><button className="primary-button" type="submit">保存账户资料</button></fieldset></form><form onSubmit={changePassword}><fieldset disabled={profileBusy}><h3>修改密码</h3><label>当前密码<input type="password" value={passwords.currentPassword} onChange={event => setPasswords(current => ({ ...current, currentPassword: event.target.value }))} autoComplete="current-password" required /></label><label>新密码<input type="password" value={passwords.newPassword} onChange={event => setPasswords(current => ({ ...current, newPassword: event.target.value }))} autoComplete="new-password" minLength={10} required /></label><label>确认新密码<input type="password" value={passwords.confirmPassword} onChange={event => setPasswords(current => ({ ...current, confirmPassword: event.target.value }))} autoComplete="new-password" minLength={10} required /></label><button className="secondary-button" type="submit">更新密码</button></fieldset></form><p role="status">{profileMessage}</p></section><h2>个人模型服务连接</h2><p>每位用户只能管理自己的 API Key。密钥只在提交时通过 HTTPS 发送，由服务端加密保存；界面、日志、链接和资产记录不会显示完整密钥。</p>
-    <form onSubmit={event => { event.preventDefault(); save() }}><fieldset disabled={busy}>
+
+  return <section className="page-content api-settings"><span className="kicker">MODEL CONNECTIONS</span><h1>模型 Key 设置</h1><p>这里只管理当前账号的模型服务连接。API Key 只在提交时通过 HTTPS 发送，并由服务端加密保存；界面、日志、链接和资产记录均不会显示完整密钥。</p>
+    <section className="key-settings-section"><span className="kicker">TEXT & IMAGE</span><h2>UseGoodAI 推理与生图</h2><form onSubmit={event => { event.preventDefault(); save() }}><fieldset disabled={busy}>
       <label>服务商<input value={form.provider} onChange={update('provider')} maxLength={40} /></label>
       <label>HTTPS 服务地址<input type="url" value={form.baseUrl} onChange={update('baseUrl')} placeholder="https://api.usegoodai.com/v1" required /></label>
       <label>推理模型 ID<input value={form.reasoningModel} onChange={update('reasoningModel')} maxLength={160} placeholder="例如：gpt-5.5" /></label>
@@ -113,8 +73,8 @@ export default function ApiSettings({ session, onSessionChange }) {
       {connection && <p className="api-cloud-notice">当前连接：{connection.provider} · 推理 {connection.reasoningModel || '未预填'} · 生图 {connection.imageModel || '未预填'} · 末尾 {connection.apiKeyLast4} · {connection.verificationStatus === 'verified' ? '已验证' : '待验证'}</p>}
       <p>验证会向你填写的 HTTPS 公网服务发起一次低成本的模型列表请求。内网、localhost 和非 HTTPS 地址会被拒绝，避免服务端请求伪造风险。</p>
       <div><button className="primary-button" type="submit">{busy ? '正在验证…' : '验证并保存'}</button>{connection && <button className="secondary-button" type="button" onClick={remove}>删除个人连接</button>}</div>
-    </fieldset></form><p role="status">{message}</p>
-    <section className="video-provider-settings"><span className="kicker">SHORT DRAMA VIDEO</span><h2>短剧视频模型连接</h2><p>独立保存 TokenSpace 视频密钥，不会覆盖图片或文本模型。当前默认模型为 Doubao Seedance 2.0，单条视频支持 4–15 秒。</p>
+    </fieldset></form><p role="status">{message}</p></section>
+    <section className="video-provider-settings key-settings-section"><span className="kicker">SHORT DRAMA VIDEO</span><h2>TokenSpace 视频生成</h2><p>独立保存视频密钥，不会覆盖推理或生图模型。当前默认模型为 Doubao Seedance 2.0，单条视频支持 4–15 秒。</p>
       <form onSubmit={event => { event.preventDefault(); saveVideo() }}><fieldset disabled={videoBusy}>
         <label>服务商<input value={videoForm.provider} onChange={updateVideo('provider')} maxLength={40} /></label>
         <label>HTTPS 服务地址<input type="url" value={videoForm.baseUrl} onChange={updateVideo('baseUrl')} placeholder="https://tokenspace.io/v1" required /></label>
@@ -125,8 +85,5 @@ export default function ApiSettings({ session, onSessionChange }) {
         <div><button className="primary-button" type="submit">{videoBusy ? '正在验证…' : '验证并保存视频连接'}</button>{videoConnection && <button className="secondary-button" type="button" onClick={removeVideo}>删除视频连接</button>}</div>
       </fieldset></form><p role="status">{videoMessage}</p>
     </section>
-    {session?.workspace && <section className="workspace-members"><span className="kicker">WORKSPACE ACCESS</span><h2>工作空间成员</h2><p>当前工作空间：{session.workspace.name} · 你的角色：{session.workspace.role}</p>
-      {session.workspace.permissions?.includes('manage') ? <><form className="workspace-invite" onSubmit={sendInvite}><input type="email" value={invite.email} onChange={event => setInvite(current => ({ ...current, email: event.target.value }))} placeholder="协作者邮箱" required /><select value={invite.role} onChange={event => setInvite(current => ({ ...current, role: event.target.value }))}><option value="admin">管理员</option><option value="editor">编辑者</option><option value="viewer">查看者</option></select><button className="secondary-button" type="submit">创建邀请</button></form><div className="member-list">{members.map(member => <div className="member-row" key={member.userId}><span><strong>{member.user?.name || member.userId}</strong><small>{member.user?.email || '未提供邮箱'} · {member.status}</small></span>{member.role === 'owner' ? <em>所有者</em> : <><select value={member.role} aria-label={`变更 ${member.user?.name || member.userId} 的角色`} onChange={event => updateMember(member, { role: event.target.value })}><option value="admin">管理员</option><option value="editor">编辑者</option><option value="viewer">查看者</option></select><button className="text-button" type="button" onClick={() => updateMember(member, { status: 'revoked' })}>移除</button></>}</div>)}</div></> : <p>你可以查看当前权限；只有所有者和管理员可以邀请成员或调整访问权。</p>}
-      <p role="status">{memberMessage}</p>
-    </section>}</section>
+  </section>
 }

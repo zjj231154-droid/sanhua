@@ -98,6 +98,21 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument()
   })
 
+  it('右上角用户入口只展示账户资料，管理设置只展示模型 Key', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ connection: null }) })))
+    render(<App initialAuthenticated />)
+
+    fireEvent.click(screen.getByLabelText('当前设计师'))
+    expect(screen.getByRole('heading', { name: '个人资料' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '账户资料' })).toBeInTheDocument()
+    expect(screen.getByLabelText('当前密码')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '管理设置' }))
+    expect(await screen.findByRole('heading', { name: '模型 Key 设置' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '账户资料' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'UseGoodAI 推理与生图' })).toBeInTheDocument()
+  })
+
   it('资产库展示已归档的 AI 创作成果', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
       if (url === '/api/v1/assets') return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
