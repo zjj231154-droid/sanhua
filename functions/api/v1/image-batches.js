@@ -2,7 +2,7 @@ import { json, tokenSpaceRequest } from '../../_lib/tokenspace.js'
 import { archiveImageOutputs, assetsBucket } from '../../_lib/asset-store.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
-import { requireIdentity, resolvedProviderConnection } from '../../_lib/collaboration.js'
+import { requireIdentity, resolvedImageProviderConnection } from '../../_lib/collaboration.js'
 
 const workspaceFor = value => ['retouch', 'brand'].includes(value) ? value : null
 
@@ -26,7 +26,7 @@ export async function onRequestPost(context) {
   if (workspace === 'brand' && ['product-effect', 'graphic-effect'].includes(brandPhase) && !submittedImages.length) return json(400, { error: 'REFERENCE_IMAGE_REQUIRED', hint: '品牌效果图必须携带原始参考图。' })
   if (workspace === 'brand' && brandPhase === 'product-effect' && input.metadata?.dielineRequired && (!input.metadata?.dielineConfirmed || !input.metadata?.dielineAssetId)) return json(409, { error: 'DIELINE_CONFIRMATION_REQUIRED', hint: '已选择生成新刀版图，请先确认刀版图，再生成产品效果图。' })
   const images = submittedImages
-  const providerConnection = await resolvedProviderConnection(context, identity.user.id)
+  const providerConnection = await resolvedImageProviderConnection(context, identity.user.id)
   const model = String(input.model || providerConnection?.imageModel || 'gpt-image-2').slice(0, 160)
   const requestedName = String(input.requestedName || input.requested_name || '').trim().slice(0, 160)
   const namePrefix = String(input.namePrefix || input.name_prefix || '').trim().slice(0, 160)
@@ -56,10 +56,10 @@ export async function onRequestPost(context) {
       const bytes = Uint8Array.from(atob(match[2]), char => char.charCodeAt(0))
       form.append(images.length === 1 ? 'image' : 'image[]', new Blob([bytes], { type: match[1] }), `source-${index}.${match[1].split('/')[1]}`)
     }
-    result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai' })
+    result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai', useImageConnection: true })
   } else {
     result = await tokenSpaceRequest(context, 'images/generations', {
-      model, provider: 'usegoodai', payload: { model, prompt, n: count, size: input.size || '1024x1024', response_format: 'b64_json' },
+      model, provider: 'usegoodai', useImageConnection: true, payload: { model, prompt, n: count, size: input.size || '1024x1024', response_format: 'b64_json' },
     })
   }
   if (result.response) {

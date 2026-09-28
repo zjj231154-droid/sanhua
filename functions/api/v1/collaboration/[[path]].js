@@ -1,5 +1,5 @@
 import { getJson, putJson } from '../../../_lib/asset-store.js'
-import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, decryptSecret, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
+import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, decryptSecret, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveImageProviderConnection, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
 import { json } from '../../../_lib/tokenspace.js'
 
 const body = async request => { try { return await request.json() } catch { return {} } }
@@ -8,7 +8,7 @@ const safeWorkspaceName = value => String(value || '').trim().slice(0, 100)
 const publicConnection = (record, kind = 'model') => record ? {
   provider: record.provider,
   baseUrl: record.baseUrl,
-  ...(kind === 'model' ? { reasoningModel: record.reasoningModel || '', imageModel: record.imageModel || '' } : { model: record.model || '' }),
+  ...(kind === 'model' ? { reasoningModel: record.reasoningModel || '' } : { model: record.model || '' }),
   apiKeyLast4: record.apiKeyLast4,
   verificationStatus: record.verificationStatus,
   healthStatus: record.healthStatus || (record.verificationStatus === 'verified' ? 'unknown' : 'offline'),
@@ -24,7 +24,7 @@ async function probeConnection(baseUrl, apiKey) {
 }
 
 async function refreshConnectionHealth(context, identity, type) {
-  const key = type === 'video' ? collaborationPaths.videoConnectionKey(identity.user.id) : collaborationPaths.connectionKey(identity.user.id)
+  const key = type === 'video' ? collaborationPaths.videoConnectionKey(identity.user.id) : type === 'image' ? collaborationPaths.imageConnectionKey(identity.user.id) : collaborationPaths.connectionKey(identity.user.id)
   const record = await getJson(identity.bucket, key)
   if (!record) return { record: null, probe: null }
   const apiKey = await decryptSecret(context, record.encrypted)
@@ -53,6 +53,11 @@ export async function onRequestGet(context) {
     const { record, probe } = await refreshConnectionHealth(context, identity, 'model')
     return json(record && probe?.ok ? 200 : 503, { connection: publicConnection(record), healthy: Boolean(probe?.ok), error: probe?.ok ? null : probe?.error || 'NOT_CONFIGURED' })
   }
+  if (pathname === '/api/v1/me/image-provider-connection/status') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const { record, probe } = await refreshConnectionHealth(context, identity, 'image')
+    return json(record && probe?.ok ? 200 : 503, { connection: publicConnection(record, 'image'), healthy: Boolean(probe?.ok), error: probe?.ok ? null : probe?.error || 'NOT_CONFIGURED' })
+  }
   if (pathname === '/api/v1/me/video-provider-connection/status') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const { record, probe } = await refreshConnectionHealth(context, identity, 'video')
@@ -62,6 +67,11 @@ export async function onRequestGet(context) {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const record = await getJson(identity.bucket, collaborationPaths.connectionKey(identity.user.id))
     return json(200, { connection: publicConnection(record) })
+  }
+  if (pathname === '/api/v1/me/image-provider-connection') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const record = await getJson(identity.bucket, collaborationPaths.imageConnectionKey(identity.user.id))
+    return json(200, { connection: publicConnection(record, 'image') })
   }
   if (pathname === '/api/v1/me/video-provider-connection') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
@@ -167,10 +177,21 @@ export async function onRequestPost(context) {
     const probe = await probeConnection(baseUrl, apiKey)
     if (!probe.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', reason: probe.error, hint: '无法连接服务商或 API Key 无效，请检查服务地址与密钥。' })
     const reasoningModel = String(input.reasoningModel || '').trim().slice(0, 160)
-    const imageModel = String(input.imageModel || '').trim().slice(0, 160)
-    const saved = await saveProviderConnection(context, identity.user.id, { provider: input.provider || 'usegoodai', baseUrl, apiKey, reasoningModel, imageModel, verificationStatus: 'verified' })
+    const saved = await saveProviderConnection(context, identity.user.id, { provider: input.provider || 'usegoodai', baseUrl, apiKey, reasoningModel, imageModel: '', verificationStatus: 'verified' })
     if (saved.error) return saved.error
     return json(200, { connection: publicConnection(saved.record) })
+  }
+  if (pathname === '/api/v1/me/image-provider-connection/verify') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const baseUrl = validProviderBaseUrl(input.baseUrl)
+    const apiKey = String(input.apiKey || '').trim()
+    const model = String(input.model || '').trim().slice(0, 160)
+    if (!baseUrl || apiKey.length < 8 || !model) return json(400, { error: 'INVALID_IMAGE_PROVIDER_CONNECTION', hint: '请填写 HTTPS 服务地址、生图模型 ID 和有效的 API Key。' })
+    const probe = await probeConnection(baseUrl, apiKey)
+    if (!probe.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', reason: probe.error, hint: '无法连接服务商或 API Key 无效，请检查服务地址与密钥。' })
+    const saved = await saveImageProviderConnection(context, identity.user.id, { provider: input.provider || 'usegoodai', baseUrl, apiKey, model, verificationStatus: 'verified' })
+    if (saved.error) return saved.error
+    return json(200, { connection: publicConnection(saved.record, 'image') })
   }
   if (pathname === '/api/v1/me/video-provider-connection/verify') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
@@ -208,8 +229,8 @@ export async function onRequestPatch(context) {
 
 export async function onRequestDelete(context) {
   const pathname = route(context.request)
-  if (!['/api/v1/me/provider-connection', '/api/v1/me/video-provider-connection'].includes(pathname)) return json(404, { error: 'NOT_FOUND' })
+  if (!['/api/v1/me/provider-connection', '/api/v1/me/image-provider-connection', '/api/v1/me/video-provider-connection'].includes(pathname)) return json(404, { error: 'NOT_FOUND' })
   const identity = await requireIdentity(context); if (identity.error) return identity.error
-  await identity.bucket.delete(pathname === '/api/v1/me/video-provider-connection' ? collaborationPaths.videoConnectionKey(identity.user.id) : collaborationPaths.connectionKey(identity.user.id))
+  await identity.bucket.delete(pathname === '/api/v1/me/video-provider-connection' ? collaborationPaths.videoConnectionKey(identity.user.id) : pathname === '/api/v1/me/image-provider-connection' ? collaborationPaths.imageConnectionKey(identity.user.id) : collaborationPaths.connectionKey(identity.user.id))
   return json(204, {})
 }

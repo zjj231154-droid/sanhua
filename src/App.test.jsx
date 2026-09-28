@@ -110,7 +110,8 @@ describe('AI 创作工作台 Demo', () => {
     fireEvent.click(screen.getByRole('button', { name: '管理设置' }))
     expect(await screen.findByRole('heading', { name: '模型 Key 设置' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '账户资料' })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'UseGoodAI 推理与生图' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '推理模型' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '生图模型' })).toBeInTheDocument()
   })
 
   it('资产库展示已归档的 AI 创作成果', async () => {

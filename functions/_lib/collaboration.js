@@ -18,6 +18,7 @@ export const workspaceKey = id => `metadata/collaboration/workspaces/${id}.json`
 export const memberKey = (workspaceId, userId) => `metadata/collaboration/members/${workspaceId}/${userId}.json`
 const sessionKey = hash => `metadata/collaboration/sessions/${hash}.json`
 const connectionKey = id => `metadata/collaboration/connections/${id}.json`
+const imageConnectionKey = id => `metadata/collaboration/image-connections/${id}.json`
 const videoConnectionKey = id => `metadata/collaboration/video-connections/${id}.json`
 const avatarKey = (id, extension) => `metadata/collaboration/avatars/${id}.${extension}`
 const inviteKey = tokenHash => `metadata/collaboration/invites/${tokenHash}.json`
@@ -221,6 +222,24 @@ export async function resolvedProviderConnection(context, userId) {
   return apiKey ? { name: record.provider, baseUrl: record.baseUrl, reasoningModel: record.reasoningModel || '', imageModel: record.imageModel || '', apiKey } : null
 }
 
+export async function saveImageProviderConnection(context, userId, { provider, baseUrl, apiKey, model, verificationStatus = 'verified' }) {
+  const encrypted = await encryptSecret(context, apiKey)
+  if (!encrypted) return { error: json(503, { error: 'CONNECTION_ENCRYPTION_NOT_CONFIGURED', hint: '请配置 SANHUA_CONNECTION_ENCRYPTION_KEY 后再保存个人密钥。' }) }
+  const checkedAt = now()
+  const record = { userId, provider: text(provider) || 'usegoodai', baseUrl, model: text(model).slice(0, 160), encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, healthStatus: verificationStatus === 'verified' ? 'online' : 'unknown', lastCheckedAt: checkedAt, createdAt: checkedAt, updatedAt: checkedAt }
+  await putJson(collaborationBucket(context), imageConnectionKey(userId), record)
+  return { record }
+}
+export async function imageProviderConnection(context, userId) { return getJson(collaborationBucket(context), imageConnectionKey(userId)) }
+export async function resolvedImageProviderConnection(context, userId) {
+  const record = await imageProviderConnection(context, userId)
+  if (record?.verificationStatus === 'verified') {
+    const apiKey = await decryptSecret(context, record.encrypted)
+    if (apiKey) return { name: record.provider, baseUrl: record.baseUrl, imageModel: record.model || '', apiKey }
+  }
+  return resolvedProviderConnection(context, userId)
+}
+
 export async function saveVideoProviderConnection(context, userId, { provider, baseUrl, apiKey, model, verificationStatus = 'verified' }) {
   const encrypted = await encryptSecret(context, apiKey)
   if (!encrypted) return { error: json(503, { error: 'CONNECTION_ENCRYPTION_NOT_CONFIGURED', hint: '请配置 SANHUA_CONNECTION_ENCRYPTION_KEY 后再保存个人密钥。' }) }
@@ -243,4 +262,4 @@ export function withCookie(response, cookie) {
   return new Response(response.body, { status: response.status, headers })
 }
 
-export const collaborationPaths = { connectionKey, videoConnectionKey, inviteKey }
+export const collaborationPaths = { connectionKey, imageConnectionKey, videoConnectionKey, inviteKey }

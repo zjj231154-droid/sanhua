@@ -55,6 +55,19 @@ describe('workspace collaboration boundaries', () => {
     expect(health.status).toBe(503); expect(value.healthy).toBe(false); expect(value.connection.healthStatus).toBe('offline'); expect(value.connection.verificationStatus).toBe('unhealthy'); expect(JSON.stringify(value)).not.toContain('sk-health-secret')
   })
 
+  it('stores image and reasoning connections independently', async () => {
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
+    const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'separate@example.com', password: 'secure-password-7' }) })
+    const cookie = account.headers.get('set-cookie').split(';')[0]
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
+    await onRequestPost({ env, request: request('/api/v1/me/provider-connection/verify', 'POST', { provider: 'reasoning-gateway', baseUrl: 'https://reasoning.example.com/v1', apiKey: 'sk-reasoning-secret', reasoningModel: 'reasoning-1' }, cookie) })
+    const imageSaved = await onRequestPost({ env, request: request('/api/v1/me/image-provider-connection/verify', 'POST', { provider: 'image-gateway', baseUrl: 'https://images.example.com/v1', apiKey: 'sk-image-secret', model: 'image-1' }, cookie) })
+    expect(imageSaved.status).toBe(200)
+    const [reasoning, image] = await Promise.all([onRequestGet({ env, request: request('/api/v1/me/provider-connection', 'GET', null, cookie) }), onRequestGet({ env, request: request('/api/v1/me/image-provider-connection', 'GET', null, cookie) })])
+    expect((await reasoning.json()).connection).toMatchObject({ provider: 'reasoning-gateway', reasoningModel: 'reasoning-1', apiKeyLast4: 'cret' })
+    expect((await image.json()).connection).toMatchObject({ provider: 'image-gateway', model: 'image-1', apiKeyLast4: 'cret' })
+  })
+
   it('lets only the signed-in user update profile and password after current-password verification', async () => {
     const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
     const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '原名称', email: 'profile@example.com', password: 'secure-password-4' }) })

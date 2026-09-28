@@ -1,5 +1,5 @@
 import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL, providerFrom } from '../../_lib/tokenspace.js'
-import { requireIdentity, resolvedProviderConnection } from '../../_lib/collaboration.js'
+import { requireIdentity, resolvedImageProviderConnection, resolvedProviderConnection } from '../../_lib/collaboration.js'
 const dataUrlToBlob = value => {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
   if (!match) return null
@@ -46,8 +46,8 @@ export async function onRequestPost(context) {
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const identity = await requireIdentity(context, 'use')
   if (identity.error) return identity.error
-  const providerConnection = await resolvedProviderConnection(context, identity.user.id)
   const type = ['prompt', 'analyze', 'image', 'edit', 'video'].includes(input.type) ? input.type : 'prompt'
+  const providerConnection = type === 'image' || type === 'edit' ? await resolvedImageProviderConnection(context, identity.user.id) : await resolvedProviderConnection(context, identity.user.id)
   const model = String(input.model || (type === 'image' || type === 'edit' ? providerConnection?.imageModel || 'gpt-image-2' : type === 'video' ? 'sora-2' : providerConnection?.reasoningModel || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL)).slice(0, 160)
   const prompt = String(input.prompt || '').slice(0, 10000)
   if (!prompt) return json(400, { error: '请填写提示词' })
@@ -70,11 +70,11 @@ export async function onRequestPost(context) {
     if (!images.length) return json(400, { error: '图生图需要至少一张 PNG、JPG 或 WebP 图片' })
     const form = new FormData(); form.append('model', model); form.append('prompt', prompt); form.append('response_format', 'b64_json')
     images.forEach((image, index) => form.append(images.length === 1 ? 'image' : 'image[]', image, `source-${index}.png`))
-    const result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai' })
+    const result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai', useImageConnection: true })
     return result.response || json(200, { type, data: result.data })
   }
   const endpoint = type === 'image' ? 'images/generations' : type === 'video' ? 'videos/generations' : 'chat/completions'
   const payload = type === 'prompt' ? { model, messages: [{ role: 'user', content: prompt }] } : { model, prompt, size: input.size || '1024x1024', response_format: 'b64_json' }
-  const result = await tokenSpaceRequest(context, endpoint, { model, payload, provider: type === 'prompt' ? 'usegoodai-reasoning' : 'usegoodai' })
+  const result = await tokenSpaceRequest(context, endpoint, { model, payload, provider: type === 'prompt' ? 'usegoodai-reasoning' : 'usegoodai', useImageConnection: type === 'image' })
   return result.response || json(200, { type, data: result.data })
 }

@@ -10,10 +10,10 @@ export const providerFrom = (context, preferred) => {
   return preferred === 'tokenspace' ? tokenSpace : preferred === 'usegoodai-reasoning' ? useGoodReasoning : preferred === 'usegoodai' ? useGood : useGoodKey ? useGood : tokenSpace
 }
 export const apiKeyFrom = context => providerFrom(context).apiKey
-export async function tokenSpaceRequest(context, endpoint, { model, payload, form, provider: preferred, useVideoConnection = false } = {}) {
+export async function tokenSpaceRequest(context, endpoint, { model, payload, form, provider: preferred, useVideoConnection = false, useImageConnection = false } = {}) {
   const identity = await requireIdentity(context, 'use')
   if (identity.error) return { response: identity.error }
-  const personalProvider = useVideoConnection ? await resolvedVideoProviderConnection(context, identity.user.id) : await resolvedProviderConnection(context, identity.user.id)
+  const personalProvider = useVideoConnection ? await resolvedVideoProviderConnection(context, identity.user.id) : useImageConnection ? await resolvedImageProviderConnection(context, identity.user.id) : await resolvedProviderConnection(context, identity.user.id)
   const provider = personalProvider || (identity.compatibilityMode ? providerFrom(context, preferred) : null)
   if (!provider?.apiKey) return { response: json(409, { error: 'PERSONAL_API_KEY_NOT_CONFIGURED', hint: '请先在管理设置中验证并保存你的个人模型连接。' }) }
   console.log({ provider: provider.name, apiKeyConfigured: true, endpoint, model })
@@ -31,4 +31,4 @@ export async function tokenSpaceRequest(context, endpoint, { model, payload, for
     try { return { data: JSON.parse(text) } } catch { return { response: json(502, { provider: provider.name, status: 502, error: 'Provider returned invalid JSON' }) } }
   } catch (error) { console.error({ provider: provider.name, status: 502, response: error.message }); return { response: json(502, { provider: provider.name, status: 502, error: error.cause?.code || error.message }) } }
 }
-import { requireIdentity, resolvedProviderConnection, resolvedVideoProviderConnection } from './collaboration.js'
+import { requireIdentity, resolvedImageProviderConnection, resolvedProviderConnection, resolvedVideoProviderConnection } from './collaboration.js'
