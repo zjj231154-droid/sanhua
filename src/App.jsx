@@ -792,15 +792,15 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
   const asset = upload || selectedAsset
   const materials = MERCH_MATERIALS[product] || materialHintsFor(product)
   const clearPrompt = () => { setOriginalBrandPlan(''); setEditableBrandPrompt(''); setOriginalDielinePlan(''); setEditableDielinePrompt(''); setDielineImage(null); setDielineConfirmed(false); setImageName('') }
-  const clearAfterProduct = () => { setMaterial(''); setSize(''); setBoxDielineChoice(''); setUpload(null); onSelectAsset(null); clearPrompt() }
-  const clearAfterMaterial = () => { setSize(''); setUpload(null); onSelectAsset(null); clearPrompt() }
+  const clearAfterProduct = () => { setMaterial(''); setSize(''); setBoxDielineChoice(''); clearPrompt() }
+  const clearAfterMaterial = () => { setSize(''); clearPrompt() }
   const clearAfterAsset = () => clearPrompt()
   const clearGraphicAfterAsset = () => { setGraphicDirection(''); setGraphicSeries(''); setGraphicOutput(''); setGraphicPreserve(''); setGraphicRatio(''); clearPrompt() }
   const chooseMode = nextMode => {
     if (nextMode === mode) return
     setMode(nextMode); setStep(1); setProduct(''); setMaterial(''); setSize(''); setBoxDielineChoice(''); setBrief('')
     setGraphicDirection(''); setGraphicSeries(''); setGraphicOutput(''); setGraphicPreserve(''); setGraphicRatio('')
-    setUpload(null); onSelectAsset(null); clearPrompt()
+    setUpload(null); clearPrompt()
   }
   const selectUpload = event => {
     const file = event.target.files?.[0]
@@ -950,6 +950,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   const [brandError, setBrandError] = useState('')
   const [viewerImage, setViewerImage] = useState('')
   const [selectedAsset, setSelectedAsset] = useState(null)
+  const [selectedBrandAssetId, setSelectedBrandAssetId] = useState('')
   const [selectedCharacterAsset, setSelectedCharacterAsset] = useState(null)
   const [selectedPropAsset, setSelectedPropAsset] = useState(null)
   const [scriptPrompt, setScriptPrompt] = useState('围绕茶馆真实空间写一个 3 分钟短剧开场：一位年轻掌柜用一杯新茶解决老顾客之间的误会。')
@@ -989,7 +990,9 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       const response = await fetch('/api/v1/assets?workspace=brand')
       if (!response.ok) return
       const value = await response.json()
-      setBrandAssets(Array.isArray(value.assets) ? value.assets : [])
+      const nextAssets = Array.isArray(value.assets) ? value.assets : []
+      setBrandAssets(nextAssets)
+      setSelectedBrandAssetId(current => nextAssets.some(asset => asset.id === current) ? current : nextAssets[0]?.id || '')
     } catch {}
   }
   const refreshScripts = async () => {
@@ -1005,6 +1008,10 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   useEffect(() => { refreshBrandAssets(); refreshScripts() }, [type])
   const activeScript = scripts.find(item => item.id === activeId)
   const activeCase = config.cases.find(item => item.id === activeId) || config.cases[0]
+  const selectedBrandAsset = brandAssets.find(asset => asset.id === selectedBrandAssetId) || brandAssets[0] || null
+  const selectedBrandPhase = selectedBrandAsset?.metadata?.brandPhase || ((selectedBrandAsset?.name || '').includes('刀版') ? 'dieline' : 'effect')
+  const selectedBrandType = selectedBrandPhase === 'dieline' ? '概念刀版图' : '品牌设计成品'
+  const selectedBrandDesign = String(selectedBrandAsset?.promptSummary || selectedBrandAsset?.finalPrompt || selectedBrandAsset?.originalPlan || '选择一个案例后，会在这里显示本次设计的核心内容、参考素材与可继续创作的方向。').replace(/\s+/g, ' ').slice(0, 280)
   const Icon = config.icon
   const requestScript = async (url, options = {}) => {
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options })
@@ -1112,6 +1119,12 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
   const appendScriptInspiration = suggestion => setScriptPrompt(current => `${current.trim()}${current.trim() ? '\n' : ''}${suggestion}`)
+  const startFromBrandCase = () => {
+    if (!selectedBrandAsset) return
+    setSelectedAsset(selectedBrandAsset)
+    setToolbarTab(0)
+    setContextNotice(`已选中「${selectedBrandAsset.name || '设计案例'}」。请选择做平面生成海报，或做产品生成效果图。`)
+  }
 
   return (
     <div className="showcase-page">
@@ -1122,13 +1135,13 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       <div className="showcase-layout">
         <main className="showcase-main">
           <div className="showcase-toolbar glass-card"><div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto' }}>{(type === 'script' ? ['资产库', '剧本库', '视频生成', '文本记录'] : ['素材创作', '产品库', '提示词记录']).map((label, index) => <button key={label} type="button" className={toolbarTab === index ? 'primary-button' : 'secondary-button'} style={{ whiteSpace: 'nowrap', flexShrink: 0, minHeight: 36, padding: '8px 12px' }} aria-pressed={toolbarTab === index} onClick={() => setToolbarTab(index)}>{index === 0 && <Icon size={17} />}{label}</button>)}</div><small>{config.cases.length} 个项目 · 点击查看详情</small></div>
-          {type === 'brand' && toolbarTab === 0 && <BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} />}
+          {type === 'brand' && toolbarTab === 0 && <><BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} />{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}</>}
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card script-workspace"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>从短剧专属资产发起创作。场景、角色与道具会分别绑定到脚本计划，不虚构未选择的参考内容。</p></div>{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}<ScriptAssetUnitPicker selectedScene={selectedAsset} selectedCharacter={selectedCharacterAsset} selectedProp={selectedPropAsset} onSelectScene={setSelectedAsset} onSelectCharacter={setSelectedCharacterAsset} onSelectProp={setSelectedPropAsset} /><div className="script-workspace-grid"><div className="script-input-panel"><label>短剧创作需求<textarea value={scriptPrompt} onChange={event => setScriptPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && scriptPrompt.trim() && !brandBusy) { event.preventDefault(); generateScriptPlan() } }} aria-label="短剧脚本需求" placeholder="描述人物、冲突、场景与时长" /></label><div className="script-inspiration" aria-label="创作灵感">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button type="button" key={item} className="secondary-button" onClick={() => appendScriptInspiration(item)}>{item}</button>)}</div><DisabledReasonTooltip reason={!scriptPrompt.trim() ? '请先填写短剧创作需求' : ''}><button className="primary-button" disabled={brandBusy || !scriptPrompt.trim()} onClick={generateScriptPlan}>{brandBusy ? '正在分析并写作…' : '生成脚本大纲'}</button></DisabledReasonTooltip><small>按 Ctrl + Enter 或 Command + Enter 快速提交</small></div>{scriptPrompt.trim() && <aside className="script-preview-canvas" aria-label="短剧实时预览"><span className="kicker">实时预览画布</span><article><strong>剧情概要</strong><p>{scriptPrompt.slice(0, 88)}{scriptPrompt.length > 88 ? '…' : ''}</p></article><div><article><strong>角色设定</strong><p>{selectedCharacterAsset?.name || '掌柜、老顾客与来访者将围绕一个真实冲突展开。'}</p></article><article><strong>茶馆场景</strong><p>{selectedAsset?.name || '选择场景素材后将绑定真实空间。'}</p></article></div><article><strong>关键道具</strong><p>{selectedPropAsset?.name || '选择道具素材后将作为剧情关键物件。'}</p></article><article><strong>分镜预览</strong><p>开场钩子 → 人物对峙 → 茶饮转机 → 结尾反转</p></article></aside>}</div>{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
           {type === 'script' && toolbarTab === 2 && <VideoWorkbench scripts={scripts} activeId={activeId} scriptPlan={scriptPlan} />}
           {type === 'brand' && toolbarTab === 2 && <PromptRecordPage workspace="brand" title="品牌提示词记录" description="设计计划与最终提示词会自动同步到云端文本库。" filters={[["brand_plan", "设计计划"], ["brand_final_prompt", "最终提示词"]]} onReuse={record => { setBrandPlan(record.content); setToolbarTab(0) }} />}
           {type === 'script' && toolbarTab === 3 && <PromptRecordPage workspace="script" title="短剧文本记录" description="脚本大纲、剧本版本与视频提示词均以独立记录保存。" filters={[["script_outline", "脚本大纲"], ["script_version", "剧本版本"], ["video_prompt", "视频提示词"]]} onReuse={record => { setScriptPrompt(record.content); setToolbarTab(0) }} />}
-          {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2><div className="product-library-grid">{brandAssets.map(asset => <article key={asset.id}><button className="brand-generated-preview" onClick={() => setViewerImage(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><small>点击放大查看</small></button><div><strong>{asset.name}</strong><small>{new Date(asset.createdAt || Date.now()).toLocaleDateString('zh-CN')} · {asset.model || 'gpt-image-2'} · 引用 {asset.referenceAssetIds?.length || asset.sourceAssetIds?.length || 0} 项素材</small><span className="brand-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name}><Download size={15} />下载</a><button className="secondary-button" aria-label={`重命名 ${asset.name}`} onClick={async () => { const nextName = window.prompt('输入新的图片名称', asset.name); if (!nextName?.trim()) return; const response = await fetch(`/api/v1/assets/${asset.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: nextName }) }); const value = await response.json(); if (!response.ok) { setBrandError(value.error || '重命名失败'); return }; setBrandAssets(current => current.map(item => item.id === asset.id ? { ...item, ...value.asset } : item)); }}><Pencil size={15} />重命名</button></span></div></article>)}</div>{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}</section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
+          {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2><p className="product-library-hint">单击图片选中案例并查看设计内容；双击可放大预览。</p><div className="product-library-grid">{brandAssets.map(asset => <article className={selectedBrandAsset?.id === asset.id ? 'is-selected' : ''} key={asset.id}><button type="button" className="brand-generated-preview" aria-label={`选择案例 ${asset.name}`} aria-pressed={selectedBrandAsset?.id === asset.id} onClick={() => setSelectedBrandAssetId(asset.id)} onDoubleClick={() => setViewerImage(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><small>{selectedBrandAsset?.id === asset.id ? '已选中 · 双击放大查看' : '点击选中 · 双击放大查看'}</small></button><div><strong>{asset.name}</strong><small>{new Date(asset.createdAt || Date.now()).toLocaleDateString('zh-CN')} · {asset.model || 'gpt-image-2'} · 引用 {asset.referenceAssetIds?.length || asset.sourceAssetIds?.length || 0} 项素材</small><span className="brand-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name}><Download size={15} />下载</a><button className="secondary-button" aria-label={`重命名 ${asset.name}`} onClick={async () => { const nextName = window.prompt('输入新的图片名称', asset.name); if (!nextName?.trim()) return; const response = await fetch(`/api/v1/assets/${asset.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: nextName }) }); const value = await response.json(); if (!response.ok) { setBrandError(value.error || '重命名失败'); return }; setBrandAssets(current => current.map(item => item.id === asset.id ? { ...item, ...value.asset } : item)); }}><Pencil size={15} />重命名</button></span></div></article>)}</div>{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}</section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
             {scriptsLoading && <p role="status">正在读取云端剧本库…</p>}
             {!scriptsLoading && scripts.map(script => <button className={activeId === script.id ? 'case-card is-active' : 'case-card'} key={script.id} onClick={() => { setActiveId(script.id); setEditor(script) }}><span className="case-copy"><small>云端剧本 · {script.versionCount || 1} 个版本</small><strong>{script.title}</strong><em>{script.summary || '尚未填写故事梗概'}</em><span>{script.kind || '未分类'} · 更新于 {new Date(script.updatedAt).toLocaleDateString('zh-CN')}</span></span></button>)}
             {!scriptsLoading && !scripts.length && <div className="empty-state"><p>暂无云端剧本。新建后会自动持久化并支持版本恢复。</p><button className="primary-button" onClick={() => setEditor({})}>新建剧本</button></div>}
@@ -1138,10 +1151,10 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
         {((type === 'brand' && toolbarTab === 1) || (type === 'script' && toolbarTab === 1)) && <aside className="case-inspector glass-card">
           <span className="case-inspector-icon"><Icon size={20} /></span>
           <span className="kicker">{type === 'script' ? 'CLOUD SCRIPT' : 'SELECTED CASE'}</span>
-          <h2>{activeScript?.title || activeCase.title}</h2>
-          <p>{activeScript?.summary || activeCase.summary}</p>
-          <div className="case-facts"><span><small>类型</small><strong>{activeScript?.kind || activeCase.kind}</strong></span><span><small>{type === 'script' ? '版本' : '当前进度'}</small><strong>{type === 'script' ? `v${activeScript?.versionCount || 1}` : activeCase.progress}</strong></span><span><small>状态</small><strong>{activeScript?.status || activeCase.status}</strong></span></div>
-          <button className="primary-button primary-button--wide" onClick={() => type === 'script' && setEditor(activeScript || { title: activeCase.title, kind: activeCase.kind, summary: activeCase.summary })}>{activeScript ? '编辑云端剧本' : '以此案例开始'} <ArrowUpRight size={16} /></button>
+          <h2>{type === 'brand' ? selectedBrandAsset?.name || '选择一个设计案例' : activeScript?.title || activeCase.title}</h2>
+          <p className={type === 'brand' ? 'case-design-summary' : ''}>{type === 'brand' ? selectedBrandDesign : activeScript?.summary || activeCase.summary}</p>
+          <div className="case-facts">{type === 'brand' ? <><span><small>设计类型</small><strong>{selectedBrandType}</strong></span><span><small>参考素材</small><strong>{selectedBrandAsset?.referenceAssetIds?.length || selectedBrandAsset?.sourceAssetIds?.length || 0} 项</strong></span><span><small>后续创作</small><strong>海报 / 效果图</strong></span></> : <><span><small>类型</small><strong>{activeScript?.kind || activeCase.kind}</strong></span><span><small>版本</small><strong>v{activeScript?.versionCount || 1}</strong></span><span><small>状态</small><strong>{activeScript?.status || activeCase.status}</strong></span></>}</div>
+          <button className="primary-button primary-button--wide" disabled={type === 'brand' && !selectedBrandAsset} onClick={() => type === 'brand' ? startFromBrandCase() : setEditor(activeScript || { title: activeCase.title, kind: activeCase.kind, summary: activeCase.summary })}>{type === 'brand' ? '以此案例开始' : activeScript ? '编辑云端剧本' : '以此案例开始'} <ArrowUpRight size={16} /></button>
         </aside>}
       </div>
       {editor && <ScriptEditor initial={editor} onClose={() => setEditor(null)} onSave={persistScript} onAutoSave={autoSaveScript} onListVersions={async id => (await requestScript(`/api/v1/scripts/${id}/versions`)).versions || []} onSaveVersion={async (values, changeNote) => { const result = await requestScript(`/api/v1/scripts/${editor.id}/versions`, { method: 'POST', body: JSON.stringify({ ...values, changeNote }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); void archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script_version', title: result.version.title || '短剧剧本版本', content: result.version.outline || result.version.content || result.version.summary, contentFormat: 'markdown', scriptId: result.script.id, scriptVersionId: result.version.id }); return result }} onRestoreVersion={async versionId => { const result = await requestScript(`/api/v1/scripts/${editor.id}/restore-version`, { method: 'POST', body: JSON.stringify({ versionId }) }); setScripts(current => [result.script, ...current.filter(item => item.id !== result.script.id)]); setEditor(result.script); return result.script }} />}

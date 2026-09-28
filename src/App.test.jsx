@@ -68,6 +68,28 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByText('叁花茶文化礼赠')).toBeInTheDocument()
   })
 
+  it('产品库可选中案例、展示设计摘要并带入品牌二创', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (url === '/api/v1/assets?workspace=brand') return { ok: true, json: async () => ({ assets: [
+        { id: 'brand-a', name: '礼盒包装方案 A', url: 'data:image/png;base64,iVBORw0KGgo=', promptSummary: '红金茶礼盒：保留书法标题与人物插画，作为包装效果图。', sourceAssetIds: ['source-a'] },
+        { id: 'brand-b', name: '礼盒包装方案 B', url: 'data:image/png;base64,iVBORw0KGgo=', promptSummary: '水墨茶山海报：保留茶器、留白与品牌印章，延展系列视觉。', referenceAssetIds: ['source-b'] },
+      ] }) }
+      return { ok: true, json: async () => ({ assets: [] }) }
+    }))
+    const { container } = render(<App initialAuthenticated initialPage="brand" />)
+
+    fireEvent.click(within(container.querySelector('.showcase-toolbar')).getByRole('button', { name: '产品库' }))
+    const caseButton = await screen.findByRole('button', { name: '选择案例 礼盒包装方案 B' })
+    fireEvent.click(caseButton)
+    expect(caseButton).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('水墨茶山海报：保留茶器、留白与品牌印章，延展系列视觉。')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '以此案例开始' }))
+    expect(screen.getByRole('status')).toHaveTextContent('已选中「礼盒包装方案 B」')
+    fireEvent.click(screen.getByRole('button', { name: '选择做平面工作流' }))
+    expect(screen.getByText('已选择参考素材：礼盒包装方案 B。会作为唯一视觉基准写入提示词。')).toBeInTheDocument()
+  })
+
   it('右上角退出按钮可以返回登录页', () => {
     render(<App initialAuthenticated />)
 
