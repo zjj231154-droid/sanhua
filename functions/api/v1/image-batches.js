@@ -12,6 +12,7 @@ export async function onRequestPost(context) {
   const workspace = workspaceFor(input.workspace)
   const prompt = String(input.prompt || '').trim().slice(0, 12000)
   const submittedImages = Array.isArray(input.images) ? input.images.filter(value => typeof value === 'string') : []
+  const brandPhase = String(input.metadata?.brandPhase || '')
   const count = Number(input.count || (input.workspace === 'retouch' ? 1 : 4))
   if (!workspace) return json(400, { error: 'WORKSPACE_REQUIRED' })
   if (!prompt) return json(400, { error: 'PROMPT_REQUIRED' })
@@ -19,6 +20,8 @@ export async function onRequestPost(context) {
   if (!Number.isInteger(count) || count < 1 || count > limit) return json(400, { error: 'BATCH_LIMIT_EXCEEDED', limit })
   if (submittedImages.length > limit || (Array.isArray(input.sourceAssetIds) && input.sourceAssetIds.length > limit)) return json(400, { error: 'BATCH_LIMIT_EXCEEDED', limit })
   if (workspace === 'retouch' && !submittedImages.length) return json(400, { error: 'IMAGE_REQUIRED' })
+  if (workspace === 'brand' && ['product-effect', 'graphic-effect'].includes(brandPhase) && !submittedImages.length) return json(400, { error: 'REFERENCE_IMAGE_REQUIRED', hint: '品牌效果图必须携带原始参考图。' })
+  if (workspace === 'brand' && brandPhase === 'product-effect' && (!input.metadata?.dielineConfirmed || !input.metadata?.dielineAssetId)) return json(409, { error: 'DIELINE_CONFIRMATION_REQUIRED', hint: '请先生成并确认刀版图，再生成产品效果图。' })
   const images = submittedImages
   const model = String(input.model || 'gpt-image-2').slice(0, 160)
   const requestedName = String(input.requestedName || input.requested_name || '').trim().slice(0, 160)

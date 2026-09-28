@@ -710,7 +710,7 @@ const MERCH_MATERIALS = {
 }
 
 const BRAND_WORKFLOW_STEPS = {
-  product: ['产品', '材质', '尺寸', '素材', '提示词'],
+  product: ['产品', '材质', '尺寸', '素材', '刀版确认', '效果图'],
   graphic: ['素材', '二创方向', '输出形式', '保留与画幅', '提示词'],
 }
 
@@ -718,6 +718,22 @@ const GRAPHIC_DIRECTIONS = ['原画延展', '构图再设计', '提炼成纹样'
 const GRAPHIC_SERIES = ['同主题不同场景', '四季系列', '二十四节气', '茶生活系列', '情绪系列', '生活方式系列', '装饰画系列', '城市文化系列']
 const GRAPHIC_OUTPUTS = ['单张延展插画', '四张独立插画', '四宫格', '系列海报', '方形文创图', '连续纹样', '一组纹样单元']
 const GRAPHIC_RATIOS = ['1:1', '4:5', '4:3', '3:2', '16:9', '9:16']
+
+async function imageAssetToDataUrl(asset) {
+  const source = asset?.url || asset?.previewUrl || asset?.thumbnailUrl
+  if (!source) throw new Error('请先选择参考图')
+  if (/^data:image\/(png|jpeg|webp);base64,/i.test(source)) return source
+  const response = await fetch(source)
+  if (!response.ok) throw new Error('参考图读取失败，请重新选择')
+  const blob = await response.blob()
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(blob.type)) throw new Error('参考图必须是 PNG、JPG 或 WebP')
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('参考图读取失败，请重新选择'))
+    reader.readAsDataURL(blob)
+  })
+}
 
 function materialHintsFor(product) {
   const value = product.toLowerCase()
@@ -762,13 +778,17 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
   const [imageName, setImageName] = useState('')
   const [originalBrandPlan, setOriginalBrandPlan] = useState('')
   const [editableBrandPrompt, setEditableBrandPrompt] = useState('')
+  const [originalDielinePlan, setOriginalDielinePlan] = useState('')
+  const [editableDielinePrompt, setEditableDielinePrompt] = useState('')
+  const [dielineImage, setDielineImage] = useState(null)
+  const [dielineConfirmed, setDielineConfirmed] = useState(false)
   const [customProducts, setCustomProducts] = useState(() => {
     try { return JSON.parse(localStorage.getItem('sanhua-custom-products') || '[]').slice(0, 10) } catch { return [] }
   })
   const [customProductInput, setCustomProductInput] = useState('')
   const asset = upload || selectedAsset
   const materials = MERCH_MATERIALS[product] || materialHintsFor(product)
-  const clearPrompt = () => { setOriginalBrandPlan(''); setEditableBrandPrompt(''); setImageName('') }
+  const clearPrompt = () => { setOriginalBrandPlan(''); setEditableBrandPrompt(''); setOriginalDielinePlan(''); setEditableDielinePrompt(''); setDielineImage(null); setDielineConfirmed(false); setImageName('') }
   const clearAfterProduct = () => { setMaterial(''); setSize(''); setUpload(null); onSelectAsset(null); clearPrompt() }
   const clearAfterMaterial = () => { setSize(''); setUpload(null); onSelectAsset(null); clearPrompt() }
   const clearAfterAsset = () => clearPrompt()
@@ -795,17 +815,23 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
     localStorage.setItem('sanhua-custom-products', JSON.stringify(next))
     setProduct(value); clearAfterProduct(); setCustomProductInput('')
   }
-  const createProductPlan = async () => {
-    const nextPlan = await onPlan(`中式文创周边设计需求\n产品类型：${product}\n可量产材质：${material}\n真实尺寸：${size}\n创作补充：${brief || '按品牌素材的核心视觉进行适配'}\n引用素材：${asset?.name || '未选择'}\n参考素材 ID：${asset?.id || '未选择'}\n必须还原参考图核心视觉：主体造型、主要构图、关键色彩、品牌/IP/书法/图形特征、装饰元素、氛围和材质观感。`)
-    if (nextPlan) { setOriginalBrandPlan(nextPlan); setEditableBrandPrompt(nextPlan); setStep(5) }
+  const createDielinePlan = async () => {
+    const nextPlan = await onPlan(`中式文创产品刀版图需求\n流程阶段：产品刀版图\n产品类型：${product}\n可量产材质：${material}\n真实尺寸：${size}\n创作补充：${brief || '按品牌素材的核心视觉进行适配'}\n引用素材：${asset?.name || '未选择'}\n参考素材 ID：${asset?.id || '未选择'}\n必须严格参考参考图：主体造型、主要构图、关键色彩、品牌/IP/书法/图形特征、装饰元素、氛围和材质观感均为不可偏离的视觉基准。刀版图仅用于工艺与结构沟通，需明确标注“概念刀版示意，生产前由厂家/CAD 校核”。`)
+    if (nextPlan) { setOriginalDielinePlan(nextPlan); setEditableDielinePrompt(nextPlan); setDielineImage(null); setDielineConfirmed(false); setStep(5) }
+  }
+  const generateDieline = async () => {
+    const result = await onGenerate(`${product || '文创产品'}-刀版图`, editableDielinePrompt, originalDielinePlan, { phase: 'dieline', sourceAsset: asset })
+    if (result) { setDielineImage(result); setDielineConfirmed(false) }
+  }
+  const confirmDielineAndCreateProductPlan = async () => {
+    setDielineConfirmed(true)
+    const nextPlan = await onPlan(`中式文创周边产品效果图需求\n流程阶段：产品效果图\n刀版图状态：已生成并经用户确认\n刀版图资产：${dielineImage?.id || '已确认'}\n产品类型：${product}\n可量产材质：${material}\n真实尺寸：${size}\n创作补充：${brief || '按品牌素材的核心视觉进行适配'}\n引用素材：${asset?.name || '未选择'}\n参考素材 ID：${asset?.id || '未选择'}\n必须严格参考参考图，作为唯一视觉基准：必须还原主体造型、主要构图、关键色彩、品牌/IP/书法/图形特征、装饰元素、氛围和材质观感；不得只做风格参考、不得替换主体、不得重新设计角色或品牌识别元素。效果图中的结构与已确认刀版图必须一致。`)
+    if (nextPlan) { setOriginalBrandPlan(nextPlan); setEditableBrandPrompt(nextPlan); setStep(6) }
   }
   const createGraphicPlan = async () => {
     const nextPlan = await onPlan(`品牌平面二次创作需求\n创作模式：平面二创\n二创方向：${graphicDirection}\n系列方向：${graphicDirection === '系列化设计' ? graphicSeries : '不适用'}\n输出形式：${graphicOutput}\n必须保留元素：${graphicPreserve || '保留原素材核心主体、画风、关键色彩与可识别元素'}\n画幅比例：${graphicRatio}\n引用素材：${asset?.name || '未选择'}\n参考素材 ID：${asset?.id || '未选择'}\n如果参考图包含明确角色或 IP，必须以原图为唯一视觉基准，严格锁定脸型、比例、五官、毛色、花纹、标志性色块和核心识别特征；只允许变化动作、场景、道具、季节、构图和氛围，不得重画成相似的新角色。`)
     if (nextPlan) { setOriginalBrandPlan(nextPlan); setEditableBrandPrompt(nextPlan); setStep(5) }
   }
-  useEffect(() => {
-    if (plan && !originalBrandPlan) { setOriginalBrandPlan(plan); setEditableBrandPrompt(plan) }
-  }, [plan, originalBrandPlan])
   const graphicMode = mode === 'graphic'
   const summary = graphicMode
     ? `方向：${graphicDirection || '待选择'} · 输出：${graphicOutput || '待选择'} · 画幅：${graphicRatio || '待选择'} · 参考图：${asset?.name || '未选择'}`
@@ -816,7 +842,7 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
   }
   const assetStep = (title, onBack, onContinue, continueLabel) => <section className="brand-step-card"><strong>{title}</strong><div className="asset-picker"><div>{assets.map(item => <button key={item.id} aria-pressed={asset?.id === item.id} className={asset?.id === item.id ? 'asset-thumb is-selected' : 'asset-thumb'} onClick={() => selectAsset(item)}><CachedImage asset={item} src={item.previewUrl || item.thumbnailUrl || item.url} alt={item.name} /><small>{asset?.id === item.id ? `✓ 已选 · ${item.name}` : item.name}</small></button>)}</div></div><label className="secondary-button merch-upload">上传图片<input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectUpload} /></label>{asset && <p className="asset-selected">已选择参考素材：{asset.name}。会作为唯一视觉基准写入提示词。</p>}{!graphicMode && <textarea value={brief} onChange={event => { setBrief(event.target.value); clearPrompt() }} aria-label="文创补充要求" placeholder="可补充文案、风格、必须保留或禁止出现的元素" />}<div className="brand-step-actions"><button className="secondary-button" onClick={onBack}>上一步</button><button className="next-step-button" disabled={!asset || busy} onClick={onContinue}>{busy ? '正在生成提示词…' : continueLabel}</button></div></section>
   return <div className="brand-agent-card glass-card brand-merch-workflow">
-    <div><span className="kicker">中式文创设计 · Skill v3.1</span><p>先选择做产品或做平面；两条流程都会逐步收集信息，完成后再生成可编辑的最终提示词。</p></div>
+    <div><span className="kicker">中式文创设计 · Skill v3.4</span><p>先选择做产品或做平面；产品会先生成并确认刀版图，再生成严格参考原图的效果图。</p></div>
     <div className="brand-mode-picker" role="group" aria-label="品牌创作方式">
       <button type="button" className={mode === 'product' ? 'brand-mode-card is-selected' : 'brand-mode-card'} aria-label="选择做产品工作流" aria-pressed={mode === 'product'} onClick={() => chooseMode('product')}><Layers3 size={20} /><span><strong>做产品</strong><small>把插画、纹样或 IP 落地为可量产文创周边</small></span></button>
       <button type="button" className={mode === 'graphic' ? 'brand-mode-card is-selected' : 'brand-mode-card'} aria-label="选择做平面工作流" aria-pressed={mode === 'graphic'} onClick={() => chooseMode('graphic')}><FileImage size={20} /><span><strong>做平面</strong><small>基于原图延展插画、纹样或 IP 系列视觉</small></span></button>
@@ -828,12 +854,13 @@ export function BrandMerchWorkflow({ assets, selectedAsset, onSelectAsset, busy,
         {!graphicMode && step === 1 && <section className="brand-step-card"><strong>想做哪一种中式文创周边？</strong><div className="merch-options">{[...Object.keys(MERCH_MATERIALS), ...customProducts.filter(item => !Object.keys(MERCH_MATERIALS).includes(item))].map(item => <button key={item} aria-pressed={product === item} className={product === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { if (product === item) { setProduct(''); clearAfterProduct() } else { setProduct(item); clearAfterProduct() } }}>{product === item && '✓ 已选 · '}{item}</button>)}</div><label className="merch-custom-field">添加自定义产品标签（回车保存）<input value={customProductInput} onChange={event => setCustomProductInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomProduct() } }} placeholder="例如：香牌、折扇、丝巾、手机壳" aria-label="自定义文创产品类型" /></label>{product && <p className="selection-summary">当前产品：{product}。下一步会据此更新可量产材质建议。</p>}<div className="brand-step-actions"><DisabledReasonTooltip reason={!product.trim() ? '请先选择或填写产品类型' : ''}><button className="next-step-button" aria-label="下一步：选择材质" disabled={!product.trim()} onClick={() => setStep(2)}>下一步：选择材质 →</button></DisabledReasonTooltip></div></section>}
         {!graphicMode && step === 2 && <section className="brand-step-card"><strong>{product}适合以下可量产材质</strong><div className="merch-options merch-options--stack">{materials.map(item => <button key={item} aria-pressed={material === item} className={material === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { if (material === item) { setMaterial(''); clearAfterMaterial() } else { setMaterial(item); clearAfterMaterial() } }}>{material === item && '✓ 已选 · '}{item}</button>)}</div><label className="merch-custom-field">或自行填写材质与工艺<input value={materials.includes(material) ? '' : material} onChange={event => { setMaterial(event.target.value); clearAfterMaterial() }} placeholder="例如：竹骨 + 绢布，UV 彩印" aria-label="自定义文创材质" /></label>{material && <p className="selection-summary">当前材质：{material}。最终提示词会据此写入真实质感和生产工艺。</p>}<div className="brand-step-actions"><button className="secondary-button" onClick={() => setStep(1)}>上一步</button><button className="next-step-button" disabled={!material.trim()} onClick={() => setStep(3)}>下一步：确认尺寸 →</button></div></section>}
         {!graphicMode && step === 3 && <section className="brand-step-card"><strong>填写真实产品尺寸</strong><input value={size} onChange={event => { setSize(event.target.value); clearPrompt() }} placeholder="例如 90 × 90 mm" aria-label="文创产品尺寸" />{size && <p className="selection-summary">当前尺寸：{size}。最终效果图会标注对应的 REAL SIZE。</p>}<p>尺寸会写入效果图提案的 REAL SIZE 标注。</p><div className="brand-step-actions"><button className="secondary-button" onClick={() => setStep(2)}>上一步</button><button className="next-step-button" disabled={!size.trim()} onClick={() => setStep(4)}>下一步：选择素材 →</button></div></section>}
-        {!graphicMode && step === 4 && assetStep('选择或上传视觉素材', () => setStep(3), createProductPlan, '生成最终提示词 →')}
+        {!graphicMode && step === 4 && assetStep('选择或上传视觉素材', () => setStep(3), createDielinePlan, '生成刀版图提示词 →')}
+        {!graphicMode && step === 5 && <section className="brand-step-card"><strong>确认刀版图 / 工艺结构示意</strong><p>产品效果图必须在刀版图生成并经你确认后才可继续。刀版图用于工艺沟通，实际量产仍需厂家或 CAD 校核。</p>{editableDielinePrompt ? <div className="brand-plan"><textarea value={editableDielinePrompt} onChange={event => { setEditableDielinePrompt(event.target.value); setDielineImage(null); setDielineConfirmed(false) }} aria-label="文创刀版图提示词" /><small>{editableDielinePrompt === originalDielinePlan ? '原始刀版图提示词由 UseGoodAI 生成' : '已修改 · 将使用当前内容生成刀版图'}</small></div> : <p role="status">正在由推理模型整理刀版图与工艺结构约束…</p>}<p className="selection-summary">{summary}</p><div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => setStep(4)}>返回修改素材</button><button className="primary-button" disabled={busy || !editableDielinePrompt.trim()} onClick={generateDieline}>{busy ? '正在生成刀版图…' : '生成刀版图'}</button></div>{dielineImage && <div className="brand-result-preview"><button className="brand-generated-preview" onClick={() => onViewImage(dielineImage)}><img className="brand-generated-image" src={dielineImage.url} alt="产品刀版图，点击查看大图" /><small>点击放大查看刀版图</small></button><div className="brand-agent-actions"><a className="secondary-button" href={`/api/v1/assets/${dielineImage.id}/download`} download={dielineImage.downloadName || dielineImage.name}><Download size={15} />下载刀版图</a><button className="primary-button" disabled={busy} onClick={confirmDielineAndCreateProductPlan}>{busy ? '正在生成效果图提示词…' : '确认刀版图，生成效果图提示词 →'}</button></div></div>}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
         {graphicMode && step === 1 && assetStep('选择或上传要二次创作的原始素材', () => chooseMode(''), () => setStep(2), '下一步：选择二创方向 →')}
         {graphicMode && step === 2 && <section className="brand-step-card"><strong>想往哪个方向进行二次创作？</strong><div className="merch-options">{GRAPHIC_DIRECTIONS.map(item => <button key={item} aria-pressed={graphicDirection === item} className={graphicDirection === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { setGraphicDirection(graphicDirection === item ? '' : item); setGraphicSeries(''); setGraphicOutput(''); setGraphicPreserve(''); setGraphicRatio(''); clearPrompt() }}>{graphicDirection === item && '✓ 已选 · '}{item}</button>)}</div>{graphicDirection === '系列化设计' && <><strong className="brand-subquestion">想做哪一种系列？</strong><div className="merch-options">{GRAPHIC_SERIES.map(item => <button key={item} aria-pressed={graphicSeries === item} className={graphicSeries === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { setGraphicSeries(graphicSeries === item ? '' : item); clearPrompt() }}>{graphicSeries === item && '✓ 已选 · '}{item}</button>)}</div></>}<div className="brand-step-actions"><button className="secondary-button" onClick={() => setStep(1)}>上一步</button><button className="next-step-button" disabled={!graphicDirection || (graphicDirection === '系列化设计' && !graphicSeries)} onClick={() => setStep(3)}>下一步：选择输出形式 →</button></div></section>}
         {graphicMode && step === 3 && <section className="brand-step-card"><strong>希望最终输出成什么形式？</strong><div className="merch-options">{GRAPHIC_OUTPUTS.map(item => <button key={item} aria-pressed={graphicOutput === item} className={graphicOutput === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { setGraphicOutput(graphicOutput === item ? '' : item); clearPrompt() }}>{graphicOutput === item && '✓ 已选 · '}{item}</button>)}</div><div className="brand-step-actions"><button className="secondary-button" onClick={() => setStep(2)}>上一步</button><button className="next-step-button" disabled={!graphicOutput} onClick={() => setStep(4)}>下一步：锁定保留元素 →</button></div></section>}
         {graphicMode && step === 4 && <section className="brand-step-card"><strong>锁定必须保留的元素与画幅</strong><p>若素材包含明确 IP 角色，角色的脸型、比例、五官、毛色、花纹及标志性特征会自动锁定，只允许延展动作、场景、道具和构图。</p><textarea value={graphicPreserve} onChange={event => { setGraphicPreserve(event.target.value); clearPrompt() }} aria-label="平面创作必须保留元素" placeholder="例如：猫咪主体、竹桌茶具、竹叶、水墨线稿、留白构图" /><strong className="brand-subquestion">选择画幅比例</strong><div className="merch-options">{GRAPHIC_RATIOS.map(item => <button key={item} aria-pressed={graphicRatio === item} className={graphicRatio === item ? 'secondary-button is-selected' : 'secondary-button'} onClick={() => { setGraphicRatio(graphicRatio === item ? '' : item); clearPrompt() }}>{graphicRatio === item && '✓ 已选 · '}{item}</button>)}</div><div className="brand-step-actions"><button className="secondary-button" onClick={() => setStep(3)}>上一步</button><button className="next-step-button" disabled={!graphicPreserve.trim() || !graphicRatio || busy} onClick={createGraphicPlan}>{busy ? '正在生成提示词…' : '生成最终提示词 →'}</button></div></section>}
-        {step === 5 && <section className="brand-step-card"><strong>UseGoodAI 推理输出 · 可执行提示词</strong>{editableBrandPrompt ? <div className="brand-plan"><textarea value={editableBrandPrompt} onChange={event => setEditableBrandPrompt(event.target.value)} aria-label="品牌最终提示词" /><small>{editableBrandPrompt === originalBrandPlan ? '原始提示词由 UseGoodAI 生成' : '已修改 · 出图将使用当前内容'}</small></div> : <p role="status">正在由推理模型整理已确认的约束…</p>}<label className="merch-custom-field">生成图片名称<input value={imageName} maxLength="160" onChange={event => setImageName(event.target.value)} placeholder={`例如：${graphicMode ? graphicOutput || '茶猫系列视觉' : product || '茶猫'}-设计方案`} aria-label="生成图片名称" /></label><p className="selection-summary">{summary}</p><div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => { clearPrompt(); setStep(4) }}>返回修改</button><button className="primary-button" disabled={busy || !editableBrandPrompt.trim()} onClick={() => onGenerate(imageName, editableBrandPrompt, originalBrandPlan)}>{busy ? '正在生成效果图…' : '确认并生成效果图'}</button></div>{image && <div className="brand-result-preview"><button className="brand-generated-preview" onClick={() => onViewImage(image)}><img className="brand-generated-image" src={image.url} alt="品牌创作效果图，点击查看大图" /><small>点击放大查看</small></button><a className="secondary-button" href={`/api/v1/assets/${image.id}/download`} download={image.downloadName || image.name}><Download size={15} />下载原图</a></div>}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
+        {(graphicMode ? step === 5 : step === 6) && <section className="brand-step-card"><strong>UseGoodAI 推理输出 · {graphicMode ? '平面视觉' : '产品效果图'}提示词</strong>{editableBrandPrompt ? <div className="brand-plan"><textarea value={editableBrandPrompt} onChange={event => setEditableBrandPrompt(event.target.value)} aria-label="品牌最终提示词" /><small>{editableBrandPrompt === originalBrandPlan ? '原始提示词由 UseGoodAI 生成' : '已修改 · 出图将使用当前内容'}</small></div> : <p role="status">正在由推理模型整理已确认的约束…</p>}<label className="merch-custom-field">生成图片名称<input value={imageName} maxLength="160" onChange={event => setImageName(event.target.value)} placeholder={`例如：${graphicMode ? graphicOutput || '茶猫系列视觉' : product || '茶猫'}-设计方案`} aria-label="生成图片名称" /></label><p className="selection-summary">{summary}</p>{!graphicMode && <p className="selection-summary">已确认刀版图：{dielineImage?.name || '未确认'}。效果图会严格参考原图并遵循该结构。</p>}<div className="brand-agent-actions"><button className="secondary-button" disabled={busy} onClick={() => setStep(graphicMode ? 4 : 5)}>返回修改</button><button className="primary-button" disabled={busy || !editableBrandPrompt.trim() || (!graphicMode && (!dielineConfirmed || !dielineImage))} onClick={() => onGenerate(imageName, editableBrandPrompt, originalBrandPlan, { phase: graphicMode ? 'graphic-effect' : 'product-effect', sourceAsset: asset, dielineImage: graphicMode ? null : dielineImage, dielineConfirmed: graphicMode ? true : dielineConfirmed, dielineAssetId: graphicMode ? '' : dielineImage?.id || '' })}>{busy ? '正在生成效果图…' : '确认并生成效果图'}</button></div>{image && <div className="brand-result-preview"><button className="brand-generated-preview" onClick={() => onViewImage(image)}><img className="brand-generated-image" src={image.url} alt="品牌创作效果图，点击查看大图" /><small>点击放大查看</small></button><a className="secondary-button" href={`/api/v1/assets/${image.id}/download`} download={image.downloadName || image.name}><Download size={15} />下载原图</a></div>}{error && <p className="retouch-error" role="alert">{error}</p>}</section>}
       </div>
     </div></>}
   </div>
@@ -1037,12 +1064,19 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       return plan
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
-  async function generateBrandImage(requestedName = '', editablePrompt = brandPlan, originalPlan = brandPlan) {
+  async function generateBrandImage(requestedName = '', editablePrompt = brandPlan, originalPlan = brandPlan, options = {}) {
     setBrandBusy(true); setBrandError('')
     try {
       const finalPrompt = String(editablePrompt || '').trim()
       if (!finalPrompt) throw new Error('提示词不能为空')
-      const body = { workspace: 'brand', model: 'gpt-image-2', prompt: finalPrompt, count: 1, size: '1024x1024', title: '品牌创作', requestedName, promptSummary: finalPrompt.slice(0, 800), sourceAssetIds: selectedAsset ? [selectedAsset.id] : [], referenceAssetIds: selectedAsset ? [selectedAsset.id] : [], metadata: { originalPlan: String(originalPlan || '').slice(0, 12000), finalPrompt } }
+      const phase = options.phase || 'graphic-effect'
+      const sourceAsset = options.sourceAsset || selectedAsset
+      if (!sourceAsset) throw new Error('请先选择参考图')
+      if (phase === 'product-effect' && (!options.dielineConfirmed || !options.dielineImage?.id)) throw new Error('请先生成并确认刀版图')
+      const referenceAssets = [sourceAsset, options.dielineImage].filter(Boolean)
+      const images = await Promise.all(referenceAssets.map(imageAssetToDataUrl))
+      const strictReference = '【严格参考图硬约束】第一张参考图是唯一视觉基准，必须还原主体造型、主要构图、关键色彩、品牌/IP/书法/图形特征、装饰元素、氛围和材质观感；不得只做风格参考、不得替换主体、不得重新设计角色或品牌识别元素。'
+      const body = { workspace: 'brand', model: 'gpt-image-2', prompt: `${finalPrompt}\n\n${strictReference}`, images, count: 1, size: '1024x1024', title: phase === 'dieline' ? '文创刀版图' : '品牌创作效果图', requestedName, promptSummary: finalPrompt.slice(0, 800), sourceAssetIds: sourceAsset.id ? [sourceAsset.id] : [], referenceAssetIds: referenceAssets.map(asset => asset.id).filter(Boolean), metadata: { originalPlan: String(originalPlan || '').slice(0, 12000), finalPrompt, brandPhase: phase, strictReference: true, dielineConfirmed: Boolean(options.dielineConfirmed), dielineAssetId: options.dielineAssetId || options.dielineImage?.id || '' } }
       const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '品牌图片生成失败')
@@ -1050,6 +1084,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       if (!output?.url) throw new Error('模型结果未能完成资产归档')
       setBrandImage(output)
       setBrandAssets(current => [output, ...current.filter(asset => asset.id !== output.id)])
+      return output
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
   const generateScriptPlan = async () => {

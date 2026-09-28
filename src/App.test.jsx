@@ -195,6 +195,36 @@ describe('AI 创作工作台 Demo', () => {
     expect(localStorage.getItem('sanhua-custom-products')).toContain('香牌')
   })
 
+  it('产品效果图必须先生成并确认刀版图', async () => {
+    const onPlan = vi.fn()
+      .mockResolvedValueOnce('FINAL_DIELINE_PROMPT: 茶猫冰箱贴概念刀版示意')
+      .mockResolvedValueOnce('FINAL_IMAGE_PROMPT: 茶猫冰箱贴产品效果图')
+    const onGenerate = vi.fn().mockResolvedValue({ id: 'dieline-1', name: '茶猫冰箱贴-刀版图', url: 'data:image/png;base64,iVBORw0KGgo=' })
+    const asset = { id: 'tea-cat', name: '茶猫 IP 原图', url: 'data:image/png;base64,iVBORw0KGgo=' }
+    render(<BrandMerchWorkflow assets={[asset]} selectedAsset={asset} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={onPlan} onGenerate={onGenerate} onViewImage={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '选择做产品工作流' }))
+    fireEvent.click(screen.getByRole('button', { name: '冰箱贴' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步：选择材质' }))
+    fireEvent.click(screen.getByRole('button', { name: /亚克力：通透轻盈/ }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步：确认尺寸 →' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '文创产品尺寸' }), { target: { value: '90 × 90 mm' } })
+    fireEvent.click(screen.getByRole('button', { name: '下一步：选择素材 →' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成刀版图提示词 →' }))
+
+    await waitFor(() => expect(onPlan).toHaveBeenCalledWith(expect.stringContaining('流程阶段：产品刀版图')))
+    expect(screen.getByRole('textbox', { name: '文创刀版图提示词' })).toHaveValue('FINAL_DIELINE_PROMPT: 茶猫冰箱贴概念刀版示意')
+    fireEvent.click(screen.getByRole('button', { name: '生成刀版图' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.any(String), expect.objectContaining({ phase: 'dieline', sourceAsset: asset })))
+    expect(screen.getByRole('button', { name: '确认刀版图，生成效果图提示词 →' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '确认刀版图，生成效果图提示词 →' }))
+
+    await waitFor(() => expect(onPlan).toHaveBeenLastCalledWith(expect.stringContaining('刀版图状态：已生成并经用户确认')))
+    expect(screen.getByRole('button', { name: '确认并生成效果图' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: '确认并生成效果图' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), expect.any(String), expect.objectContaining({ phase: 'product-effect', dielineConfirmed: true, dielineAssetId: 'dieline-1' })))
+  })
+
   it('平面创作按素材、方向、输出、保留与画幅进入提示词步骤', async () => {
     const onPlan = vi.fn(async () => 'FINAL_IMAGE_PROMPT: 茶猫四季系列')
     const asset = { id: 'tea-cat', name: '茶猫 IP 原图', url: 'data:image/png;base64,iVBORw0KGgo=' }

@@ -42,6 +42,19 @@ describe('four-image batch generation', () => {
     expect((await response.json()).assets).toHaveLength(1)
   })
 
+  it('requires a reference image and a confirmed dieline before product effects', async () => {
+    const bucket = new MemoryBucket()
+    const missingReference = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', prompt: '冰箱贴效果图', count: 1, metadata: { brandPhase: 'product-effect', dielineConfirmed: true, dielineAssetId: 'dieline-1' } }) })
+    const referenceResponse = await onRequestPost({ request: missingReference, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
+    expect(referenceResponse.status).toBe(400)
+    expect(await referenceResponse.json()).toMatchObject({ error: 'REFERENCE_IMAGE_REQUIRED' })
+
+    const missingDieline = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', prompt: '冰箱贴效果图', count: 1, images: ['data:image/png;base64,iVBORw0KGgo='], metadata: { brandPhase: 'product-effect' } }) })
+    const dielineResponse = await onRequestPost({ request: missingDieline, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
+    expect(dielineResponse.status).toBe(409)
+    expect(await dielineResponse.json()).toMatchObject({ error: 'DIELINE_CONFIRMATION_REQUIRED' })
+  })
+
   it('rejects more than ten retouch images before calling the provider', async () => {
     const bucket = new MemoryBucket()
     const request = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', prompt: '批量精修', count: 11, images: Array.from({ length: 11 }, () => 'data:image/png;base64,iVBORw0KGgo=') }) })

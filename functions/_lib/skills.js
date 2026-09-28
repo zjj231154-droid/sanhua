@@ -4,8 +4,8 @@ const REGISTRY = {
     allowedTools: ['image.edit', 'image.analyze'], contentHash: '3F279055A1C727954EC51C4E6C4EB26EC4384F05CD2DB5253A32F8CF76DF37E8'
   },
   'chinese-cultural-merch-design': {
-    skillId: 'chinese-cultural-merch-design', displayName: '中式文创设计', workspace: 'brand', version: '3.1.0', status: 'enabled',
-    allowedTools: ['text.generate', 'image.generate', 'image.edit'], contentHash: 'B7D5F92CE9AD00D375AD8D43D7C6D16515F307CD28A1979E62E5602C28D39656'
+    skillId: 'chinese-cultural-merch-design', displayName: '中式文创设计', workspace: 'brand', version: '3.4.0', status: 'enabled',
+    allowedTools: ['text.generate', 'image.generate', 'image.edit'], contentHash: '1F44A6824F98AA3F226FDF8EFCFC95AC5DD5B6895A8B341F59984B7DE947AF4C'
   },
   'script-writer-demo': {
     skillId: 'short-drama-production', displayName: '短剧制作工作台', workspace: 'script', version: '1.0.0', status: 'enabled',
