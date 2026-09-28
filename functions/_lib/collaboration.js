@@ -207,7 +207,8 @@ export async function decryptSecret(context, encrypted) {
 export async function saveProviderConnection(context, userId, { provider, baseUrl, apiKey, reasoningModel, imageModel, verificationStatus = 'verified' }) {
   const encrypted = await encryptSecret(context, apiKey)
   if (!encrypted) return { error: json(503, { error: 'CONNECTION_ENCRYPTION_NOT_CONFIGURED', hint: '请配置 SANHUA_CONNECTION_ENCRYPTION_KEY 后再保存个人密钥。' }) }
-  const record = { userId, provider: text(provider) || 'usegoodai', baseUrl, reasoningModel: text(reasoningModel).slice(0, 160), imageModel: text(imageModel).slice(0, 160), encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, createdAt: now(), updatedAt: now() }
+  const checkedAt = now()
+  const record = { userId, provider: text(provider) || 'usegoodai', baseUrl, reasoningModel: text(reasoningModel).slice(0, 160), imageModel: text(imageModel).slice(0, 160), encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, healthStatus: verificationStatus === 'verified' ? 'online' : 'unknown', lastCheckedAt: checkedAt, createdAt: checkedAt, updatedAt: checkedAt }
   await putJson(collaborationBucket(context), connectionKey(userId), record)
   return { record }
 }
@@ -223,7 +224,8 @@ export async function resolvedProviderConnection(context, userId) {
 export async function saveVideoProviderConnection(context, userId, { provider, baseUrl, apiKey, model, verificationStatus = 'verified' }) {
   const encrypted = await encryptSecret(context, apiKey)
   if (!encrypted) return { error: json(503, { error: 'CONNECTION_ENCRYPTION_NOT_CONFIGURED', hint: '请配置 SANHUA_CONNECTION_ENCRYPTION_KEY 后再保存个人密钥。' }) }
-  const record = { userId, provider: text(provider) || 'tokenspace', baseUrl, model: text(model).slice(0, 160), encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, createdAt: now(), updatedAt: now() }
+  const checkedAt = now()
+  const record = { userId, provider: text(provider) || 'tokenspace', baseUrl, model: text(model).slice(0, 160), encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, healthStatus: verificationStatus === 'verified' ? 'online' : 'unknown', lastCheckedAt: checkedAt, createdAt: checkedAt, updatedAt: checkedAt }
   await putJson(collaborationBucket(context), videoConnectionKey(userId), record)
   return { record }
 }

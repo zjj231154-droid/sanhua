@@ -172,6 +172,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .workspace-members { max-width: 760px; margin-top: 36px; padding-top: 24px; border-top: 1px solid rgba(154,128,102,.26); }
 .account-settings { max-width: 640px; margin: 18px 0 38px; padding: 22px; border: 1px solid rgba(154,128,102,.28); border-radius: 18px; background: rgba(255,255,255,.04); }
 .key-settings-section { max-width: 640px; margin: 28px 0; padding-top: 24px; border-top: 1px solid rgba(154,128,102,.26); }
+.connection-signal { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-weight: 700; white-space: nowrap; }
+.connection-signal i { width: 9px; height: 9px; border-radius: 50%; background: #9d9388; box-shadow: 0 0 0 3px rgba(157,147,136,.14); }
+.connection-signal.is-online { color: #2f9d59; }
+.connection-signal.is-online i { background: #36b968; box-shadow: 0 0 0 3px rgba(54,185,104,.18), 0 0 10px rgba(54,185,104,.58); }
+.connection-signal.is-offline { color: #ca5148; }
+.connection-signal.is-offline i { background: #e0524a; box-shadow: 0 0 0 3px rgba(224,82,74,.16), 0 0 10px rgba(224,82,74,.5); }
 .account-settings form { margin-top: 18px; }
 .account-settings h3 { margin: 26px 0 0; font-size: 15px; }
 .account-avatar { display: flex; align-items: center; gap: 14px; margin: 16px 0 8px; }

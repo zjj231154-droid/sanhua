@@ -1,10 +1,39 @@
 import { getJson, putJson } from '../../../_lib/asset-store.js'
-import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
+import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, decryptSecret, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
 import { json } from '../../../_lib/tokenspace.js'
 
 const body = async request => { try { return await request.json() } catch { return {} } }
 const route = request => new URL(request.url).pathname
 const safeWorkspaceName = value => String(value || '').trim().slice(0, 100)
+const publicConnection = (record, kind = 'model') => record ? {
+  provider: record.provider,
+  baseUrl: record.baseUrl,
+  ...(kind === 'model' ? { reasoningModel: record.reasoningModel || '', imageModel: record.imageModel || '' } : { model: record.model || '' }),
+  apiKeyLast4: record.apiKeyLast4,
+  verificationStatus: record.verificationStatus,
+  healthStatus: record.healthStatus || (record.verificationStatus === 'verified' ? 'unknown' : 'offline'),
+  lastCheckedAt: record.lastCheckedAt || null,
+  updatedAt: record.updatedAt,
+} : null
+
+async function probeConnection(baseUrl, apiKey) {
+  try {
+    const response = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10000) })
+    return response.ok ? { ok: true } : { ok: false, error: `HTTP_${response.status}` }
+  } catch (error) { return { ok: false, error: error?.name === 'TimeoutError' ? 'TIMEOUT' : 'UNREACHABLE' } }
+}
+
+async function refreshConnectionHealth(context, identity, type) {
+  const key = type === 'video' ? collaborationPaths.videoConnectionKey(identity.user.id) : collaborationPaths.connectionKey(identity.user.id)
+  const record = await getJson(identity.bucket, key)
+  if (!record) return { record: null, probe: null }
+  const apiKey = await decryptSecret(context, record.encrypted)
+  const probe = apiKey ? await probeConnection(record.baseUrl, apiKey) : { ok: false, error: 'KEY_UNAVAILABLE' }
+  const checkedAt = new Date().toISOString()
+  const next = { ...record, healthStatus: probe.ok ? 'online' : 'offline', verificationStatus: probe.ok ? 'verified' : 'unhealthy', lastCheckedAt: checkedAt, lastHealthError: probe.ok ? null : probe.error, updatedAt: record.updatedAt }
+  await putJson(identity.bucket, key, next)
+  return { record: next, probe }
+}
 
 async function sessionPayload(context, identity = null) {
   const current = identity || await currentIdentity(context)
@@ -19,15 +48,25 @@ export async function onRequestGet(context) {
     const payload = await sessionPayload(context)
     return payload.error || json(200, payload)
   }
+  if (pathname === '/api/v1/me/provider-connection/status') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const { record, probe } = await refreshConnectionHealth(context, identity, 'model')
+    return json(record && probe?.ok ? 200 : 503, { connection: publicConnection(record), healthy: Boolean(probe?.ok), error: probe?.ok ? null : probe?.error || 'NOT_CONFIGURED' })
+  }
+  if (pathname === '/api/v1/me/video-provider-connection/status') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const { record, probe } = await refreshConnectionHealth(context, identity, 'video')
+    return json(record && probe?.ok ? 200 : 503, { connection: publicConnection(record, 'video'), healthy: Boolean(probe?.ok), error: probe?.ok ? null : probe?.error || 'NOT_CONFIGURED' })
+  }
   if (pathname === '/api/v1/me/provider-connection') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const record = await getJson(identity.bucket, collaborationPaths.connectionKey(identity.user.id))
-    return json(200, { connection: record ? { provider: record.provider, baseUrl: record.baseUrl, reasoningModel: record.reasoningModel || '', imageModel: record.imageModel || '', apiKeyLast4: record.apiKeyLast4, verificationStatus: record.verificationStatus, updatedAt: record.updatedAt } : null })
+    return json(200, { connection: publicConnection(record) })
   }
   if (pathname === '/api/v1/me/video-provider-connection') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const record = await getJson(identity.bucket, collaborationPaths.videoConnectionKey(identity.user.id))
-    return json(200, { connection: record ? { provider: record.provider, baseUrl: record.baseUrl, model: record.model, apiKeyLast4: record.apiKeyLast4, verificationStatus: record.verificationStatus, updatedAt: record.updatedAt } : null })
+    return json(200, { connection: publicConnection(record, 'video') })
   }
   if (pathname === '/api/v1/me/avatar') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
@@ -120,38 +159,30 @@ export async function onRequestPost(context) {
     await putJson(identity.bucket, memberKey(invite.workspaceId, identity.user.id), member)
     return json(200, { workspace: publicWorkspace(await getJson(identity.bucket, workspaceKey(invite.workspaceId)), member) })
   }
-  if (pathname === '/api/v1/me/provider-connection/verify' || pathname === '/api/v1/me/provider-connection') {
+  if (pathname === '/api/v1/me/provider-connection/verify') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const baseUrl = validProviderBaseUrl(input.baseUrl)
     const apiKey = String(input.apiKey || '').trim()
     if (!baseUrl || apiKey.length < 8) return json(400, { error: 'INVALID_PROVIDER_CONNECTION', hint: '仅允许 HTTPS 公网地址和有效的 API Key。' })
-    if (pathname.endsWith('/verify')) {
-      try {
-        const response = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10000) })
-        if (!response.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', status: response.status })
-      } catch { return json(400, { error: 'PROVIDER_VERIFICATION_FAILED' }) }
-    }
+    const probe = await probeConnection(baseUrl, apiKey)
+    if (!probe.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', reason: probe.error, hint: '无法连接服务商或 API Key 无效，请检查服务地址与密钥。' })
     const reasoningModel = String(input.reasoningModel || '').trim().slice(0, 160)
     const imageModel = String(input.imageModel || '').trim().slice(0, 160)
     const saved = await saveProviderConnection(context, identity.user.id, { provider: input.provider || 'usegoodai', baseUrl, apiKey, reasoningModel, imageModel, verificationStatus: 'verified' })
     if (saved.error) return saved.error
-    return json(200, { connection: { provider: saved.record.provider, baseUrl: saved.record.baseUrl, reasoningModel: saved.record.reasoningModel, imageModel: saved.record.imageModel, apiKeyLast4: saved.record.apiKeyLast4, verificationStatus: saved.record.verificationStatus, updatedAt: saved.record.updatedAt } })
+    return json(200, { connection: publicConnection(saved.record) })
   }
-  if (pathname === '/api/v1/me/video-provider-connection/verify' || pathname === '/api/v1/me/video-provider-connection') {
+  if (pathname === '/api/v1/me/video-provider-connection/verify') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const baseUrl = validProviderBaseUrl(input.baseUrl)
     const apiKey = String(input.apiKey || '').trim()
     const model = String(input.model || '').trim().slice(0, 160)
     if (!baseUrl || apiKey.length < 8 || !model) return json(400, { error: 'INVALID_VIDEO_PROVIDER_CONNECTION', hint: '请填写 HTTPS 服务地址、视频模型 ID 和有效的 API Key。' })
-    if (pathname.endsWith('/verify')) {
-      try {
-        const response = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10000) })
-        if (!response.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', status: response.status })
-      } catch { return json(400, { error: 'PROVIDER_VERIFICATION_FAILED' }) }
-    }
+    const probe = await probeConnection(baseUrl, apiKey)
+    if (!probe.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', reason: probe.error, hint: '无法连接服务商或 API Key 无效，请检查服务地址与密钥。' })
     const saved = await saveVideoProviderConnection(context, identity.user.id, { provider: input.provider || 'tokenspace', baseUrl, apiKey, model, verificationStatus: 'verified' })
     if (saved.error) return saved.error
-    return json(200, { connection: { provider: saved.record.provider, baseUrl: saved.record.baseUrl, model: saved.record.model, apiKeyLast4: saved.record.apiKeyLast4, verificationStatus: saved.record.verificationStatus, updatedAt: saved.record.updatedAt } })
+    return json(200, { connection: publicConnection(saved.record, 'video') })
   }
   return json(404, { error: 'NOT_FOUND' })
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { onRequestGet, onRequestPatch, onRequestPost } from './[[path]].js'
 import { onRequestGet as listAssets } from '../assets.js'
 import { putJson } from '../../../_lib/asset-store.js'
@@ -15,6 +15,7 @@ const bucket = () => {
 const request = (path, method = 'GET', body, cookie) => new Request(`https://example.test${path}`, { method, headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined })
 
 describe('workspace collaboration boundaries', () => {
+  afterEach(() => vi.unstubAllGlobals())
   it('creates server sessions, scopes assets, and prevents a second workspace from listing them', async () => {
     const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
     const first = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'a@example.com', password: 'secure-password-1', workspaceName: '甲工作台' }) })
@@ -33,11 +34,25 @@ describe('workspace collaboration boundaries', () => {
     const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
     const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'key@example.com', password: 'secure-password-3' }) })
     const cookie = account.headers.get('set-cookie').split(';')[0]
-    const response = await onRequestPost({ env, request: request('/api/v1/me/provider-connection', 'POST', { provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: 'sk-secret-never-return' }, cookie) })
+    const upstream = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: 'gpt-5.5' }] }), { status: 200 }))
+    vi.stubGlobal('fetch', upstream)
+    const response = await onRequestPost({ env, request: request('/api/v1/me/provider-connection/verify', 'POST', { provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: 'sk-secret-never-return' }, cookie) })
     const value = await response.json()
-    expect(response.status).toBe(200); expect(JSON.stringify(value)).not.toContain('sk-secret-never-return'); expect(value.connection.apiKeyLast4).toBe('turn')
+    expect(response.status).toBe(200); expect(upstream).toHaveBeenCalledWith('https://api.usegoodai.com/v1/models', expect.objectContaining({ headers: { Authorization: 'Bearer sk-secret-never-return' } })); expect(JSON.stringify(value)).not.toContain('sk-secret-never-return'); expect(value.connection.apiKeyLast4).toBe('turn'); expect(value.connection.healthStatus).toBe('online')
     const listed = await onRequestGet({ env, request: request('/api/v1/me/provider-connection', 'GET', null, cookie) })
     expect(JSON.stringify(await listed.json())).not.toContain('sk-secret-never-return')
+  })
+
+  it('rechecks an encrypted connection and records an offline state when the provider becomes unreachable', async () => {
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
+    const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'health@example.com', password: 'secure-password-6' }) })
+    const cookie = account.headers.get('set-cookie').split(';')[0]
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
+    await onRequestPost({ env, request: request('/api/v1/me/provider-connection/verify', 'POST', { provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: 'sk-health-secret' }, cookie) })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network unavailable') }))
+    const health = await onRequestGet({ env, request: request('/api/v1/me/provider-connection/status', 'GET', null, cookie) })
+    const value = await health.json()
+    expect(health.status).toBe(503); expect(value.healthy).toBe(false); expect(value.connection.healthStatus).toBe('offline'); expect(value.connection.verificationStatus).toBe('unhealthy'); expect(JSON.stringify(value)).not.toContain('sk-health-secret')
   })
 
   it('lets only the signed-in user update profile and password after current-password verification', async () => {
