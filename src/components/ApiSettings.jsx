@@ -3,8 +3,12 @@ import { useEffect, useState } from 'react'
 export default function ApiSettings({ session, onSessionChange }) {
   const [connection, setConnection] = useState(null)
   const [form, setForm] = useState({ provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: '' })
+  const [videoConnection, setVideoConnection] = useState(null)
+  const [videoForm, setVideoForm] = useState({ provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', model: 'doubao-seedance-2-0-260128', apiKey: '' })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [videoMessage, setVideoMessage] = useState('')
+  const [videoBusy, setVideoBusy] = useState(false)
   const [members, setMembers] = useState([])
   const [invite, setInvite] = useState({ email: '', role: 'editor' })
   const [memberMessage, setMemberMessage] = useState('')
@@ -13,9 +17,10 @@ export default function ApiSettings({ session, onSessionChange }) {
   const [profileMessage, setProfileMessage] = useState('')
   const [profileBusy, setProfileBusy] = useState(false)
   const load = async () => {
-    const response = await fetch('/api/v1/me/provider-connection')
-    const value = await response.json().catch(() => ({}))
+    const [response, videoResponse] = await Promise.all([fetch('/api/v1/me/provider-connection'), fetch('/api/v1/me/video-provider-connection')])
+    const [value, videoValue] = await Promise.all([response.json().catch(() => ({})), videoResponse.json().catch(() => ({}))])
     if (response.ok) { setConnection(value.connection); if (value.connection) setForm(current => ({ ...current, provider: value.connection.provider, baseUrl: value.connection.baseUrl })) }
+    if (videoResponse.ok) { setVideoConnection(videoValue.connection); if (videoValue.connection) setVideoForm(current => ({ ...current, provider: videoValue.connection.provider, baseUrl: videoValue.connection.baseUrl, model: videoValue.connection.model })) }
   }
   useEffect(() => { load().catch(() => setMessage('无法读取个人模型连接。')) }, [])
   useEffect(() => { setProfile({ name: session?.user?.name || '', email: session?.user?.email || '' }) }, [session?.user?.name, session?.user?.email])
@@ -26,6 +31,7 @@ export default function ApiSettings({ session, onSessionChange }) {
   }
   useEffect(() => { loadMembers().catch(() => setMemberMessage('无法读取协作者。')) }, [session?.workspace?.id])
   const update = key => event => setForm(current => ({ ...current, [key]: event.target.value }))
+  const updateVideo = key => event => setVideoForm(current => ({ ...current, [key]: event.target.value }))
   const save = async () => {
     setBusy(true); setMessage('')
     try {
@@ -39,6 +45,20 @@ export default function ApiSettings({ session, onSessionChange }) {
     if (!window.confirm('确定删除已保存的个人模型密钥吗？这不会影响其他成员。')) return
     setBusy(true); setMessage('')
     try { const response = await fetch('/api/v1/me/provider-connection', { method: 'DELETE' }); if (!response.ok) throw new Error('删除失败'); setConnection(null); setForm(current => ({ ...current, apiKey: '' })); setMessage('个人模型连接已删除。') } catch (error) { setMessage(error.message) } finally { setBusy(false) }
+  }
+  const saveVideo = async () => {
+    setVideoBusy(true); setVideoMessage('')
+    try {
+      const response = await fetch('/api/v1/me/video-provider-connection/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(videoForm) })
+      const value = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(value.hint || value.error || '保存失败')
+      setVideoConnection(value.connection); setVideoForm(current => ({ ...current, apiKey: '' })); setVideoMessage('视频模型连接已验证并加密保存。短剧视频任务将使用此连接。')
+    } catch (error) { setVideoMessage(error.message) } finally { setVideoBusy(false) }
+  }
+  const removeVideo = async () => {
+    if (!window.confirm('确定删除已保存的视频模型密钥吗？这不会影响图片和文本模型连接。')) return
+    setVideoBusy(true); setVideoMessage('')
+    try { const response = await fetch('/api/v1/me/video-provider-connection', { method: 'DELETE' }); if (!response.ok) throw new Error('删除失败'); setVideoConnection(null); setVideoForm(current => ({ ...current, apiKey: '' })); setVideoMessage('视频模型连接已删除。') } catch (error) { setVideoMessage(error.message) } finally { setVideoBusy(false) }
   }
   const sendInvite = async event => {
     event.preventDefault(); setMemberMessage('')
@@ -92,6 +112,17 @@ export default function ApiSettings({ session, onSessionChange }) {
       <p>验证会向你填写的 HTTPS 公网服务发起一次低成本的模型列表请求。内网、localhost 和非 HTTPS 地址会被拒绝，避免服务端请求伪造风险。</p>
       <div><button className="primary-button" type="submit">{busy ? '正在验证…' : '验证并保存'}</button>{connection && <button className="secondary-button" type="button" onClick={remove}>删除个人连接</button>}</div>
     </fieldset></form><p role="status">{message}</p>
+    <section className="video-provider-settings"><span className="kicker">SHORT DRAMA VIDEO</span><h2>短剧视频模型连接</h2><p>独立保存 TokenSpace 视频密钥，不会覆盖图片或文本模型。当前默认模型为 Doubao Seedance 2.0，单条视频支持 4–15 秒。</p>
+      <form onSubmit={event => { event.preventDefault(); saveVideo() }}><fieldset disabled={videoBusy}>
+        <label>服务商<input value={videoForm.provider} onChange={updateVideo('provider')} maxLength={40} /></label>
+        <label>HTTPS 服务地址<input type="url" value={videoForm.baseUrl} onChange={updateVideo('baseUrl')} placeholder="https://tokenspace.io/v1" required /></label>
+        <label>视频模型 ID<input value={videoForm.model} onChange={updateVideo('model')} maxLength={160} required /></label>
+        <label>视频 API Key<input type="password" value={videoForm.apiKey} onChange={updateVideo('apiKey')} autoComplete="new-password" placeholder={videoConnection ? `已保存（末尾 ${videoConnection.apiKeyLast4}）；输入新密钥才会覆盖` : '输入 TokenSpace 视频 API Key'} required={!videoConnection} /></label>
+        {videoConnection && <p className="api-cloud-notice">当前视频连接：{videoConnection.provider} · {videoConnection.model} · 末尾 {videoConnection.apiKeyLast4} · {videoConnection.verificationStatus === 'verified' ? '已验证' : '待验证'}</p>}
+        <p>验证仅请求模型列表；密钥只在提交时经 HTTPS 发送并由服务端加密保存。生成任务会按模型视频秒数计费。</p>
+        <div><button className="primary-button" type="submit">{videoBusy ? '正在验证…' : '验证并保存视频连接'}</button>{videoConnection && <button className="secondary-button" type="button" onClick={removeVideo}>删除视频连接</button>}</div>
+      </fieldset></form><p role="status">{videoMessage}</p>
+    </section>
     {session?.workspace && <section className="workspace-members"><span className="kicker">WORKSPACE ACCESS</span><h2>工作空间成员</h2><p>当前工作空间：{session.workspace.name} · 你的角色：{session.workspace.role}</p>
       {session.workspace.permissions?.includes('manage') ? <><form className="workspace-invite" onSubmit={sendInvite}><input type="email" value={invite.email} onChange={event => setInvite(current => ({ ...current, email: event.target.value }))} placeholder="协作者邮箱" required /><select value={invite.role} onChange={event => setInvite(current => ({ ...current, role: event.target.value }))}><option value="admin">管理员</option><option value="editor">编辑者</option><option value="viewer">查看者</option></select><button className="secondary-button" type="submit">创建邀请</button></form><div className="member-list">{members.map(member => <div className="member-row" key={member.userId}><span><strong>{member.user?.name || member.userId}</strong><small>{member.user?.email || '未提供邮箱'} · {member.status}</small></span>{member.role === 'owner' ? <em>所有者</em> : <><select value={member.role} aria-label={`变更 ${member.user?.name || member.userId} 的角色`} onChange={event => updateMember(member, { role: event.target.value })}><option value="admin">管理员</option><option value="editor">编辑者</option><option value="viewer">查看者</option></select><button className="text-button" type="button" onClick={() => updateMember(member, { status: 'revoked' })}>移除</button></>}</div>)}</div></> : <p>你可以查看当前权限；只有所有者和管理员可以邀请成员或调整访问权。</p>}
       <p role="status">{memberMessage}</p>

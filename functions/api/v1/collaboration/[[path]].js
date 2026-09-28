@@ -1,5 +1,5 @@
 import { getJson, putJson } from '../../../_lib/asset-store.js'
-import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveProviderConnection, saveUserAvatar, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
+import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
 import { json } from '../../../_lib/tokenspace.js'
 
 const body = async request => { try { return await request.json() } catch { return {} } }
@@ -23,6 +23,11 @@ export async function onRequestGet(context) {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const record = await getJson(identity.bucket, collaborationPaths.connectionKey(identity.user.id))
     return json(200, { connection: record ? { provider: record.provider, baseUrl: record.baseUrl, apiKeyLast4: record.apiKeyLast4, verificationStatus: record.verificationStatus, updatedAt: record.updatedAt } : null })
+  }
+  if (pathname === '/api/v1/me/video-provider-connection') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const record = await getJson(identity.bucket, collaborationPaths.videoConnectionKey(identity.user.id))
+    return json(200, { connection: record ? { provider: record.provider, baseUrl: record.baseUrl, model: record.model, apiKeyLast4: record.apiKeyLast4, verificationStatus: record.verificationStatus, updatedAt: record.updatedAt } : null })
   }
   if (pathname === '/api/v1/me/avatar') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
@@ -130,6 +135,22 @@ export async function onRequestPost(context) {
     if (saved.error) return saved.error
     return json(200, { connection: { provider: saved.record.provider, baseUrl: saved.record.baseUrl, apiKeyLast4: saved.record.apiKeyLast4, verificationStatus: saved.record.verificationStatus, updatedAt: saved.record.updatedAt } })
   }
+  if (pathname === '/api/v1/me/video-provider-connection/verify' || pathname === '/api/v1/me/video-provider-connection') {
+    const identity = await requireIdentity(context); if (identity.error) return identity.error
+    const baseUrl = validProviderBaseUrl(input.baseUrl)
+    const apiKey = String(input.apiKey || '').trim()
+    const model = String(input.model || '').trim().slice(0, 160)
+    if (!baseUrl || apiKey.length < 8 || !model) return json(400, { error: 'INVALID_VIDEO_PROVIDER_CONNECTION', hint: '请填写 HTTPS 服务地址、视频模型 ID 和有效的 API Key。' })
+    if (pathname.endsWith('/verify')) {
+      try {
+        const response = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10000) })
+        if (!response.ok) return json(400, { error: 'PROVIDER_VERIFICATION_FAILED', status: response.status })
+      } catch { return json(400, { error: 'PROVIDER_VERIFICATION_FAILED' }) }
+    }
+    const saved = await saveVideoProviderConnection(context, identity.user.id, { provider: input.provider || 'tokenspace', baseUrl, apiKey, model, verificationStatus: 'verified' })
+    if (saved.error) return saved.error
+    return json(200, { connection: { provider: saved.record.provider, baseUrl: saved.record.baseUrl, model: saved.record.model, apiKeyLast4: saved.record.apiKeyLast4, verificationStatus: saved.record.verificationStatus, updatedAt: saved.record.updatedAt } })
+  }
   return json(404, { error: 'NOT_FOUND' })
 }
 
@@ -153,8 +174,9 @@ export async function onRequestPatch(context) {
 }
 
 export async function onRequestDelete(context) {
-  if (route(context.request) !== '/api/v1/me/provider-connection') return json(404, { error: 'NOT_FOUND' })
+  const pathname = route(context.request)
+  if (!['/api/v1/me/provider-connection', '/api/v1/me/video-provider-connection'].includes(pathname)) return json(404, { error: 'NOT_FOUND' })
   const identity = await requireIdentity(context); if (identity.error) return identity.error
-  await identity.bucket.delete(collaborationPaths.connectionKey(identity.user.id))
+  await identity.bucket.delete(pathname === '/api/v1/me/video-provider-connection' ? collaborationPaths.videoConnectionKey(identity.user.id) : collaborationPaths.connectionKey(identity.user.id))
   return json(204, {})
 }

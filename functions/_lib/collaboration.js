@@ -18,6 +18,7 @@ export const workspaceKey = id => `metadata/collaboration/workspaces/${id}.json`
 export const memberKey = (workspaceId, userId) => `metadata/collaboration/members/${workspaceId}/${userId}.json`
 const sessionKey = hash => `metadata/collaboration/sessions/${hash}.json`
 const connectionKey = id => `metadata/collaboration/connections/${id}.json`
+const videoConnectionKey = id => `metadata/collaboration/video-connections/${id}.json`
 const avatarKey = (id, extension) => `metadata/collaboration/avatars/${id}.${extension}`
 const inviteKey = tokenHash => `metadata/collaboration/invites/${tokenHash}.json`
 
@@ -219,9 +220,25 @@ export async function resolvedProviderConnection(context, userId) {
   return apiKey ? { name: record.provider, baseUrl: record.baseUrl, apiKey } : null
 }
 
+export async function saveVideoProviderConnection(context, userId, { provider, baseUrl, apiKey, model, verificationStatus = 'verified' }) {
+  const encrypted = await encryptSecret(context, apiKey)
+  if (!encrypted) return { error: json(503, { error: 'CONNECTION_ENCRYPTION_NOT_CONFIGURED', hint: '请配置 SANHUA_CONNECTION_ENCRYPTION_KEY 后再保存个人密钥。' }) }
+  const record = { userId, provider: text(provider) || 'tokenspace', baseUrl, model: text(model).slice(0, 160), encrypted, apiKeyLast4: apiKey.slice(-4), verificationStatus, createdAt: now(), updatedAt: now() }
+  await putJson(collaborationBucket(context), videoConnectionKey(userId), record)
+  return { record }
+}
+
+export async function videoProviderConnection(context, userId) { return getJson(collaborationBucket(context), videoConnectionKey(userId)) }
+export async function resolvedVideoProviderConnection(context, userId) {
+  const record = await videoProviderConnection(context, userId)
+  if (!record || record.verificationStatus !== 'verified' || !record.model) return null
+  const apiKey = await decryptSecret(context, record.encrypted)
+  return apiKey ? { name: record.provider, baseUrl: record.baseUrl, model: record.model, apiKey } : null
+}
+
 export function withCookie(response, cookie) {
   const headers = new Headers(response.headers); headers.set('set-cookie', cookie)
   return new Response(response.body, { status: response.status, headers })
 }
 
-export const collaborationPaths = { connectionKey, inviteKey }
+export const collaborationPaths = { connectionKey, videoConnectionKey, inviteKey }
