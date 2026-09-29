@@ -10,6 +10,16 @@ export const providerFrom = (context, preferred) => {
   return preferred === 'tokenspace' ? tokenSpace : preferred === 'usegoodai-reasoning' ? useGoodReasoning : preferred === 'usegoodai' ? useGood : useGoodKey ? useGood : tokenSpace
 }
 export const apiKeyFrom = context => providerFrom(context).apiKey
+const providerFailure = (text, status) => {
+  let value
+  try { value = JSON.parse(text) } catch { value = null }
+  const error = value?.error
+  const code = String(error?.code || error?.type || value?.code || '').replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 80)
+  const requestId = String(value?.request_id || value?.requestId || error?.request_id || '').replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 120)
+  const message = String(error?.message || value?.message || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 240)
+  const detail = [code && `代码 ${code}`, message].filter(Boolean).join('：')
+  return { status, code: code || null, requestId: requestId || null, hint: `上游服务返回 HTTP ${status}${detail ? `（${detail}）` : ''}。请检查模型权限、余额和请求参数。` }
+}
 export async function tokenSpaceRequest(context, endpoint, { model, payload, form, provider: preferred, useVideoConnection = false, useImageConnection = false } = {}) {
   const identity = await requireIdentity(context, 'use')
   if (identity.error) return { response: identity.error }
@@ -27,7 +37,11 @@ export async function tokenSpaceRequest(context, endpoint, { model, payload, for
       signal: AbortSignal.timeout(1800000),
     })
     const text = await response.text()
-    if (!response.ok) { console.error({ provider: provider.name, status: response.status }); return { response: json(response.status, { provider: provider.name, status: response.status, error: 'PROVIDER_REQUEST_FAILED' }) } }
+    if (!response.ok) {
+      const failure = providerFailure(text, response.status)
+      console.error({ provider: provider.name, status: response.status, code: failure.code, requestId: failure.requestId })
+      return { response: json(response.status, { provider: provider.name, status: response.status, error: 'PROVIDER_REQUEST_FAILED', hint: failure.hint, providerCode: failure.code, providerRequestId: failure.requestId }) }
+    }
     try { return { data: JSON.parse(text) } } catch { return { response: json(502, { provider: provider.name, status: 502, error: 'Provider returned invalid JSON' }) } }
   } catch (error) { console.error({ provider: provider.name, status: 502, response: error.message }); return { response: json(502, { provider: provider.name, status: 502, error: error.cause?.code || error.message }) } }
 }

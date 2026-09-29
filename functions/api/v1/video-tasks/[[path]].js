@@ -54,7 +54,9 @@ export async function onRequestPost(context) {
     model: checked.provider.model,
     provider: 'tokenspace',
     useVideoConnection: true,
-    payload: { model: checked.provider.model, prompt: checked.videoPrompt || checked.shotPlan, duration: checked.durationSeconds, ratio: checked.aspectRatio, resolution: checked.resolution, generate_audio: false },
+    // OpenAI-compatible video routes use `size` for output resolution. Do not send
+    // provider-specific audio flags when no audio generation was requested.
+    payload: { model: checked.provider.model, prompt: checked.videoPrompt || checked.shotPlan, duration: checked.durationSeconds, ratio: checked.aspectRatio, size: checked.resolution },
   })
   if (submitted.response) return submitted.response
   const providerTaskId = String(submitted.data?.id || submitted.data?.data?.id || '').slice(0, 160) || null
