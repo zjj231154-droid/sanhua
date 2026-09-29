@@ -1640,19 +1640,25 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 
 .script-workspace { position: relative; background-image: linear-gradient(rgba(45,28,21,.84), rgba(45,28,21,.9)), url('/assets/script-teahouse-cases-v1.png'); background-size: cover; background-position: center; }
 .script-asset-units { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 22px; }
-.script-asset-unit { min-width: 0; min-height: 92px; padding: 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: start; gap: 9px 10px; border: 1px solid rgba(245,224,197,.18); border-radius: 14px; color: #f5e8d7; background: rgba(24,14,11,.48); text-align: left; cursor: pointer; box-shadow: inset 0 1px rgba(255,245,232,.04); transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease; }
+.script-asset-unit-wrap { position: relative; min-width: 0; }
+.script-asset-unit { width: 100%; min-width: 0; min-height: 108px; padding: 14px 14px 42px; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: start; gap: 9px 10px; border: 1px solid rgba(245,224,197,.18); border-radius: 14px; color: #f5e8d7; background: rgba(24,14,11,.48); text-align: left; cursor: pointer; box-shadow: inset 0 1px rgba(255,245,232,.04); transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease; }
 .script-asset-unit > svg { color: #e0b77e; }
 .script-asset-unit > span:nth-child(2) { min-width: 0; display: grid; gap: 5px; }
 .script-asset-unit strong, .script-asset-unit small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .script-asset-unit strong { font-size: 15px; }
 .script-asset-unit small { color: #cdb79e; font-size: 11px; }
 .script-asset-unit-action { grid-column: 2; justify-self: start; padding: 4px 8px; border-radius: 999px; color: #e3c28f; background: rgba(225,189,134,.14); font-size: 10px; font-weight: 700; }
+.script-asset-upload { position: absolute; right: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 4px; min-height: 25px; padding: 4px 8px; border: 1px solid rgba(225,189,134,.35); border-radius: 999px; color: #e3c28f; background: rgba(44,33,27,.88); cursor: pointer; font-size: 10px; font-weight: 700; }
+.script-asset-upload:hover { border-color: #ddb477; background: rgba(82,44,30,.9); }
+.script-asset-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 .script-asset-unit:hover, .script-asset-unit.is-selected { border-color: #ddb477; background: rgba(82,44,30,.72); box-shadow: 0 0 0 2px rgba(225,189,134,.13), inset 0 1px rgba(255,245,232,.07); transform: translateY(-1px); }
 .script-workspace-grid { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(260px,.95fr); gap: 14px; }
 .script-input-panel { min-width: 0; display: grid; align-content: start; gap: 10px; }
 .script-input-panel label { display: grid; gap: 7px; color: #f4e5d3; font-size: 12px; font-weight: 700; }
 .script-input-panel textarea { min-height: 132px; color: inherit; background: rgba(20,13,10,.62); line-height: 1.65; }
 .script-input-panel > small { color: #d8c1aa; font-size: 11px; }
+.script-outline-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.script-outline-actions .disabled-reason { display: inline-flex; }
 .script-inspiration { display: flex; flex-wrap: wrap; gap: 7px; }
 .script-inspiration .secondary-button { min-height: 30px; padding: 5px 9px; font-size: 10px; }
 .script-preview-canvas { min-height: 310px; padding: 14px; display: grid; align-content: start; gap: 10px; border: 1px solid rgba(235,210,177,.22); border-radius: 14px; background: rgba(30,19,15,.66); box-shadow: inset 0 1px rgba(255,255,255,.08); }
@@ -1910,6 +1916,7 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .script-asset-unit > svg { color: var(--color-brand-primary); }
 .app-shell.time-day .script-asset-unit small { color: var(--color-text-muted); }
 .app-shell.time-day .script-asset-unit-action { color: var(--color-brand-primary); background: rgba(139,58,58,.09); }
+.app-shell.time-day .script-asset-upload { border-color: var(--color-border-subtle); color: var(--color-brand-primary); background: var(--color-surface); }
 .app-shell.time-day .script-asset-unit:hover, .app-shell.time-day .script-asset-unit.is-selected { border-color: var(--color-brand-primary); background: #fbf5f3; box-shadow: 0 0 0 2px rgba(139,58,58,.1); }
 .app-shell.time-day .script-workspace-grid { grid-template-columns: minmax(320px, .35fr) minmax(620px, .65fr); gap: 24px; align-items: stretch; }
 .app-shell.time-day .script-input-panel { gap: 12px; }

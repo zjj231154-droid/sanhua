@@ -131,6 +131,16 @@ describe('AI 创作工作台 Demo', () => {
     expect(toolbar.queryByRole('button', { name: '文本' })).not.toBeInTheDocument()
   })
 
+  it('资产库不再提供音频分类，图片需要双击才打开缩放查看器', () => {
+    render(<App initialAuthenticated initialPage="assets" />)
+
+    expect(screen.queryByRole('button', { name: '音频' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '双击查看 茶馆场景 1' }))
+    expect(screen.queryByRole('dialog', { name: '图片查看器' })).not.toBeInTheDocument()
+    fireEvent.doubleClick(screen.getByRole('button', { name: '双击查看 茶馆场景 1' }))
+    expect(screen.getByRole('dialog', { name: '图片查看器' })).toBeInTheDocument()
+  })
+
   it('资产库按三排显示，并可翻到下一页', () => {
     render(<App initialAuthenticated initialPage="assets" />)
 
@@ -167,6 +177,10 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('button', { name: '选择场景资产' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择角色资产' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择道具资产' })).toBeInTheDocument()
+    expect(screen.getByLabelText('上传场景资产图片')).toBeInTheDocument()
+    expect(screen.getByLabelText('上传角色资产图片')).toBeInTheDocument()
+    expect(screen.getByLabelText('上传道具资产图片')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '本地导入剧本' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '选择场景资产' }))
     const sceneLibrary = await screen.findByRole('dialog', { name: '场景资产图片库' })
     fireEvent.click(within(sceneLibrary).getByRole('button', { name: /茶馆场景 1/ }))

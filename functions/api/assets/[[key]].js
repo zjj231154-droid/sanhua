@@ -19,10 +19,13 @@ export async function onRequestPost(context) {
   const extension = image.type === 'image/png' ? 'png' : image.type === 'image/webp' ? 'webp' : 'jpg'
   const workspace = ['retouch', 'brand', 'script'].includes(input.workspace) ? input.workspace : null
   if (!workspace) return json(400, { error: 'ASSET_WORKSPACE_REQUIRED' })
+  const videoAssetType = workspace === 'script' && ['scene', 'character', 'prop'].includes(input.videoAssetType) ? input.videoAssetType : undefined
+  const usableFor = Array.isArray(input.usableFor) ? input.usableFor.filter(value => ['script', 'video'].includes(value)) : []
+  const tags = Array.isArray(input.tags) ? input.tags.map(value => String(value).trim()).filter(Boolean).slice(0, 12) : []
   const id = crypto.randomUUID()
   const key = `uploads/${identity.workspaceId}/day-coffee-night-bar/${workspace}/${id}.${extension}`
   const createdAt = new Date().toISOString()
-  const metadata = { id, tenantId: identity.workspaceId, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, visibility: ['private', 'project', 'workspace'].includes(input.visibility) ? input.visibility : 'project', storeId: 'day-coffee-night-bar', assetSpace: workspace, folderType: 'source', category: 'uploaded', name: String(input.name || `素材.${extension}`).slice(0, 160), storageKey: key, thumbnailKey: key, mimeType: image.type, size: image.bytes.byteLength, isTemporary: false, createdAt, updatedAt: createdAt, cacheVersion: id, platformIndex: { assetId: id, syncStatus: 'synced' } }
+  const metadata = { id, tenantId: identity.workspaceId, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, visibility: ['private', 'project', 'workspace'].includes(input.visibility) ? input.visibility : 'project', storeId: 'day-coffee-night-bar', assetSpace: workspace, folderType: 'source', category: 'uploaded', assetType: 'image', videoAssetType, usableFor: usableFor.length ? usableFor : workspace === 'script' ? ['script', 'video'] : [], tags, name: String(input.name || `素材.${extension}`).slice(0, 160), storageKey: key, thumbnailKey: key, mimeType: image.type, size: image.bytes.byteLength, isTemporary: false, createdAt, updatedAt: createdAt, cacheVersion: id, platformIndex: { assetId: id, syncStatus: 'synced' } }
   await bucket.put(key, image.bytes, { httpMetadata: { contentType: image.type }, customMetadata: { assetId: id, originalName: metadata.name, workspace } })
   await putJson(bucket, assetMetadataKey(id), metadata)
   await putJson(bucket, `metadata/master-assets/${id}.json`, { assetId: id, tenantId: metadata.tenantId, workspaceId: metadata.workspaceId, projectId: workspace, createdBy: identity.user.id, storeId: metadata.storeId, assetSpace: workspace, syncStatus: 'synced', createdAt: metadata.createdAt })
