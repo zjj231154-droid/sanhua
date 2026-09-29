@@ -143,7 +143,9 @@ describe('AI 创作工作台 Demo', () => {
     expect(await screen.findByRole('heading', { name: '茶馆的第一杯茶' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '雨夜来客' })).toBeInTheDocument()
     expect(screen.getByText('等待视频结果')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '打开视频' })).toHaveAttribute('href', 'https://cdn.example.test/video-1.mp4')
+    expect(screen.getByRole('link', { name: '下载视频' })).toHaveAttribute('href', '/api/v1/video-tasks/video-task-1/download')
+    fireEvent.click(screen.getByRole('button', { name: '打开视频' }))
+    expect(await screen.findByRole('dialog', { name: '播放视频 镜头 video-ta' })).toBeInTheDocument()
   })
 
   it('资产库顶部图片筛选不显示文本按钮', () => {

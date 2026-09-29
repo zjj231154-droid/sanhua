@@ -1,6 +1,6 @@
 import { json, tokenSpaceRequest } from '../../../_lib/tokenspace.js'
 import { getScript } from '../../../_lib/script-store.js'
-import { saveTask, listTasks, updateTask } from '../../../_lib/task-store.js'
+import { getTask, saveTask, listTasks, updateTask } from '../../../_lib/task-store.js'
 import { assetMetadataKey, assetsBucket, getJson } from '../../../_lib/asset-store.js'
 import { createTextRecord } from '../../../_lib/text-record-store.js'
 import { hasPermission, requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
@@ -79,7 +79,7 @@ const validate = async (context, input, identity) => {
   return { missing, scriptId, scriptVersionId, sceneAssetIds, assetRefs, videoPrompt, shotPlan, durationSeconds, aspectRatio, resolution, provider, providerConfigured, referenceImages: references.images || [] }
 }
 
-const route = context => String(context.params?.path || '').replace(/^\//, '')
+const route = context => (Array.isArray(context.params?.path) ? context.params.path.join('/') : String(context.params?.path || '')).replace(/^\//, '')
 
 const videoResultFrom = value => {
   const payload = value?.data && typeof value.data === 'object' && !Array.isArray(value.data) ? value.data : value || {}
@@ -120,8 +120,28 @@ const syncVideoTask = async (context, task) => {
   } catch { return task }
 }
 
+const videoDownload = async (context, identity, id) => {
+  const task = await getTask(context, id)
+  if (!task || task.workspace !== 'video' || (!identity.compatibilityMode && task.workspaceId !== identity.workspaceId)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
+  const source = String(task.providerVideoUrl || '').trim()
+  if (!/^https:\/\//i.test(source)) return json(409, { error: 'VIDEO_RESULT_NOT_READY', hint: '视频结果尚未就绪，暂时无法下载。' })
+  try {
+    const upstream = await fetch(source, { signal: AbortSignal.timeout(120000) })
+    if (!upstream.ok || !upstream.body) return json(502, { error: 'VIDEO_DOWNLOAD_FAILED', hint: '无法从视频服务读取文件，请稍后重试。' })
+    const extension = /\.webm(?:\?|$)/i.test(source) ? 'webm' : 'mp4'
+    const filename = `短剧视频-${String(task.id).slice(0, 8)}.${extension}`
+    return new Response(upstream.body, { headers: {
+      'content-type': upstream.headers.get('content-type') || `video/${extension}`,
+      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      'cache-control': 'private, no-store',
+    } })
+  } catch { return json(502, { error: 'VIDEO_DOWNLOAD_FAILED', hint: '视频下载连接失败，请稍后重试。' }) }
+}
+
 export async function onRequestGet(context) {
   const identity = await requireIdentity(context, 'view'); if (identity.error) return identity.error
+  const downloadMatch = /^([^/]+)\/download$/.exec(route(context))
+  if (downloadMatch) return videoDownload(context, identity, downloadMatch[1])
   const stored = (await listTasks(context, { workspace: 'video', workspaceId: identity.workspaceId, compatibilityMode: identity.compatibilityMode })).slice(0, 100)
   const tasks = await Promise.all(stored.map(task => syncVideoTask(context, task)))
   return json(200, { tasks })
@@ -144,7 +164,7 @@ export async function onRequestPost(context) {
     // as a decorative UI-only attachment or an unauthorised remote URL.
     payload: {
       model: checked.provider.model,
-      prompt: `${checked.videoPrompt || checked.shotPlan}\n\n已附加 ${checked.referenceImages.length} 张参考图：${checked.referenceImages.map((item, index) => `[Image${index + 1}] = @${item.name}`).join('；')}。请保持这些参考图中的角色、场景和道具一致性。`,
+      prompt: `${checked.referenceImages.slice().sort((a, b) => b.name.length - a.name.length).reduce((text, item) => text.split(`@${item.name}`).join(`[Image${checked.referenceImages.findIndex(candidate => candidate.id === item.id) + 1}]`), checked.videoPrompt || checked.shotPlan)}\n\n已附加 ${checked.referenceImages.length} 张参考图：${checked.referenceImages.map((item, index) => `[Image${index + 1}] = @${item.name}`).join('；')}。请保持这些参考图中的角色、场景和道具一致性。`,
       duration: checked.durationSeconds,
       ratio: checked.aspectRatio,
       size: checked.resolution,
