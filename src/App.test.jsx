@@ -163,7 +163,9 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.queryByRole('button', { name: '音频' })).not.toBeInTheDocument()
     const button = await screen.findByRole('button', { name: '双击查看 茶馆场景 1' })
     fireEvent.doubleClick(button)
-    expect(screen.getByRole('dialog', { name: '图片查看器' })).toBeInTheDocument()
+    const viewer = screen.getByRole('dialog', { name: '图片查看器' })
+    expect(viewer).toBeInTheDocument()
+    expect(viewer.parentElement).toBe(document.body)
   })
 
   it('资产库按每页 18 项浏览，并可翻到下一页', async () => {
