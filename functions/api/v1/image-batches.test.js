@@ -42,6 +42,28 @@ describe('four-image batch generation', () => {
     expect((await response.json()).assets).toHaveLength(1)
   })
 
+  it('edits every batch source separately with the same prompt and optional template', async () => {
+    const bucket = new MemoryBucket()
+    const prompts = []
+    const filesByCall = []
+    const fetch = vi.fn(async (url, options) => {
+      expect(url).toContain('/v1/images/edits')
+      prompts.push(options.body.get('prompt'))
+      filesByCall.push([...options.body.values()].filter(value => typeof value === 'object' && typeof value.name === 'string').map(value => value.name))
+      return new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgo=' }] }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const image = 'data:image/png;base64,iVBORw0KGgo='
+    const request = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'retouch', prompt: '统一的模板精修提示词', count: 2, images: [image, image], referenceImage: image }) })
+    const response = await onRequestPost({ request, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
+    const value = await response.json()
+
+    expect(response.status).toBe(201)
+    expect(value.assets).toHaveLength(2)
+    expect(prompts).toEqual(['统一的模板精修提示词', '统一的模板精修提示词'])
+    expect(filesByCall).toEqual([['source-1.png', 'reference-template.png'], ['source-2.png', 'reference-template.png']])
+  })
+
   it('requires a reference image and a confirmed dieline before product effects', async () => {
     const bucket = new MemoryBucket()
     const missingReference = new Request('https://example.test/api/v1/image-batches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', prompt: '冰箱贴效果图', count: 1, metadata: { brandPhase: 'product-effect', dielineConfirmed: true, dielineAssetId: 'dieline-1' } }) })

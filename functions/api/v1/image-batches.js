@@ -15,6 +15,7 @@ export async function onRequestPost(context) {
   const workspace = workspaceFor(input.workspace)
   const prompt = String(input.prompt || '').trim().slice(0, 12000)
   const submittedImages = Array.isArray(input.images) ? input.images.filter(value => typeof value === 'string') : []
+  const referenceImage = typeof input.referenceImage === 'string' ? input.referenceImage : ''
   const brandPhase = String(input.metadata?.brandPhase || '')
   const count = Number(input.count || (input.workspace === 'retouch' ? 1 : 4))
   if (!workspace) return json(400, { error: 'WORKSPACE_REQUIRED' })
@@ -41,32 +42,53 @@ export async function onRequestPost(context) {
     sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds : [], referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds : [],
   })
   await updateTask(context, task.id, { textRecordId: textRecord?.id || null })
-  let result
+  const dataUrlToBlob = (value, label) => {
+    const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(value || '')
+    if (!match) return null
+    const bytes = Uint8Array.from(atob(match[2]), char => char.charCodeAt(0))
+    return { blob: new Blob([bytes], { type: match[1] }), extension: match[1].split('/')[1], name: label }
+  }
+  let outputs = []
   if (images.length) {
-    const form = new FormData()
-    form.append('model', model)
-    form.append('prompt', prompt)
-    form.append('response_format', 'b64_json')
+    const template = referenceImage ? dataUrlToBlob(referenceImage, 'reference-template') : null
+    if (referenceImage && !template) return json(400, { error: '图片必须是 PNG、JPG 或 WebP 的 Data URL' })
     for (let index = 0; index < images.length; index += 1) {
-      const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(images[index])
-      if (!match) {
+      const source = dataUrlToBlob(images[index], `source-${index + 1}`)
+      if (!source) {
         await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '输入图片无效', error: 'INVALID_IMAGE_INPUT' })
         return json(400, { error: '图片必须是 PNG、JPG 或 WebP 的 Data URL' })
       }
-      const bytes = Uint8Array.from(atob(match[2]), char => char.charCodeAt(0))
-      form.append(images.length === 1 ? 'image' : 'image[]', new Blob([bytes], { type: match[1] }), `source-${index}.${match[1].split('/')[1]}`)
+      await updateTask(context, task.id, { progress: Math.round(25 + (index / images.length) * 55), stage: `模型处理中（${index + 1}/${images.length}）`, heartbeatAt: new Date().toISOString() })
+      const form = new FormData()
+      form.append('model', model)
+      form.append('prompt', prompt)
+      form.append('response_format', 'b64_json')
+      // 每张产品图单独编辑；可选模板作为第二张参考图。所有请求复用同一份最终提示词。
+      const field = template ? 'image[]' : 'image'
+      form.append(field, source.blob, `${source.name}.${source.extension}`)
+      if (template) form.append('image[]', template.blob, `${template.name}.${template.extension}`)
+      const result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai', useImageConnection: true })
+      if (result.response) {
+        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' })
+        return result.response
+      }
+      const output = Array.isArray(result.data?.data) ? result.data.data[0] : null
+      if (!output) {
+        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型未返回图片', error: 'MODEL_RETURNED_NO_IMAGES' })
+        return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id, index: index + 1 })
+      }
+      outputs.push(output)
     }
-    result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai', useImageConnection: true })
   } else {
-    result = await tokenSpaceRequest(context, 'images/generations', {
+    const result = await tokenSpaceRequest(context, 'images/generations', {
       model, provider: 'usegoodai', useImageConnection: true, payload: { model, prompt, n: count, size: input.size || '1024x1024', response_format: 'b64_json' },
     })
+    if (result.response) {
+      await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' })
+      return result.response
+    }
+    outputs = Array.isArray(result.data?.data) ? result.data.data : []
   }
-  if (result.response) {
-    await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' })
-    return result.response
-  }
-  const outputs = Array.isArray(result.data?.data) ? result.data.data : []
   if (!outputs.length) {
     await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型未返回图片', error: 'MODEL_RETURNED_NO_IMAGES' })
     return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id })
