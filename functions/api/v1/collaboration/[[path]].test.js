@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { onRequestGet, onRequestPatch, onRequestPost } from './[[path]].js'
 import { onRequestGet as listAssets } from '../assets.js'
 import { putJson } from '../../../_lib/asset-store.js'
+import { resolvedImageProviderConnection } from '../../../_lib/collaboration.js'
 
 const bucket = () => {
   const data = new Map()
@@ -59,6 +60,8 @@ describe('workspace collaboration boundaries', () => {
     const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
     const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'separate@example.com', password: 'secure-password-7' }) })
     const cookie = account.headers.get('set-cookie').split(';')[0]
+    const session = await onRequestGet({ env, request: request('/api/v1/session', 'GET', null, cookie) })
+    const userId = (await session.json()).user.id
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
     await onRequestPost({ env, request: request('/api/v1/me/provider-connection/verify', 'POST', { provider: 'reasoning-gateway', baseUrl: 'https://reasoning.example.com/v1', apiKey: 'sk-reasoning-secret', reasoningModel: 'reasoning-1' }, cookie) })
     const imageSaved = await onRequestPost({ env, request: request('/api/v1/me/image-provider-connection/verify', 'POST', { provider: 'image-gateway', baseUrl: 'https://images.example.com/v1', apiKey: 'sk-image-secret', model: 'image-1' }, cookie) })
@@ -66,6 +69,9 @@ describe('workspace collaboration boundaries', () => {
     const [reasoning, image] = await Promise.all([onRequestGet({ env, request: request('/api/v1/me/provider-connection', 'GET', null, cookie) }), onRequestGet({ env, request: request('/api/v1/me/image-provider-connection', 'GET', null, cookie) })])
     expect((await reasoning.json()).connection).toMatchObject({ provider: 'reasoning-gateway', reasoningModel: 'reasoning-1', apiKeyLast4: 'cret' })
     expect((await image.json()).connection).toMatchObject({ provider: 'image-gateway', model: 'image-1', apiKeyLast4: 'cret' })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network unavailable') }))
+    await onRequestGet({ env, request: request('/api/v1/me/image-provider-connection/status', 'GET', null, cookie) })
+    expect(await resolvedImageProviderConnection({ env }, userId)).toBeNull()
   })
 
   it('lets only the signed-in user update profile and password after current-password verification', async () => {

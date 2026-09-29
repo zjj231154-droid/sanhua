@@ -237,7 +237,9 @@ export async function resolvedImageProviderConnection(context, userId) {
     const apiKey = await decryptSecret(context, record.encrypted)
     if (apiKey) return { name: record.provider, baseUrl: record.baseUrl, imageModel: record.model || '', apiKey }
   }
-  return resolvedProviderConnection(context, userId)
+  // Only legacy accounts without a dedicated image connection may reuse the old shared key.
+  // Once an image connection exists, an unhealthy state must block image calls instead of hiding it.
+  return record ? null : resolvedProviderConnection(context, userId)
 }
 
 export async function saveVideoProviderConnection(context, userId, { provider, baseUrl, apiKey, model, verificationStatus = 'verified' }) {
