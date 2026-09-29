@@ -14,16 +14,34 @@ const bucket = () => {
   }
 }
 const request = (path, method = 'GET', body, cookie) => new Request(`https://example.test${path}`, { method, headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined })
+const inviteCodes = ['SH-TEST-0001-AAAA', 'SH-TEST-0002-BBBB', 'SH-TEST-0003-CCCC', 'SH-TEST-0004-DDDD', 'SH-TEST-0005-EEEE', 'SH-TEST-0006-FFFF', 'SH-TEST-0007-GGGG', 'SH-TEST-0008-HHHH', 'SH-TEST-0009-JJJJ']
+const bootstrap = async env => onRequestPost({ env, request: request('/api/v1/admin/bootstrap', 'POST', { bootstrapSecret: 'test-bootstrap', username: '13882052720', password: 'secure-owner-password', name: '管理员', inviteCodes }) })
 
 describe('workspace collaboration boundaries', () => {
   afterEach(() => vi.unstubAllGlobals())
+  it('initializes one owner plus nine reserved invitation seats without persisting full codes', async () => {
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret', SANHUA_BOOTSTRAP_SECRET: 'test-bootstrap' }
+    const owner = await bootstrap(env)
+    expect(owner.status).toBe(201)
+    const cookie = owner.headers.get('set-cookie').split(';')[0]
+    const response = await onRequestGet({ env, request: request('/api/v1/admin/seats', 'GET', null, cookie) })
+    const value = await response.json()
+    expect(response.status).toBe(200)
+    expect(value.seats).toHaveLength(10)
+    expect(value.seats.filter(seat => seat.status === 'occupied')).toHaveLength(1)
+    expect(value.seats.filter(seat => seat.status === 'reserved')).toHaveLength(9)
+    expect(value.seats[0].user).toMatchObject({ username: '13882052720' })
+    expect(value.seats[1].invite).toMatchObject({ codeLast4: 'AAAA', status: 'active' })
+    expect(JSON.stringify(value)).not.toContain(inviteCodes[0])
+  })
+
   it('creates server sessions, scopes assets, and prevents a second workspace from listing them', async () => {
-    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
-    const first = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'a@example.com', password: 'secure-password-1', workspaceName: '甲工作台' }) })
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret', SANHUA_BOOTSTRAP_SECRET: 'test-bootstrap' }
+    const first = await bootstrap(env)
     expect(first.status).toBe(201); const firstCookie = first.headers.get('set-cookie').split(';')[0]
     const firstSession = await onRequestGet({ env, request: request('/api/v1/session', 'GET', null, firstCookie) }); const firstData = await firstSession.json()
-    await putJson(assets, 'metadata/assets/owned.json', { id: 'owned', workspaceId: firstData.workspace.id, tenantId: firstData.workspace.id, projectId: 'brand', createdBy: firstData.user.id, visibility: 'workspace', assetSpace: 'brand', name: '私有设计', storageKey: 'uploads/a.png', thumbnailKey: 'uploads/a.png', createdAt: new Date().toISOString() })
-    const second = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '乙', email: 'b@example.com', password: 'secure-password-2', workspaceName: '乙工作台' }) })
+    await putJson(assets, 'metadata/assets/owned.json', { id: 'owned', workspaceId: firstData.workspace.id, tenantId: firstData.workspace.id, projectId: 'brand', createdBy: firstData.user.id, visibility: 'private', assetSpace: 'brand', name: '私有设计', storageKey: 'uploads/a.png', thumbnailKey: 'uploads/a.png', createdAt: new Date().toISOString() })
+    const second = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '乙', username: 'member_b', password: 'secure-password-2', inviteCode: inviteCodes[0] }) })
     const secondCookie = second.headers.get('set-cookie').split(';')[0]
     const invisible = await listAssets({ env, request: request('/api/v1/assets', 'GET', null, secondCookie) })
     expect((await invisible.json()).assets).toEqual([])
@@ -32,8 +50,8 @@ describe('workspace collaboration boundaries', () => {
   })
 
   it('never returns the API key while verifying and saving a personal connection', async () => {
-    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
-    const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'key@example.com', password: 'secure-password-3' }) })
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret', SANHUA_BOOTSTRAP_SECRET: 'test-bootstrap' }
+    const account = await bootstrap(env)
     const cookie = account.headers.get('set-cookie').split(';')[0]
     const upstream = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: 'gpt-5.5' }] }), { status: 200 }))
     vi.stubGlobal('fetch', upstream)
@@ -45,8 +63,8 @@ describe('workspace collaboration boundaries', () => {
   })
 
   it('rechecks an encrypted connection and records an offline state when the provider becomes unreachable', async () => {
-    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
-    const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'health@example.com', password: 'secure-password-6' }) })
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret', SANHUA_BOOTSTRAP_SECRET: 'test-bootstrap' }
+    const account = await bootstrap(env)
     const cookie = account.headers.get('set-cookie').split(';')[0]
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
     await onRequestPost({ env, request: request('/api/v1/me/provider-connection/verify', 'POST', { provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', apiKey: 'sk-health-secret' }, cookie) })
@@ -57,8 +75,8 @@ describe('workspace collaboration boundaries', () => {
   })
 
   it('stores image and reasoning connections independently', async () => {
-    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
-    const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '甲', email: 'separate@example.com', password: 'secure-password-7' }) })
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret', SANHUA_BOOTSTRAP_SECRET: 'test-bootstrap' }
+    const account = await bootstrap(env)
     const cookie = account.headers.get('set-cookie').split(';')[0]
     const session = await onRequestGet({ env, request: request('/api/v1/session', 'GET', null, cookie) })
     const userId = (await session.json()).user.id
@@ -75,16 +93,16 @@ describe('workspace collaboration boundaries', () => {
   })
 
   it('lets only the signed-in user update profile and password after current-password verification', async () => {
-    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
-    const account = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '原名称', email: 'profile@example.com', password: 'secure-password-4' }) })
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret', SANHUA_BOOTSTRAP_SECRET: 'test-bootstrap' }
+    const account = await bootstrap(env)
     const cookie = account.headers.get('set-cookie').split(';')[0]
     const profile = await onRequestPatch({ env, request: request('/api/v1/me', 'PATCH', { name: '新名称', email: 'renamed@example.com' }, cookie) })
     expect((await profile.json()).user).toMatchObject({ name: '新名称', email: 'renamed@example.com' })
     const denied = await onRequestPost({ env, request: request('/api/v1/me/password', 'POST', { currentPassword: 'incorrect-password', newPassword: 'secure-password-5' }, cookie) })
     expect(denied.status).toBe(400)
-    const changed = await onRequestPost({ env, request: request('/api/v1/me/password', 'POST', { currentPassword: 'secure-password-4', newPassword: 'secure-password-5' }, cookie) })
+    const changed = await onRequestPost({ env, request: request('/api/v1/me/password', 'POST', { currentPassword: 'secure-owner-password', newPassword: 'secure-password-5' }, cookie) })
     expect(changed.status).toBe(200)
-    const login = await onRequestPost({ env, request: request('/api/v1/auth/login', 'POST', { email: 'renamed@example.com', password: 'secure-password-5' }) })
+    const login = await onRequestPost({ env, request: request('/api/v1/auth/login', 'POST', { username: '13882052720', password: 'secure-password-5' }) })
     expect(login.status).toBe(200)
   })
 })

@@ -40,13 +40,16 @@ async function passwordHash(password, salt = base64(crypto.getRandomValues(new U
   return { salt, hash: base64(new Uint8Array(bits)) }
 }
 
-export async function createUser(bucket, { name, email, password }) {
+export async function createUser(bucket, { name, username, email, password }) {
   const normalizedEmail = text(email).toLowerCase()
+  const normalizedUsername = text(username || normalizedEmail.split('@')[0]).toLowerCase()
   const users = await listUsers(bucket)
-  if (users.some(user => user.email === normalizedEmail)) return { error: 'EMAIL_ALREADY_REGISTERED' }
+  if (!normalizedUsername || !(/^[a-z0-9_]{3,32}$/.test(normalizedUsername) || /^\d{11}$/.test(normalizedUsername))) return { error: 'INVALID_USERNAME' }
+  if (normalizedEmail && users.some(user => user.email === normalizedEmail)) return { error: 'EMAIL_ALREADY_REGISTERED' }
+  if (users.some(user => user.username === normalizedUsername)) return { error: 'USERNAME_ALREADY_REGISTERED' }
   const credential = await passwordHash(password)
   const id = crypto.randomUUID()
-  const user = { id, name: text(name).slice(0, 80) || normalizedEmail.split('@')[0], email: normalizedEmail, passwordHash: credential.hash, passwordSalt: credential.salt, status: 'active', createdAt: now(), updatedAt: now() }
+  const user = { id, name: text(name).slice(0, 80) || normalizedUsername, username: normalizedUsername, email: normalizedEmail || null, passwordHash: credential.hash, passwordSalt: credential.salt, status: 'active', createdAt: now(), updatedAt: now() }
   await putJson(bucket, userKey(id), user)
   return { user }
 }
@@ -57,9 +60,9 @@ export async function listUsers(bucket) {
   return users.filter(Boolean)
 }
 
-export async function verifyUserPassword(bucket, email, password) {
-  const normalizedEmail = text(email).toLowerCase()
-  const user = (await listUsers(bucket)).find(candidate => candidate.email === normalizedEmail)
+export async function verifyUserPassword(bucket, login, password) {
+  const normalizedLogin = text(login).toLowerCase()
+  const user = (await listUsers(bucket)).find(candidate => candidate.username === normalizedLogin || candidate.email === normalizedLogin)
   if (!user || user.status !== 'active') return null
   const candidate = await passwordHash(password, user.passwordSalt)
   return candidate.hash === user.passwordHash ? user : null
@@ -167,7 +170,7 @@ export async function requireIdentity(context, permission = 'view') {
   return identity
 }
 
-export const publicUser = user => user && ({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatar?.storageKey ? `/api/v1/me/avatar?v=${encodeURIComponent(user.avatar.updatedAt || user.updatedAt || '')}` : null, createdAt: user.createdAt })
+export const publicUser = user => user && ({ id: user.id, name: user.name, username: user.username || user.email?.split('@')[0] || '', email: user.email || null, avatarUrl: user.avatar?.storageKey ? `/api/v1/me/avatar?v=${encodeURIComponent(user.avatar.updatedAt || user.updatedAt || '')}` : null, createdAt: user.createdAt })
 export const publicWorkspace = (workspace, member) => workspace && ({ id: workspace.id, name: workspace.name, createdAt: workspace.createdAt, updatedAt: workspace.updatedAt, version: workspace.version, role: member?.role, permissions: permissionForRole(member?.role) })
 
 export async function updateVersioned(bucket, key, current, change, actorId, expectedVersion) {

@@ -26,6 +26,7 @@ const apiRoutes = {
   '/api/v1/session': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/workspaces': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/invites': () => import('../functions/api/v1/collaboration/[[path]].js'),
+  '/api/v1/admin': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/me/provider-connection': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/me/image-provider-connection': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/me/video-provider-connection': () => import('../functions/api/v1/collaboration/[[path]].js'),

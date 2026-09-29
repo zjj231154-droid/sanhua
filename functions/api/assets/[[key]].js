@@ -40,7 +40,7 @@ export async function onRequestGet(context) {
   if (!safeKey(key)) return json(400, { error: '无效素材地址' })
   const asset = bucket.list ? (await listJson(bucket, 'metadata/assets/')).find(item => item.storageKey === key || item.thumbnailKey === key || item.previewKey === key) : null
   if (!identity.compatibilityMode && (!asset || (asset.workspaceId !== identity.workspaceId && asset.tenantId !== identity.workspaceId))) return json(404, { error: '素材不存在' })
-  if (asset?.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return json(403, { error: 'INSUFFICIENT_PERMISSION' })
+  if (asset?.visibility === 'private' && asset.createdBy !== identity.user.id) return json(403, { error: 'INSUFFICIENT_PERMISSION' })
   const object = await bucket.get(key)
   if (!object) return json(404, { error: '素材不存在' })
   const etag = `"${encodeURIComponent(key)}"`

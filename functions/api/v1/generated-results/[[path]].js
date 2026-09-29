@@ -19,7 +19,7 @@ export async function onRequestGet(context) {
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
   const [id] = parts(context)
   const allowed = asset => (identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
-    && (asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
+    && (asset.visibility !== 'private' || asset.createdBy === identity.user.id)
   const all = (await listJson(bucket, 'metadata/assets/')).filter(allowed).filter(asset => asset.category === 'generated' || asset.sourceTaskId || asset.isTemporary)
   if (id) {
     const asset = all.find(item => item.id === id)

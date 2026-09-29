@@ -1,5 +1,6 @@
 import { getJson, putJson } from '../../../_lib/asset-store.js'
 import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, decryptSecret, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveImageProviderConnection, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
+import { bootstrapEnterprise, createSeatInvite, registerWithSeatInvite, seatsForAdmin } from '../../../_lib/seat-store.js'
 import { json } from '../../../_lib/tokenspace.js'
 
 const body = async request => { try { return await request.json() } catch { return {} } }
@@ -90,6 +91,11 @@ export async function onRequestGet(context) {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     return json(200, { user: publicUser(identity.user) })
   }
+  if (pathname === '/api/v1/admin/seats') {
+    const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
+    const result = await seatsForAdmin(identity.bucket)
+    return result.error ? json(409, { error: result.error }) : json(200, result)
+  }
   if (/^\/api\/v1\/workspaces\/[^/]+\/members$/.test(pathname)) {
     const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
     const workspaceId = pathname.split('/')[4]
@@ -105,20 +111,19 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const pathname = route(context.request); const input = await body(context.request)
+  if (pathname === '/api/v1/admin/bootstrap') {
+    const expected = String(context.env?.SANHUA_BOOTSTRAP_SECRET || '')
+    if (!expected || String(input.bootstrapSecret || '') !== expected) return json(404, { error: 'NOT_FOUND' })
+    const result = await bootstrapEnterprise(context, { username: input.username, password: input.password, name: input.name, workspaceName: input.workspaceName, inviteCodes: input.inviteCodes })
+    return result.error ? json(result.error === 'ENTERPRISE_ALREADY_INITIALIZED' ? 409 : 400, { error: result.error, limit: result.limit }) : withCookie(json(201, { user: result.user, workspace: result.workspace }), result.session.cookie)
+  }
   if (pathname === '/api/v1/auth/register') {
-    const bucket = context.env?.SANHUA_ASSETS
-    const email = String(input.email || '').trim().toLowerCase(); const password = String(input.password || '')
-    if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
-    if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 10) return json(400, { error: 'INVALID_REGISTRATION', hint: '请填写有效邮箱，并使用至少 10 位密码。' })
-    const created = await createUser(bucket, { name: input.name, email, password })
-    if (created.error) return json(409, { error: created.error })
-    const workspace = await createWorkspace(bucket, { name: safeWorkspaceName(input.workspaceName) || `${created.user.name} 的工作台`, ownerId: created.user.id })
-    const session = await createSession(context, created.user.id, workspace.id)
-    return withCookie(json(201, { user: publicUser(created.user), workspace: publicWorkspace(workspace, { role: 'owner' }) }), session.cookie)
+    const result = await registerWithSeatInvite(context, { username: input.username, password: input.password, name: input.name, inviteCode: input.inviteCode })
+    return result.error ? json(result.error === 'USERNAME_ALREADY_REGISTERED' ? 409 : 400, { error: result.error }) : withCookie(json(201, { user: result.user, workspace: result.workspace }), result.session.cookie)
   }
   if (pathname === '/api/v1/auth/login') {
     const bucket = context.env?.SANHUA_ASSETS; if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
-    const user = await verifyUserPassword(bucket, input.email, String(input.password || ''))
+    const user = await verifyUserPassword(bucket, input.username || input.email, String(input.password || ''))
     if (!user) return json(401, { error: 'INVALID_CREDENTIALS' })
     const memberships = await listMemberships(bucket, user.id); if (!memberships.length) return json(403, { error: 'NO_WORKSPACE_ACCESS' })
     const selected = memberships[0]
@@ -130,6 +135,12 @@ export async function onRequestPost(context) {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const changed = await changeUserPassword(identity.bucket, identity.user, input.currentPassword, input.newPassword)
     return changed.error ? json(400, { error: changed.error }) : json(200, { user: publicUser(changed.user) })
+  }
+  const inviteMatch = /^\/api\/v1\/admin\/seats\/(S\d{2})\/invites$/.exec(pathname)
+  if (inviteMatch) {
+    const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
+    const result = await createSeatInvite(identity.bucket, identity.user, inviteMatch[1], input.role)
+    return result.error ? json(409, { error: result.error }) : json(201, result)
   }
   if (pathname === '/api/v1/me/avatar') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error

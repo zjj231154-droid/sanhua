@@ -34,7 +34,7 @@ export async function onRequestGet(context) {
   }
   const allAssets = (await listJson(bucket, 'metadata/assets/')).map(normalize)
     .filter(asset => identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
-    .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
+    .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id)
     .filter(asset => !workspace || asset.assetSpace === workspace)
     .filter(asset => !libraryKey || hasLocation(asset, libraryKey, folderKey))
     .filter(asset => !assetType || asset.assetType === assetType)

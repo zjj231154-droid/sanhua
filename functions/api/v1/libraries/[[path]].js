@@ -16,7 +16,7 @@ export async function onRequestGet(context) {
   const [libraryKey, action] = parts(context)
   const assets = (await listJson(bucket, 'metadata/assets/'))
     .filter(asset => identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
-    .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
+    .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id)
   const withCounts = library => ({ ...library, folders: library.folders.map(folder => ({ ...folder, assetType: 'image', downloadEnabled: true, saveAsTemplateEnabled: Boolean(folder.saveAsTemplateEnabled), count: assets.filter(asset => hasLocation(asset, library.key, folder.key)).length })) })
   if (!libraryKey) return json(200, { libraries: ASSET_LIBRARIES.map(withCounts) })
   const library = libraryFor(libraryKey)
