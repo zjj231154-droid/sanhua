@@ -49,6 +49,19 @@ describe('video task validation', () => {
     expect(value.missing).toEqual(expect.arrayContaining(['读取参考图片失败：损坏场景，请重新选择或重新上传后重试。']))
   })
 
+  it('accepts a visible legacy cloud asset as a real video reference image', async () => {
+    const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: 'validate' } }
+    const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })
+    await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('legacy-scene'), { id: 'legacy-scene', name: '茶馆场景 7', assetType: 'image', usableFor: ['script', 'video'], externalUrl: '/cloud-assets/retouch/teahouse-scene/teahouse-07.jpg', mimeType: 'image/jpeg' })
+    const imageFetch = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/jpeg' } }))
+    vi.stubGlobal('fetch', imageFetch)
+    const response = await onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks/validate', {
+      scriptId: script.id, scriptVersionId: script.currentVersionId, assetRefs: { scene: ['legacy-scene'] }, videoPrompt: '镜头从茶馆门口推进到掌柜与顾客的对峙。', durationSeconds: 8,
+    }) })
+    expect(response.status).toBe(200)
+    expect(String(imageFetch.mock.calls[0][0])).toBe('https://example.test/cloud-assets/retouch/teahouse-scene/teahouse-07.jpg')
+  })
+
   it('submits a Seedance video task through the encrypted personal video connection', async () => {
     const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: undefined } }
     const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })

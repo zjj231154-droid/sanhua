@@ -44,6 +44,23 @@ const referenceImagesFor = async (context, identity, refs) => {
       images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: externalUrl })
       continue
     }
+    // Legacy assets are served by this app from /cloud-assets.  They are
+    // valid visible assets, but a relative browser URL cannot be sent to the
+    // provider. Read only this known public path and attach its actual bytes.
+    if (/^\/cloud-assets\//i.test(externalUrl)) {
+      let response
+      try { response = await fetch(new URL(externalUrl, context.request.url), { signal: AbortSignal.timeout(30000) }) } catch { return { error: `读取参考图片失败：${asset.name || id}，请稍后重试。` } }
+      if (!response.ok) return { error: `无法读取参考图片：${asset.name || id}，请重新选择或重新上传后重试。` }
+      let bytes
+      try { bytes = new Uint8Array(await response.arrayBuffer()) } catch { return { error: `读取参考图片失败：${asset.name || id}，请重新上传后重试。` } }
+      if (!bytes.byteLength || bytes.byteLength > MAX_REFERENCE_IMAGE_BYTES) return { error: `参考图片 ${asset.name || id} 超过 8MB 或文件无效。` }
+      totalBytes += bytes.byteLength
+      if (totalBytes > MAX_REFERENCE_TOTAL_BYTES) return { error: '参考图片总大小超过 30MB，请减少图片数量或压缩后重试。' }
+      const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase()
+      const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(contentType) ? contentType : (asset.mimeType === 'image/webp' ? 'image/webp' : asset.mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png')
+      images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: `data:${mimeType};base64,${base64From(bytes)}` })
+      continue
+    }
     if (!asset.storageKey) return { error: `参考资产缺少可读取的图片文件：${asset.name || id}，请重新上传后重试。` }
     let object
     try { object = await bucket.get(asset.storageKey) } catch { return { error: `读取参考图片失败：${asset.name || id}，请重新选择或重新上传后重试。` } }
