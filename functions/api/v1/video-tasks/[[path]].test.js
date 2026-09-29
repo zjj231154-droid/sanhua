@@ -1,12 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createScript } from '../../../_lib/script-store.js'
 import { saveVideoProviderConnection } from '../../../_lib/collaboration.js'
-import { onRequestPost } from './[[path]].js'
+import { assetMetadataKey, putJson } from '../../../_lib/asset-store.js'
+import { onRequestGet, onRequestPost } from './[[path]].js'
 
 class MemoryBucket {
   constructor() { this.values = new Map() }
   async put(key, value) { this.values.set(key, typeof value === 'string' ? value : new Uint8Array(value)) }
-  async get(key) { const value = this.values.get(key); return value === undefined ? null : { async json() { return JSON.parse(typeof value === 'string' ? value : new TextDecoder().decode(value)) } } }
+  async get(key) {
+    const value = this.values.get(key)
+    if (value === undefined) return null
+    const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value
+    return {
+      async json() { return JSON.parse(typeof value === 'string' ? value : new TextDecoder().decode(value)) },
+      async arrayBuffer() { return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) },
+    }
+  }
   async list({ prefix = '', limit = 1000 } = {}) { return { objects: [...this.values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit).map(key => ({ key })) } }
 }
 
@@ -26,7 +35,13 @@ describe('video task validation', () => {
     const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: undefined } }
     const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })
     await saveVideoProviderConnection(context, 'test-user', { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', apiKey: 'sk-video-secret', model: 'doubao-seedance-2-0-260128' })
-    const upstream = vi.fn(async () => new Response(JSON.stringify({ id: 'seedance-job-1' }), { status: 200 }))
+    await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('tea-house-1'), { id: 'tea-house-1', name: '茶馆场景', assetType: 'image', usableFor: ['script', 'video'], externalUrl: 'https://cdn.example.test/tea-house-1.png' })
+    await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('actor-1'), { id: 'actor-1', name: '掌柜角色', assetType: 'image', usableFor: ['script', 'video'], storageKey: 'uploads/actor-1.png', mimeType: 'image/png' })
+    await context.env.SANHUA_ASSETS.put('uploads/actor-1.png', new Uint8Array([1, 2, 3]))
+    await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('teapot-1'), { id: 'teapot-1', name: '紫砂茶壶', assetType: 'image', usableFor: ['script', 'video'], externalUrl: 'https://cdn.example.test/teapot-1.png' })
+    const upstream = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'seedance-job-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded', progress: 100, url: 'https://cdn.example.test/videos/seedance-job-1.mp4' }), { status: 200 }))
     vi.stubGlobal('fetch', upstream)
     const body = { scriptId: script.id, scriptVersionId: script.currentVersionId, assetRefs: { scene: ['tea-house-1'], character: ['actor-1'], prop: ['teapot-1'], other: [] }, videoPrompt: '镜头从茶馆门口推进到掌柜与顾客的对峙。', shotPlan: script.outline, aspectRatio: '9:16', durationSeconds: 8, resolution: '720p' }
     const response = await onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks', body) })
@@ -42,7 +57,17 @@ describe('video task validation', () => {
     expect(upstream).toHaveBeenCalledWith('https://tokenspace.io/v1/video/generations', expect.objectContaining({ method: 'POST' }))
     const upstreamBody = JSON.parse(upstream.mock.calls[0][1].body)
     expect(upstreamBody).toMatchObject({ model: 'doubao-seedance-2-0-260128', duration: 8, ratio: '9:16', size: '720p' })
+    expect(upstreamBody.metadata.content).toEqual([
+      { type: 'image_url', role: 'reference_image', image_url: { url: 'https://cdn.example.test/tea-house-1.png' } },
+      { type: 'image_url', role: 'reference_image', image_url: { url: 'data:image/png;base64,AQID' } },
+      { type: 'image_url', role: 'reference_image', image_url: { url: 'https://cdn.example.test/teapot-1.png' } },
+    ])
+    expect(upstreamBody.prompt).toContain('[Image1] = @茶馆场景')
     expect(upstreamBody).not.toHaveProperty('resolution')
     expect(upstreamBody).not.toHaveProperty('generate_audio')
+    const taskList = await onRequestGet({ ...context, request: new Request('https://example.test/api/v1/video-tasks') })
+    const synced = await taskList.json()
+    expect(synced.tasks[0]).toMatchObject({ id: value.task.id, status: 'completed', progress: 100, providerVideoUrl: 'https://cdn.example.test/videos/seedance-job-1.mp4' })
+    expect(upstream).toHaveBeenLastCalledWith('https://tokenspace.io/v1/video/generations/seedance-job-1', expect.objectContaining({ headers: { Authorization: 'Bearer sk-video-secret' } }))
   })
 })

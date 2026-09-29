@@ -1,10 +1,14 @@
 import { json, tokenSpaceRequest } from '../../../_lib/tokenspace.js'
 import { getScript } from '../../../_lib/script-store.js'
-import { saveTask, listTasks } from '../../../_lib/task-store.js'
+import { saveTask, listTasks, updateTask } from '../../../_lib/task-store.js'
+import { assetMetadataKey, assetsBucket, getJson } from '../../../_lib/asset-store.js'
 import { createTextRecord } from '../../../_lib/text-record-store.js'
-import { requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
+import { hasPermission, requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
 
 const inputFrom = async request => { try { return await request.json() } catch { return null } }
+const MAX_REFERENCE_IMAGES = 9
+const MAX_REFERENCE_IMAGE_BYTES = 8 * 1024 * 1024
+const MAX_REFERENCE_TOTAL_BYTES = 30 * 1024 * 1024
 const assetRefsFrom = input => {
   const listed = value => Array.isArray(value) ? [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))].slice(0, 50) : []
   const refs = input?.assetRefs || {}
@@ -12,6 +16,44 @@ const assetRefsFrom = input => {
     scene: listed(refs.scene || input?.sceneAssetIds), character: listed(refs.character || input?.characterAssetIds),
     prop: listed(refs.prop || input?.propAssetIds), other: listed(refs.other || input?.otherAssetIds),
   }
+}
+const base64From = bytes => {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+  return btoa(binary)
+}
+const referenceIds = refs => [...refs.scene, ...refs.character, ...refs.prop, ...refs.other]
+const referenceImagesFor = async (context, identity, refs) => {
+  const ids = referenceIds(refs)
+  if (ids.length > MAX_REFERENCE_IMAGES) return { error: `Seedance 最多可引用 ${MAX_REFERENCE_IMAGES} 张图片，请减少当前选择。` }
+  const bucket = assetsBucket(context)
+  if (!bucket) return { error: '资产存储未配置，无法读取参考图片。' }
+  const images = []
+  let totalBytes = 0
+  for (const id of ids) {
+    const asset = await getJson(bucket, assetMetadataKey(id))
+    if (!asset || (!identity.compatibilityMode && asset.workspaceId !== identity.workspaceId && asset.tenantId !== identity.workspaceId)) return { error: `参考资产不存在或无权使用：${id}` }
+    if (asset.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return { error: `无权使用私有参考资产：${asset.name || id}` }
+    if (asset.assetType && asset.assetType !== 'image') return { error: `参考资产不是图片：${asset.name || id}` }
+    if (Array.isArray(asset.usableFor) && asset.usableFor.length && !asset.usableFor.includes('video')) return { error: `该资产不可用于视频生成：${asset.name || id}` }
+    const externalUrl = String(asset.externalUrl || '').trim()
+    if (/^https:\/\//i.test(externalUrl)) {
+      images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: externalUrl })
+      continue
+    }
+    const object = await bucket.get(asset.storageKey)
+    if (!object) return { error: `无法读取参考图片：${asset.name || id}` }
+    const bytes = new Uint8Array(await (typeof object.arrayBuffer === 'function' ? object.arrayBuffer() : new Response(object.body).arrayBuffer()))
+    if (!bytes.byteLength || bytes.byteLength > MAX_REFERENCE_IMAGE_BYTES) return { error: `参考图片 ${asset.name || id} 超过 8MB 或文件无效。` }
+    totalBytes += bytes.byteLength
+    if (totalBytes > MAX_REFERENCE_TOTAL_BYTES) return { error: '参考图片总大小超过 30MB，请减少图片数量或压缩后重试。' }
+    const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/png'
+    images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: `data:${mimeType};base64,${base64From(bytes)}` })
+  }
+  return { images }
 }
 const validate = async (context, input, identity) => {
   const missing = []
@@ -32,14 +74,57 @@ const validate = async (context, input, identity) => {
   if (!Number.isFinite(durationSeconds) || durationSeconds < 4 || durationSeconds > 15) missing.push('4-15 秒的视频时长')
   const provider = await resolvedVideoProviderConnection(context, identity.user.id)
   const providerConfigured = Boolean(provider?.apiKey && provider?.model)
-  return { missing, scriptId, scriptVersionId, sceneAssetIds, assetRefs, videoPrompt, shotPlan, durationSeconds, aspectRatio, resolution, provider, providerConfigured }
+  const references = missing.length ? { images: [] } : await referenceImagesFor(context, identity, assetRefs)
+  if (references.error) missing.push(references.error)
+  return { missing, scriptId, scriptVersionId, sceneAssetIds, assetRefs, videoPrompt, shotPlan, durationSeconds, aspectRatio, resolution, provider, providerConfigured, referenceImages: references.images || [] }
 }
 
 const route = context => String(context.params?.path || '').replace(/^\//, '')
 
+const videoResultFrom = value => {
+  const payload = value?.data && typeof value.data === 'object' && !Array.isArray(value.data) ? value.data : value || {}
+  const status = String(payload.status || payload.state || payload.task_status || '').toLowerCase()
+  const rawProgress = Number(String(payload.progress ?? payload.percentage ?? '').replace('%', ''))
+  const url = [payload.url, payload.video_url, payload.result_url, payload.output?.video_url, payload.output?.url, payload.metadata?.url, payload.result?.url, payload.result?.video_url].find(item => typeof item === 'string' && /^https?:\/\//.test(item)) || null
+  const message = String(payload.error?.message || payload.error_message || payload.message || '').trim().slice(0, 800)
+  return { status, progress: Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, rawProgress)) : null, url, message }
+}
+
+const syncVideoTask = async (context, task) => {
+  if (!task?.providerTaskId || !['queued', 'running'].includes(task.status)) return task
+  const lastSync = Date.parse(task.lastProviderSyncAt || '')
+  if (Number.isFinite(lastSync) && Date.now() - lastSync < 5000) return task
+  const provider = await resolvedVideoProviderConnection(context, task.createdBy)
+  if (!provider?.apiKey) return task
+  try {
+    const baseUrl = provider.baseUrl.replace(/\/$/, '')
+    const root = /\/v1$/.test(baseUrl) ? baseUrl : `${baseUrl}/v1`
+    const response = await fetch(`${root}/video/generations/${encodeURIComponent(task.providerTaskId)}`, {
+      headers: { Authorization: `Bearer ${provider.apiKey}` }, signal: AbortSignal.timeout(30000),
+    })
+    if (!response.ok) return task
+    const result = videoResultFrom(await response.json())
+    const checkedAt = new Date().toISOString()
+    if (['completed', 'succeeded', 'success'].includes(result.status)) return updateTask(context, task.id, {
+      status: 'completed', progress: 100, stage: result.url ? '视频已生成，结果已同步' : '视频已生成，但上游未返回播放地址', providerVideoUrl: result.url || task.providerVideoUrl || null,
+      providerStatus: result.status, lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
+    }) || task
+    if (['failed', 'error', 'cancelled', 'canceled', 'expired'].includes(result.status)) return updateTask(context, task.id, {
+      status: result.status === 'expired' ? 'failed' : result.status === 'cancelled' || result.status === 'canceled' ? 'cancelled' : 'failed', progress: result.progress ?? task.progress,
+      stage: result.message || '上游视频生成失败', providerStatus: result.status, lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
+    }) || task
+    return updateTask(context, task.id, {
+      status: 'running', progress: result.progress === null ? Math.max(15, Number(task.progress || 0)) : Math.max(15, Math.min(95, result.progress)),
+      stage: '视频服务已受理，正在生成', providerStatus: result.status || 'processing', lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
+    }) || task
+  } catch { return task }
+}
+
 export async function onRequestGet(context) {
   const identity = await requireIdentity(context, 'view'); if (identity.error) return identity.error
-  return json(200, { tasks: (await listTasks(context, { workspace: 'video', workspaceId: identity.workspaceId, compatibilityMode: identity.compatibilityMode })).slice(0, 100) })
+  const stored = (await listTasks(context, { workspace: 'video', workspaceId: identity.workspaceId, compatibilityMode: identity.compatibilityMode })).slice(0, 100)
+  const tasks = await Promise.all(stored.map(task => syncVideoTask(context, task)))
+  return json(200, { tasks })
 }
 
 export async function onRequestPost(context) {
@@ -54,9 +139,17 @@ export async function onRequestPost(context) {
     model: checked.provider.model,
     provider: 'tokenspace',
     useVideoConnection: true,
-    // OpenAI-compatible video routes use `size` for output resolution. Do not send
-    // provider-specific audio flags when no audio generation was requested.
-    payload: { model: checked.provider.model, prompt: checked.videoPrompt || checked.shotPlan, duration: checked.durationSeconds, ratio: checked.aspectRatio, size: checked.resolution },
+    // TokenSpace/NewAPI accepts Seedance vendor metadata.  `reference_image`
+    // keeps the selected image as a reference rather than silently treating it
+    // as a decorative UI-only attachment or an unauthorised remote URL.
+    payload: {
+      model: checked.provider.model,
+      prompt: `${checked.videoPrompt || checked.shotPlan}\n\n已附加 ${checked.referenceImages.length} 张参考图：${checked.referenceImages.map((item, index) => `[Image${index + 1}] = @${item.name}`).join('；')}。请保持这些参考图中的角色、场景和道具一致性。`,
+      duration: checked.durationSeconds,
+      ratio: checked.aspectRatio,
+      size: checked.resolution,
+      metadata: { content: checked.referenceImages.map(item => ({ type: 'image_url', role: 'reference_image', image_url: { url: item.source } })) },
+    },
   })
   if (submitted.response) return submitted.response
   const providerTaskId = String(submitted.data?.id || submitted.data?.data?.id || '').slice(0, 160) || null
@@ -73,7 +166,7 @@ export async function onRequestPost(context) {
     requirements: checked.videoPrompt || checked.shotPlan, assets: checked.sceneAssetIds, sourceAssetIds: checked.sceneAssetIds,
     scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId, durationSeconds: checked.durationSeconds,
     assetRefs: checked.assetRefs, characterAssetIds: checked.assetRefs.character, propAssetIds: checked.assetRefs.prop, otherAssetIds: checked.assetRefs.other,
-    videoPrompt: checked.videoPrompt, aspectRatio: checked.aspectRatio, resolution: checked.resolution, mode: 'provider', provider: checked.provider.name, model: checked.provider.model, providerTaskId, providerVideoUrl, textRecordId: textRecord?.id || null, simulated: false, createdAt,
+    videoPrompt: checked.videoPrompt, aspectRatio: checked.aspectRatio, resolution: checked.resolution, mode: 'provider', provider: checked.provider.name, model: checked.provider.model, providerTaskId, providerVideoUrl, referenceBindings: checked.referenceImages.map((item, index) => ({ assetId: item.id, alias: `Image${index + 1}`, name: item.name })), textRecordId: textRecord?.id || null, simulated: false, createdAt,
   })
   return json(202, { task, textRecordId: textRecord?.id || null, notice: providerVideoUrl ? '视频已生成，结果已写入任务记录。' : `已提交至 ${checked.provider.model}，正在异步生成。` })
 }
