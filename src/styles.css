@@ -1537,8 +1537,42 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .asset-pagination { margin: -8px 0 28px; display: flex; align-items: center; justify-content: center; gap: 14px; color: var(--workbench-muted); font-size: 14px; }
 .asset-pagination .secondary-button { min-height: 38px; display: inline-flex; align-items: center; gap: 4px; }
 .asset-pagination .secondary-button:disabled { cursor: not-allowed; opacity: .45; }
+.asset-library-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 16px; align-items: start; }
+.asset-folder-nav { position: sticky; top: 16px; padding: 10px; display: grid; gap: 8px; }
+.asset-folder-nav section { display: grid; gap: 3px; }
+.asset-folder-nav section > button, .asset-folder-nav section > div > button { width: 100%; border: 0; border-radius: 8px; color: var(--workbench-text); background: transparent; text-align: left; cursor: pointer; }
+.asset-folder-nav section > button { min-height: 38px; padding: 8px 9px; display: flex; align-items: center; gap: 8px; font-weight: 750; }
+.asset-folder-nav section > div { padding-left: 10px; display: grid; gap: 2px; }
+.asset-folder-nav section > div > button { min-height: 32px; padding: 6px 9px; display: flex; justify-content: space-between; gap: 8px; color: var(--workbench-muted); font-size: 12px; }
+.asset-folder-nav button:hover { background: var(--glass-bg); }
+.asset-folder-nav button.is-selected { color: var(--brand-deep); background: rgba(185,148,104,.16); }
+.asset-folder-nav small { color: inherit; opacity: .7; }
+.asset-grid--folders { min-height: 290px; }
+.asset-skeleton { min-height: 244px; border-radius: 16px; background: linear-gradient(90deg, #edf0f3 25%, #f7f8fa 37%, #edf0f3 63%); background-size: 400% 100%; animation: asset-skeleton 1.25s ease infinite; }
+@keyframes asset-skeleton { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+.asset-upload-dialog { width: min(620px, 100%); }
+.asset-upload-dropzone { min-height: 210px; padding: 16px; display: grid; place-items: center; align-content: center; gap: 8px; border: 1px dashed rgba(225,189,134,.58); border-radius: 14px; color: #dfbd88; background: rgba(18,12,10,.38); text-align: center; cursor: pointer; }
+.asset-upload-dropzone input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.asset-upload-dropzone img { width: 100%; max-height: 230px; object-fit: contain; border-radius: 9px; }
+.asset-upload-dropzone small { color: #c5b1a1; }
+.asset-upload-details { padding: 12px 0 2px; display: grid; gap: 10px; color: #e6d4c0; font-size: 12px; }
+.asset-upload-details label { display: grid; gap: 6px; color: inherit; }
+.asset-upload-details input { width: 100%; box-sizing: border-box; }
+.asset-upload-dialog .asset-picker-footer > div { display: flex; gap: 8px; }
+.app-shell.time-day .asset-upload-dropzone { color: var(--brand-deep); background: var(--glass-bg); }
+.app-shell.time-day .asset-upload-dropzone small, .app-shell.time-day .asset-upload-details { color: var(--workbench-muted); }
+.generated-results-panel { display: grid; gap: 14px; }
+.generated-results-panel .showcase-toolbar { margin: 0; }
+.generated-results-panel .showcase-toolbar small { display: block; margin-top: 3px; color: var(--workbench-muted); font-weight: 400; }
+.generated-results-layout { display: grid; grid-template-columns: minmax(220px, .34fr) minmax(0, .66fr); gap: 14px; align-items: start; }
+.generated-result-list { display: grid; gap: 8px; max-height: 680px; overflow: auto; padding-right: 2px; }
+.generated-result-list > button { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 9px; align-items: center; padding: 7px; border: 1px solid var(--workbench-border); border-radius: 11px; color: var(--workbench-text); background: var(--glass-bg); text-align: left; cursor: pointer; }
+.generated-result-list > button.is-selected { border-color: var(--brand-deep); box-shadow: 0 0 0 2px rgba(139,58,58,.12); }
+.generated-result-list img { width: 66px; height: 54px; border-radius: 7px; object-fit: cover; }.generated-result-list span { min-width: 0; display: grid; gap: 4px; }.generated-result-list b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.generated-result-list small { color: var(--workbench-muted); font-size: 11px; }
+.generated-result-detail { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1fr); gap: 18px; padding: 18px; }.generated-result-detail > .asset-image-button .cached-image { width: 100%; min-height: 270px; border-radius: 12px; object-fit: contain; background: #15100e; }.generated-result-detail h2 { margin: 5px 0 8px; }.generated-result-detail p { color: var(--workbench-muted); font-size: 13px; line-height: 1.65; }.generated-result-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }.generated-result-detail h3 { margin: 20px 0 8px; font-size: 14px; }.generated-result-sources { display: flex; flex-wrap: wrap; gap: 8px; }.generated-result-sources > button { width: 92px; padding: 4px; border: 1px solid var(--workbench-border); border-radius: 8px; color: var(--workbench-text); background: var(--glass-bg); cursor: zoom-in; }.generated-result-sources img { width: 100%; aspect-ratio: 1 / .75; border-radius: 5px; object-fit: cover; }.generated-result-sources span { display: block; overflow: hidden; padding: 4px 2px 1px; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }.generated-result-sources p { margin: 0; }
 
 @media (max-width: 800px) { .product-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .generated-results-layout, .generated-result-detail { grid-template-columns: 1fr; }.generated-result-list { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 280px; }.generated-result-detail > .asset-image-button .cached-image { min-height: 180px; } }
 
 /* 夜酒模式可读性：提高文字亮度，不抬高背景 */
 .app-shell.time-night { --workbench-cream: #fff8ec; --workbench-muted: #d1c2b4; }
@@ -1588,6 +1622,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   .top-profile { margin-left: 0; border-left: 0; }
   .asset-grid { grid-template-columns: 1fr; }
   .asset-pagination { gap: 8px; font-size: 12px; }
+  .asset-library-layout { grid-template-columns: 1fr; }
+  .asset-folder-nav { position: static; grid-template-columns: repeat(3, minmax(150px, 1fr)); overflow-x: auto; }
   .asset-picker-modal { padding: 10px; }
   .asset-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .product-library-grid { grid-template-columns: 1fr; }

@@ -1,5 +1,6 @@
 import { json } from '../../_lib/tokenspace.js'
 import { assetsBucket, assetUrl, listJson } from '../../_lib/asset-store.js'
+import { hasLocation, locationsForAsset, validAssetFolder } from '../../_lib/library-config.js'
 import { requireIdentity, hasPermission } from '../../_lib/collaboration.js'
 
 export async function onRequestGet(context) {
@@ -9,6 +10,8 @@ export async function onRequestGet(context) {
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' })
   const url = new URL(context.request.url)
   const workspace = url.searchParams.get('workspace') || url.searchParams.get('assetSpace')
+  const libraryKey = url.searchParams.get('libraryKey')
+  const folderKey = url.searchParams.get('folderKey')
   const assetType = url.searchParams.get('assetType')
   const videoAssetType = url.searchParams.get('videoAssetType')
   const usableFor = url.searchParams.get('usableFor')
@@ -20,15 +23,18 @@ export async function onRequestGet(context) {
   const pageNumber = pageParam === null ? null : Number(pageParam)
   const pageSize = pageSizeParam === null ? limit : Number(pageSizeParam)
   if ((pageNumber !== null && (!Number.isInteger(pageNumber) || pageNumber < 1)) || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 40) return json(400, { error: 'INVALID_PAGINATION' })
+  if ((libraryKey && !folderKey) || (folderKey && !libraryKey) || (libraryKey && folderKey && !validAssetFolder(libraryKey, folderKey))) return json(400, { error: 'INVALID_LIBRARY_FOLDER' })
   const normalize = asset => {
     const name = `${asset.name || ''} ${asset.group || ''} ${asset.folderType || ''}`
     const inferredType = /场景|内景|外景|茶馆/.test(name) ? 'scene' : /角色|人物|掌柜|顾客/.test(name) ? 'character' : /道具|茶具|杯|壶/.test(name) ? 'prop' : 'other'
-    return { ...asset, assetType: asset.assetType || 'image', videoAssetType: asset.videoAssetType || inferredType, usableFor: Array.isArray(asset.usableFor) ? asset.usableFor : ['script', 'video'], inferred: asset.videoAssetType ? Boolean(asset.inferred) : true, tags: Array.isArray(asset.tags) ? asset.tags : [] }
+    const locations = locationsForAsset(asset)
+    return { ...asset, locations, libraryKey: asset.libraryKey || locations[0]?.libraryKey, folderKey: asset.folderKey || locations[0]?.folderKey, assetType: asset.assetType || 'image', videoAssetType: asset.videoAssetType || inferredType, usableFor: Array.isArray(asset.usableFor) ? asset.usableFor : ['script', 'video'], inferred: asset.videoAssetType ? Boolean(asset.inferred) : true, tags: Array.isArray(asset.tags) ? asset.tags : [] }
   }
   const allAssets = (await listJson(bucket, 'metadata/assets/')).map(normalize)
     .filter(asset => identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
     .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
     .filter(asset => !workspace || asset.assetSpace === workspace)
+    .filter(asset => !libraryKey || hasLocation(asset, libraryKey, folderKey))
     .filter(asset => !assetType || asset.assetType === assetType)
     .filter(asset => !videoAssetType || asset.videoAssetType === videoAssetType)
     .filter(asset => !usableFor || asset.usableFor.includes(usableFor))

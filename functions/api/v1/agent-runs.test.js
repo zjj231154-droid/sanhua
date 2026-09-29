@@ -21,7 +21,7 @@ it('archives a brand design plan before returning the awaiting-confirmation task
 
   expect(response.status).toBe(202)
   expect(value.textRecordId).toBeTruthy()
-  expect(JSON.parse(stored[1].value)).toMatchObject({ id: value.textRecordId, workspace: 'brand', recordType: 'brand_plan', content: 'FINAL_IMAGE_PROMPT: 茶纹礼盒主视觉', sourceTaskId: value.id, sourceAssetIds: ['brand-asset-1'] })
+  expect(JSON.parse(stored[1].value)).toMatchObject({ id: value.textRecordId, workspace: 'brand', recordType: 'brand_prompt', content: 'FINAL_IMAGE_PROMPT: 茶纹礼盒主视觉', sourceTaskId: value.id, sourceAssetIds: ['brand-asset-1'] })
 })
 
 it('uses the v4.0 graphic workflow and locks IP consistency for a flat-design plan', async () => {

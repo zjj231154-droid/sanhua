@@ -1,5 +1,6 @@
 import { json } from './tokenspace.js'
 import { requireIdentity } from './collaboration.js'
+import { defaultGeneratedLocation, defaultLocationForAsset, validAssetFolder } from './library-config.js'
 
 const MAX_ASSET_BYTES = 20 * 1024 * 1024
 const dateParts = date => {
@@ -18,6 +19,7 @@ export const outputBytes = output => output?.b64_json ? dataUrlBytes(`data:image
 export const assetUrl = key => `/api/assets/${key}`
 export const assetMetadataKey = id => `metadata/assets/${id}.json`
 export const taskMetadataKey = id => `metadata/tasks/${id}.json`
+export const assetLocationKey = (assetId, libraryKey, folderKey, projectId = '') => `metadata/asset-locations/${assetId}/${libraryKey}-${folderKey}-${encodeURIComponent(projectId || 'default')}.json`
 
 export const normalizeAssetName = (value, fallback = '生成图片') => {
   const name = String(value || '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -39,7 +41,36 @@ export async function listJson(bucket, prefix, limit = 200) {
   return rows.filter(Boolean)
 }
 
-export async function archiveImageOutputs(context, { taskId, workspace, outputs, model, prompt, sourceAssetIds = [], title, requestedName, namePrefix, promptSummary, referenceAssetIds = [], originalPlan, finalPrompt }) {
+export const normalizedLocations = asset => {
+  const locations = Array.isArray(asset?.locations) ? asset.locations : []
+  const safe = locations.filter(location => validAssetFolder(location.libraryKey, location.folderKey))
+  return safe.length ? safe : [defaultLocationForAsset(asset)]
+}
+
+export async function addAssetLocation(bucket, asset, { libraryKey, folderKey, projectId, createdBy }) {
+  if (!validAssetFolder(libraryKey, folderKey)) return { invalid: true }
+  const scope = projectId || asset.projectId || ''
+  const existing = normalizedLocations(asset)
+  const found = existing.find(location => location.libraryKey === libraryKey && location.folderKey === folderKey && String(location.projectId || '') === String(scope))
+  if (found) return { asset: { ...asset, libraryKey, folderKey, locations: existing }, location: found, existed: true }
+  const location = { id: crypto.randomUUID(), assetId: asset.id, workspaceId: asset.workspaceId, libraryKey, folderKey, projectId: scope || null, createdBy: createdBy || asset.createdBy, createdAt: new Date().toISOString(), deletedAt: null }
+  const locations = [...existing, location]
+  await putJson(bucket, assetLocationKey(asset.id, libraryKey, folderKey, scope), location)
+  return { asset: { ...asset, libraryKey, folderKey, locations }, location, existed: false }
+}
+
+export async function uniqueNameForLocation(bucket, candidate, { libraryKey, folderKey, assetId } = {}) {
+  const wanted = String(candidate || '').trim() || '未命名资产'
+  const names = new Set((await listJson(bucket, 'metadata/assets/'))
+    .filter(asset => asset.id !== assetId && normalizedLocations(asset).some(location => location.libraryKey === libraryKey && location.folderKey === folderKey))
+    .map(asset => String(asset.displayName || asset.name || '').trim()))
+  if (!names.has(wanted)) return wanted
+  let index = 2
+  while (names.has(`${wanted}-v${index}`)) index += 1
+  return `${wanted}-v${index}`
+}
+
+export async function archiveImageOutputs(context, { taskId, workspace, outputs, model, prompt, sourceAssetIds = [], title, requestedName, namePrefix, promptSummary, referenceAssetIds = [], originalPlan, finalPrompt, brandPhase = '' }) {
   const bucket = requiredBucket(context)
   if (!bucket) return { error: json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' }) }
   const allowedWorkspace = ['retouch', 'brand'].includes(workspace) ? workspace : null
@@ -58,10 +89,12 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
     const baseName = outputs.length > 1
       ? `${normalizeAssetName(namePrefix || requestedName || datedDefault)}-${String(index + 1).padStart(2, '0')}`
       : normalizeAssetName(requestedName || `${datedDefault}-01`)
+    const recommendedLocation = defaultGeneratedLocation(allowedWorkspace, brandPhase)
     const asset = {
       id, tenantId: identity.workspaceId, workspaceId: identity.workspaceId, projectId: allowedWorkspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1,
       storeId: 'day-coffee-night-bar', assetSpace: allowedWorkspace,
-      folderType: 'ai-temp', category: 'generated', name: baseName, displayName: baseName,
+      libraryKey: recommendedLocation.libraryKey, folderKey: 'pending-save', recommendedLibraryKey: recommendedLocation.libraryKey, recommendedFolderKey: recommendedLocation.folderKey,
+      folderType: 'ai-temp', category: 'generated', assetType: 'image', sourceModule: allowedWorkspace, sourceTaskId: taskId, status: 'pending', name: baseName, displayName: baseName,
       originalName: `${defaultTitle}-${index + 1}.${converted.extension}`,
       downloadName: downloadFileName(baseName, converted.extension),
       storageKey, thumbnailKey: storageKey, mimeType: converted.mimeType, size: converted.bytes.byteLength,

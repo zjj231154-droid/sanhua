@@ -61,7 +61,7 @@ export async function onRequestPost(context) {
   const providerVideoUrl = String(submitted.data?.url || submitted.data?.data?.url || submitted.data?.data?.[0]?.url || '').slice(0, 2000) || null
   const createdAt = new Date().toISOString()
   const textRecord = await createTextRecord(context, {
-    workspaceId: identity.workspaceId, projectId: 'script', createdBy: identity.user.id, updatedBy: identity.user.id, workspace: 'script', sourceModule: 'script.video', recordType: 'video_prompt', title: String(input.title || '视频生成提示词').trim(),
+    workspaceId: identity.workspaceId, projectId: 'script', createdBy: identity.user.id, updatedBy: identity.user.id, workspace: 'script', sourceModule: 'script.video', recordType: 'storyboard_prompt', title: String(input.title || '视频生成提示词').trim(),
     content: checked.videoPrompt || checked.shotPlan, contentFormat: 'prompt', model: checked.provider.model, provider: checked.provider.name,
     sourceAssetIds: [...checked.assetRefs.scene, ...checked.assetRefs.character, ...checked.assetRefs.prop, ...checked.assetRefs.other], scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId,
   })

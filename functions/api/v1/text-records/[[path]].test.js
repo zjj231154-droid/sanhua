@@ -36,7 +36,7 @@ describe('text records', () => {
     expect(first.status).toBe(200)
     expect((await first.json()).created).toHaveLength(1)
     const listed = await onRequestGet({ ...base, request: request('GET', 'https://example.test/api/v1/text-records?workspace=brand') })
-    expect((await listed.json()).records[0]).toMatchObject({ recordType: 'brand_plan', sourceTaskId: 'legacy-brand-plan', content: 'FINAL_IMAGE_PROMPT: 叁花折扇' })
+    expect((await listed.json()).records[0]).toMatchObject({ recordType: 'brand_prompt', sourceTaskId: 'legacy-brand-plan', content: 'FINAL_IMAGE_PROMPT: 叁花折扇' })
 
     const second = await onRequestPost({ ...base, params: { path: 'backfill' }, request: request('POST', 'https://example.test/api/v1/text-records/backfill') })
     expect((await second.json()).created).toHaveLength(0)

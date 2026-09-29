@@ -33,7 +33,7 @@ export async function onRequestPost(context) {
   if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'UseGoodAI 请求失败' }); return result.response }
   const content = result.data?.choices?.[0]?.message?.content || ''
   const textRecord = await createTextRecord(context, {
-    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_plan' : workspace === 'script' ? 'script_outline' : 'retouch_plan',
+    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_prompt' : workspace === 'script' ? 'script' : 'retouch_prompt',
     title: workspace === 'brand' ? '品牌设计计划' : workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content, contentFormat: 'prompt',
     workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, model, provider: 'usegoodai-reasoning', sourceTaskId: task.id, sourceAssetIds: Array.isArray(input.assets) ? input.assets : [], referenceAssetIds: Array.isArray(input.reference_asset_ids) ? input.reference_asset_ids : [],
   })

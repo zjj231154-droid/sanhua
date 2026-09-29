@@ -36,7 +36,7 @@ export async function onRequestPost(context) {
     finalPrompt: String(input.metadata?.finalPrompt || prompt).slice(0, 12000), originalPlan: String(input.metadata?.originalPlan || '').slice(0, 12000), model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
   })
   const textRecord = await createTextRecord(context, {
-    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_final_prompt' : 'retouch_final_prompt',
+    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_prompt' : 'retouch_prompt',
     workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, title: requestedName || (workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: String(input.metadata?.finalPrompt || prompt), contentFormat: 'prompt', model, provider: 'usegoodai', sourceTaskId: task.id,
     sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds : [], referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds : [],
   })
@@ -72,7 +72,7 @@ export async function onRequestPost(context) {
     return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id })
   }
   await updateTask(context, task.id, { progress: 90, stage: `归档图片（${outputs.length}/${count}）`, heartbeatAt: new Date().toISOString() })
-  const archived = await archiveImageOutputs(context, { taskId: task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, limit) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, limit) : [], originalPlan: input.metadata?.originalPlan, finalPrompt: input.metadata?.finalPrompt || prompt })
+  const archived = await archiveImageOutputs(context, { taskId: task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, limit) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, limit) : [], originalPlan: input.metadata?.originalPlan, finalPrompt: input.metadata?.finalPrompt || prompt, brandPhase })
   if (archived.error) {
     await updateTask(context, task.id, { status: 'failed', progress: 90, stage: '资产归档失败', error: 'ASSET_ARCHIVE_FAILED' })
     return archived.error

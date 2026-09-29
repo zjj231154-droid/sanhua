@@ -25,7 +25,7 @@ describe('four-image batch generation', () => {
     expect([...bucket.values.keys()].filter(key => key.includes('/outputs/'))).toHaveLength(4)
     const promptRecord = [...bucket.values.entries()].find(([key]) => key.startsWith('metadata/text-records/'))
     expect(promptRecord).toBeTruthy()
-    expect(JSON.parse(promptRecord[1].value)).toMatchObject({ workspace: 'brand', recordType: 'brand_final_prompt', content: '四张茶馆海报', sourceTaskId: value.task.id })
+    expect(JSON.parse(promptRecord[1].value)).toMatchObject({ workspace: 'brand', recordType: 'brand_prompt', content: '四张茶馆海报', sourceTaskId: value.task.id })
   })
 
   it('uses image edits when source images are provided', async () => {

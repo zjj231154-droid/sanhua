@@ -116,13 +116,15 @@ describe('AI 创作工作台 Demo', () => {
 
   it('资产库展示已归档的 AI 创作成果', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
-      if (url === '/api/v1/assets') return { ok: true, json: async () => ({ assets: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png' }] }) }
+      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (url === '/api/v1/generated-results') return { ok: true, json: async () => ({ results: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png', createdAt: '2026-09-01T00:00:00.000Z' }] }) }
+      if (url === '/api/v1/generated-results/remote-retouch-1') return { ok: true, json: async () => ({ result: {}, sources: [] }) }
       return { ok: true, json: async () => ({ tasks: [] }) }
     }))
-    const { container } = render(<App initialAuthenticated initialPage="assets" />)
+    render(<App initialAuthenticated initialPage="assets" />)
 
-    fireEvent.click(within(container.querySelector('.asset-toolbar')).getByRole('button', { name: 'AI 成果' }))
-    await waitFor(() => expect(screen.getByText('已归档精修结果')).toBeInTheDocument())
+    fireEvent.click(screen.getAllByRole('button', { name: 'AI 成果' })[0])
+    await waitFor(() => expect(screen.getAllByText('已归档精修结果').length).toBeGreaterThan(0))
   })
 
   it('资产库顶部图片筛选不显示文本按钮', () => {
@@ -131,34 +133,48 @@ describe('AI 创作工作台 Demo', () => {
     expect(toolbar.queryByRole('button', { name: '文本' })).not.toBeInTheDocument()
   })
 
-  it('资产库不再提供音频分类，图片需要双击才打开缩放查看器', () => {
+  it('资产库不再提供音频分类，已归档图片可点击打开查看器', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (String(url).startsWith('/api/v1/assets?')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-1', name: '茶馆场景 1', url: '/scene-1.png', previewUrl: '/scene-1.png' }] }) }
+      return { ok: true, json: async () => ({}) }
+    }))
     render(<App initialAuthenticated initialPage="assets" />)
 
     expect(screen.queryByRole('button', { name: '音频' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '双击查看 茶馆场景 1' }))
-    expect(screen.queryByRole('dialog', { name: '图片查看器' })).not.toBeInTheDocument()
-    fireEvent.doubleClick(screen.getByRole('button', { name: '双击查看 茶馆场景 1' }))
+    const button = await screen.findByRole('button', { name: '查看 茶馆场景 1' })
+    fireEvent.click(button)
     expect(screen.getByRole('dialog', { name: '图片查看器' })).toBeInTheDocument()
   })
 
-  it('资产库按三排显示，并可翻到下一页', () => {
+  it('资产库按每页 18 项浏览，并可翻到下一页', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (String(url).includes('page=2')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-8', name: '茶馆场景 8', url: '/scene-8.png' }] }) }
+      if (String(url).startsWith('/api/v1/assets?')) return { ok: true, json: async () => ({ assets: Array.from({ length: 18 }, (_, index) => ({ id: `asset-${index}`, name: `茶馆资产 ${index}`, url: `/asset-${index}.png` })) }) }
+      return { ok: true, json: async () => ({}) }
+    }))
     render(<App initialAuthenticated initialPage="assets" />)
 
-    const pagination = screen.getByRole('navigation', { name: '资产库分页' })
-    expect(pagination).toHaveTextContent('第 1 / 3 页 · 每页 18 项')
+    const pagination = await screen.findByRole('navigation', { name: '资产库分页' })
+    expect(pagination).toHaveTextContent('第 1 页')
     expect(screen.queryByText('茶馆场景 8')).not.toBeInTheDocument()
 
     fireEvent.click(within(pagination).getByRole('button', { name: '下一页' }))
-    expect(pagination).toHaveTextContent('第 2 / 3 页 · 每页 18 项')
-    expect(screen.getAllByText('茶馆场景 8')).toHaveLength(2)
+    await waitFor(() => expect(pagination).toHaveTextContent('第 2 页'))
+    expect(screen.getByText('茶馆场景 8')).toBeInTheDocument()
   })
 
   it('从资产库用于写剧本时会带入短剧脚本编辑区', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ assets: [], scripts: [] }) })))
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (String(url).includes('libraryKey=script')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-1', name: '茶馆场景 1', url: '/scene-1.png' }] }) }
+      return { ok: true, json: async () => ({ assets: [], scripts: [] }) }
+    }))
     render(<App initialAuthenticated initialPage="assets" />)
 
-    fireEvent.click(screen.getByRole('button', { name: '短剧' }))
-    const useForScript = screen.getAllByRole('button', { name: '用于写剧本' })[0]
+    fireEvent.click(screen.getAllByRole('button', { name: '短剧库' })[0])
+    const useForScript = await screen.findByRole('button', { name: '用于短剧' })
     const assetName = useForScript.closest('article').querySelector('strong').textContent
     fireEvent.click(useForScript)
 
