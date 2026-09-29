@@ -2,6 +2,7 @@ import { json } from '../../_lib/tokenspace.js'
 import { assetsBucket, assetUrl, listJson } from '../../_lib/asset-store.js'
 import { hasLocation, locationsForAsset, validAssetFolder } from '../../_lib/library-config.js'
 import { requireIdentity, hasPermission } from '../../_lib/collaboration.js'
+import { syncLegacyAssets } from '../../_lib/legacy-assets.js'
 
 export async function onRequestGet(context) {
   const identity = await requireIdentity(context, 'view')
@@ -9,6 +10,7 @@ export async function onRequestGet(context) {
   const bucket = assetsBucket(context)
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED', hint: '请在 Cloudflare Pages 绑定 SANHUA_ASSETS，或在 Railway 挂载 Volume 并设置 SANHUA_STORAGE_DIR。' })
   const url = new URL(context.request.url)
+  if (url.searchParams.get('includeLegacy') === 'true') await syncLegacyAssets(bucket, identity)
   const workspace = url.searchParams.get('workspace') || url.searchParams.get('assetSpace')
   const libraryKey = url.searchParams.get('libraryKey')
   const folderKey = url.searchParams.get('folderKey')
@@ -46,7 +48,7 @@ export async function onRequestGet(context) {
   const page = allAssets.slice(start, start + effectivePageSize)
   const assets = page.map(asset => {
     const previewUrl = asset.previewKey ? assetUrl(asset.previewKey) : assetUrl(asset.thumbnailKey || asset.storageKey)
-    return { ...asset, updatedAt: asset.updatedAt || asset.createdAt, cacheVersion: asset.cacheVersion || asset.checksum || asset.id, url: assetUrl(asset.storageKey), thumbnailUrl: assetUrl(asset.thumbnailKey || asset.storageKey), previewUrl, width: asset.width ?? null, height: asset.height ?? null, fileSize: asset.fileSize ?? asset.size ?? null }
+    return { ...asset, updatedAt: asset.updatedAt || asset.createdAt, cacheVersion: asset.cacheVersion || asset.checksum || asset.id, url: asset.externalUrl || assetUrl(asset.storageKey), thumbnailUrl: asset.thumbnailExternalUrl || asset.externalUrl || assetUrl(asset.thumbnailKey || asset.storageKey), previewUrl: asset.previewExternalUrl || asset.externalUrl || previewUrl, width: asset.width ?? null, height: asset.height ?? null, fileSize: asset.fileSize ?? asset.size ?? null }
   })
   const totalPages = Math.max(1, Math.ceil(total / effectivePageSize))
   return json(200, {

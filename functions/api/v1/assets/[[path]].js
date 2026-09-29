@@ -7,7 +7,7 @@ const pathParts = context => Array.isArray(context.params.path) ? context.params
 const imageTypes = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const extensionFor = mimeType => mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/webp' ? 'webp' : 'png'
 const uploadKey = (workspaceId, uploadId) => `metadata/asset-upload-ids/${workspaceId}/${String(uploadId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120)}.json`
-const assetSummary = asset => ({ ...asset, url: assetUrl(asset.storageKey), thumbnailUrl: assetUrl(asset.thumbnailKey || asset.storageKey), previewUrl: assetUrl(asset.previewKey || asset.thumbnailKey || asset.storageKey) })
+const assetSummary = asset => ({ ...asset, url: asset.externalUrl || assetUrl(asset.storageKey), thumbnailUrl: asset.thumbnailExternalUrl || asset.externalUrl || assetUrl(asset.thumbnailKey || asset.storageKey), previewUrl: asset.previewExternalUrl || asset.externalUrl || assetUrl(asset.previewKey || asset.thumbnailKey || asset.storageKey) })
 
 async function assetFor(context, id) {
   const identity = await requireIdentity(context, 'view')
@@ -106,6 +106,7 @@ export async function onRequestGet(context) {
   if (!action) return json(200, { asset: assetSummary(asset) })
   if (action === 'locations') return json(200, { locations: Array.isArray(asset.locations) ? asset.locations : [] })
   if (action !== 'download') return json(404, { error: 'ASSET_ROUTE_NOT_FOUND' })
+  if (asset.externalUrl) return Response.redirect(new URL(asset.externalUrl, context.request.url).toString(), 302)
   const object = await bucket.get(asset.storageKey)
   if (!object) return json(404, { error: 'ASSET_FILE_NOT_FOUND' })
   return new Response(object.body, { headers: { 'content-type': asset.mimeType || 'application/octet-stream', 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(asset.downloadName || asset.name || 'image.png')}`, 'cache-control': 'private, max-age=0, no-store' } })

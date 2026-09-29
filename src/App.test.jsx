@@ -116,7 +116,7 @@ describe('AI 创作工作台 Demo', () => {
 
   it('资产库展示已归档的 AI 创作成果', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
-      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (String(url).startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
       if (url === '/api/v1/generated-results') return { ok: true, json: async () => ({ results: [{ id: 'remote-retouch-1', name: '已归档精修结果', assetSpace: 'retouch', url: '/api/assets/generated/remote-retouch-1.png', createdAt: '2026-09-01T00:00:00.000Z' }] }) }
       if (url === '/api/v1/generated-results/remote-retouch-1') return { ok: true, json: async () => ({ result: {}, sources: [] }) }
       return { ok: true, json: async () => ({ tasks: [] }) }
@@ -135,7 +135,7 @@ describe('AI 创作工作台 Demo', () => {
 
   it('资产库不再提供音频分类，已归档图片可点击打开查看器', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
-      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (String(url).startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
       if (String(url).startsWith('/api/v1/assets?')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-1', name: '茶馆场景 1', url: '/scene-1.png', previewUrl: '/scene-1.png' }] }) }
       return { ok: true, json: async () => ({}) }
     }))
@@ -149,7 +149,7 @@ describe('AI 创作工作台 Demo', () => {
 
   it('资产库按每页 18 项浏览，并可翻到下一页', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
-      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (String(url).startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
       if (String(url).includes('page=2')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-8', name: '茶馆场景 8', url: '/scene-8.png' }] }) }
       if (String(url).startsWith('/api/v1/assets?')) return { ok: true, json: async () => ({ assets: Array.from({ length: 18 }, (_, index) => ({ id: `asset-${index}`, name: `茶馆资产 ${index}`, url: `/asset-${index}.png` })) }) }
       return { ok: true, json: async () => ({}) }
@@ -167,7 +167,7 @@ describe('AI 创作工作台 Demo', () => {
 
   it('从资产库用于写剧本时会带入短剧脚本编辑区', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
-      if (url === '/api/v1/libraries') return { ok: true, json: async () => ({ libraries: [] }) }
+      if (String(url).startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
       if (String(url).includes('libraryKey=script')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-1', name: '茶馆场景 1', url: '/scene-1.png' }] }) }
       return { ok: true, json: async () => ({ assets: [], scripts: [] }) }
     }))
@@ -185,7 +185,7 @@ describe('AI 创作工作台 Demo', () => {
 
   it('短剧创作将场景、角色和道具分开选择，并弹出对应图片库', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
-      if (url === '/api/v1/assets?workspace=script&limit=80') return { ok: true, json: async () => ({ assets: [{ id: 'character-1', name: '年轻掌柜', videoAssetType: 'character', url: '/character.png' }, { id: 'prop-1', name: '紫砂茶壶', videoAssetType: 'prop', url: '/prop.png' }] }) }
+      if (String(url).startsWith('/api/v1/assets?workspace=script&limit=80')) return { ok: true, json: async () => ({ assets: [{ id: 'character-1', name: '年轻掌柜', videoAssetType: 'character', url: '/character.png' }, { id: 'prop-1', name: '紫砂茶壶', videoAssetType: 'prop', url: '/prop.png' }] }) }
       return { ok: true, json: async () => ({ scripts: [] }) }
     }))
     render(<App initialAuthenticated initialPage="script" />)
