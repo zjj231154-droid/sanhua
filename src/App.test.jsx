@@ -127,13 +127,32 @@ describe('AI 创作工作台 Demo', () => {
     await waitFor(() => expect(screen.getAllByText('已归档精修结果').length).toBeGreaterThan(0))
   })
 
+  it('视频库按关联剧本分批展示视频任务', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (String(url).startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
+      if (url === '/api/v1/video-tasks') return { ok: true, json: async () => ({ tasks: [
+        { id: 'video-task-1', scriptId: 'script-a', status: 'completed', stage: '视频已生成', durationSeconds: 8, aspectRatio: '9:16', resolution: '720p', providerVideoUrl: 'https://cdn.example.test/video-1.mp4', createdAt: '2026-09-29T00:00:00.000Z' },
+        { id: 'video-task-2', scriptId: 'script-b', status: 'running', stage: '正在生成', durationSeconds: 10, aspectRatio: '16:9', resolution: '1080p', createdAt: '2026-09-28T00:00:00.000Z' },
+      ] }) }
+      if (url === '/api/v1/scripts') return { ok: true, json: async () => ({ scripts: [{ id: 'script-a', title: '茶馆的第一杯茶' }, { id: 'script-b', title: '雨夜来客' }] }) }
+      return { ok: true, json: async () => ({ assets: [] }) }
+    }))
+    render(<App initialAuthenticated initialPage="assets" />)
+
+    fireEvent.click(within(document.querySelector('.asset-folder-nav')).getByRole('button', { name: '视频库' }))
+    expect(await screen.findByRole('heading', { name: '茶馆的第一杯茶' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '雨夜来客' })).toBeInTheDocument()
+    expect(screen.getByText('等待视频结果')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '打开视频' })).toHaveAttribute('href', 'https://cdn.example.test/video-1.mp4')
+  })
+
   it('资产库顶部图片筛选不显示文本按钮', () => {
     const { container } = render(<App initialAuthenticated initialPage="assets" />)
     const toolbar = within(container.querySelector('.asset-toolbar'))
     expect(toolbar.queryByRole('button', { name: '文本' })).not.toBeInTheDocument()
   })
 
-  it('资产库不再提供音频分类，已归档图片可点击打开查看器', async () => {
+  it('资产库不再提供音频分类，已归档图片双击打开查看器', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
       if (String(url).startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
       if (String(url).startsWith('/api/v1/assets?')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-1', name: '茶馆场景 1', url: '/scene-1.png', previewUrl: '/scene-1.png' }] }) }
@@ -142,8 +161,8 @@ describe('AI 创作工作台 Demo', () => {
     render(<App initialAuthenticated initialPage="assets" />)
 
     expect(screen.queryByRole('button', { name: '音频' })).not.toBeInTheDocument()
-    const button = await screen.findByRole('button', { name: '查看 茶馆场景 1' })
-    fireEvent.click(button)
+    const button = await screen.findByRole('button', { name: '双击查看 茶馆场景 1' })
+    fireEvent.doubleClick(button)
     expect(screen.getByRole('dialog', { name: '图片查看器' })).toBeInTheDocument()
   })
 
@@ -193,9 +212,9 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('button', { name: '选择场景资产' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择角色资产' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择道具资产' })).toBeInTheDocument()
-    expect(screen.getByLabelText('上传场景资产图片')).toBeInTheDocument()
-    expect(screen.getByLabelText('上传角色资产图片')).toBeInTheDocument()
-    expect(screen.getByLabelText('上传道具资产图片')).toBeInTheDocument()
+    expect(screen.getByLabelText('批量上传场景资产图片')).toBeInTheDocument()
+    expect(screen.getByLabelText('批量上传角色资产图片')).toBeInTheDocument()
+    expect(screen.getByLabelText('批量上传道具资产图片')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '本地导入剧本' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '选择场景资产' }))
     const sceneLibrary = await screen.findByRole('dialog', { name: '场景资产图片库' })

@@ -17,6 +17,7 @@ import {
   Clock3,
   Download,
   FileImage,
+  Film,
   FolderOpen,
   Home,
   ImagePlus,
@@ -54,7 +55,7 @@ const NAV_ITEMS = [
   { id: 'retouch', label: '产品精修', icon: WandSparkles, children: [['one-click', '一键修图'], ['gallery', '图库'], ['tasks', '任务记录']] },
   { id: 'brand', label: '品牌创作', icon: Palette, children: [['create', '素材创作'], ['library', '产品库'], ['prompts', '提示词记录']] },
   { id: 'script', label: '短剧脚本', icon: BookOpenText, children: [['create', '脚本创作'], ['library', '剧本库'], ['video', '视频生成'], ['versions', '版本记录']] },
-  { id: 'assets', label: '资产库', icon: FolderOpen, children: [['retouch', '精修图库'], ['brand', '茶馆文创库'], ['script', '短剧库'], ['text', '文本库'], ['generated', 'AI 成果']] },
+  { id: 'assets', label: '资产库', icon: FolderOpen, children: [['retouch', '精修图库'], ['brand', '茶馆文创库'], ['script', '短剧库'], ['video-library', '视频库'], ['text', '文本库'], ['generated', 'AI 成果']] },
 ]
 
 const DEFAULT_SUB_ROUTE = { home: '', retouch: 'one-click', brand: 'create', script: 'create', assets: 'retouch', settings: '', profile: '' }
@@ -945,39 +946,48 @@ function ScriptAssetUnitPicker({ selectedScene, selectedCharacter, selectedProp,
     setActiveType('')
   }
   const uploadLocalAsset = async (event, type) => {
-    const file = event.target.files?.[0]
+    const files = Array.from(event.target.files || [])
     event.target.value = ''
-    if (!file) return
-    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 15 * 1024 * 1024) {
+    if (!files.length) return
+    const invalid = files.find(file => !/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 15 * 1024 * 1024)
+    if (invalid) {
       setError('仅支持 15MB 以内的 PNG、JPG、WebP 图片')
       return
     }
     setUploadingType(type); setError('')
     try {
-      const image = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result)
-        reader.onerror = () => reject(new Error('图片读取失败，请重新选择'))
-        reader.readAsDataURL(file)
-      })
-      const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
-      const response = await fetch(`/api/assets/script-assets/${type}-${Date.now()}.${extension}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image, workspace: 'script', name: file.name, videoAssetType: type, usableFor: ['script', 'video'], tags: ['短剧', type === 'scene' ? '场景' : type === 'character' ? '角色' : '道具'] }),
-      })
-      const value = await response.json()
-      if (!response.ok || !value.asset) throw new Error(value.error || '上传失败，请稍后重试')
-      const uploaded = { ...value.asset, url: value.url, previewUrl: value.url, thumbnailUrl: value.url }
-      setRemoteAssets(current => [uploaded, ...current.filter(asset => asset.id !== uploaded.id)])
-      unitDefinitions.find(unit => unit.id === type)?.select(uploaded)
-      setActiveType('')
+      const uploaded = []; const failed = []
+      for (const file of files) {
+        try {
+          const image = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result)
+            reader.onerror = () => reject(new Error('图片读取失败'))
+            reader.readAsDataURL(file)
+          })
+          const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
+          const response = await fetch(`/api/assets/script-assets/${type}-${Date.now()}-${uploaded.length}.${extension}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image, workspace: 'script', name: file.name, videoAssetType: type, usableFor: ['script', 'video'], tags: ['短剧', type === 'scene' ? '场景' : type === 'character' ? '角色' : '道具'] }),
+          })
+          const value = await response.json()
+          if (!response.ok || !value.asset) throw new Error(value.error || '上传失败')
+          uploaded.push({ ...value.asset, url: value.url, previewUrl: value.url, thumbnailUrl: value.url })
+        } catch (reason) { failed.push(`${file.name}${reason.message ? `（${reason.message}）` : ''}`) }
+      }
+      if (uploaded.length) {
+        setRemoteAssets(current => [...uploaded, ...current.filter(asset => !uploaded.some(item => item.id === asset.id))])
+        unitDefinitions.find(unit => unit.id === type)?.select(uploaded[0])
+      }
+      if (failed.length) setError(`已上传 ${uploaded.length}/${files.length} 张；失败：${failed.join('、')}`)
+      else if (uploaded.length) setActiveType('')
     } catch (reason) { setError(reason.message || '上传失败，请稍后重试') } finally { setUploadingType('') }
   }
   return <>
     <section className="script-asset-units" aria-label="短剧资产分类">
       {unitDefinitions.map(unit => <div className="script-asset-unit-wrap" key={unit.id}><button type="button" className={unit.selected ? 'script-asset-unit is-selected' : 'script-asset-unit'} onClick={() => openPicker(unit.id)} aria-label={`选择${unit.label}`}>
         <FolderOpen size={19} /><span><strong>{unit.label}</strong><small>{unit.selected ? `已选：${unit.selected.name}` : unit.description}</small></span><span className="script-asset-unit-action">选择图片</span>
-      </button><label className="script-asset-upload"><Upload size={13} />{uploadingType === unit.id ? '正在上传…' : '本地上传'}<input type="file" accept="image/png,image/jpeg,image/webp" aria-label={`上传${unit.label}图片`} disabled={Boolean(uploadingType)} onChange={event => uploadLocalAsset(event, unit.id)} /></label></div>)}
+      </button><label className="script-asset-upload"><Upload size={13} />{uploadingType === unit.id ? '正在上传…' : '批量本地上传'}<input type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label={`批量上传${unit.label}图片`} disabled={Boolean(uploadingType)} onChange={event => uploadLocalAsset(event, unit.id)} /></label></div>)}
     </section>
     {activeUnit && <div className="asset-picker-modal" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setActiveType('') }}>
       <section className="asset-picker-dialog" role="dialog" aria-modal="true" aria-label={`${activeUnit.label}图片库`}>
@@ -1297,24 +1307,62 @@ const ASSET_LIBRARY_UI = [
 ]
 
 function AssetUploadDialog({ library, folder, onClose, onSaved }) {
-  const [file, setFile] = useState(null); const [preview, setPreview] = useState(''); const [name, setName] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  const [files, setFiles] = useState([]); const [previews, setPreviews] = useState([]); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [progress, setProgress] = useState('')
   const choose = event => {
-    const next = event.target.files?.[0]
-    if (!next) return
-    if (!/^image\/(png|jpeg|webp)$/.test(next.type) || next.size > 20 * 1024 * 1024) { setError('仅支持 20MB 以内的 PNG、JPG、WebP 图片'); return }
-    const reader = new FileReader(); reader.onload = () => { setFile(next); setPreview(String(reader.result)); setName(next.name.replace(/\.[^.]+$/, '')); setError('') }; reader.onerror = () => setError('图片读取失败，请重试'); reader.readAsDataURL(next)
+    const next = Array.from(event.target.files || [])
+    if (!next.length) return
+    const invalid = next.find(file => !/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 20 * 1024 * 1024)
+    if (invalid) { setError('仅支持 20MB 以内的 PNG、JPG、WebP 图片'); return }
+    setFiles(next); setPreviews(next.map(file => URL.createObjectURL(file))); setError(''); setProgress('')
   }
   const submit = async () => {
-    if (!file || busy) return
+    if (!files.length || busy) return
     setBusy(true); setError('')
+    const uploaded = []; const failed = []
     try {
-      const body = new FormData(); body.append('file', file); body.append('libraryKey', library.key); body.append('folderKey', folder.key); body.append('name', name.trim()); body.append('visibility', 'project'); body.append('uploadId', `${Date.now()}-${file.name}-${file.size}`)
-      const response = await fetch('/api/v1/assets/upload', { method: 'POST', body }); const value = await response.json()
-      if (!response.ok) throw new Error(value.error || '上传失败，可重试')
-      onSaved(value.asset, `已保存到：${library.label} / ${folder.label}`)
+      for (const [index, file] of files.entries()) {
+        setProgress(`正在上传 ${index + 1}/${files.length}：${file.name}`)
+        try {
+          const body = new FormData(); body.append('file', file); body.append('libraryKey', library.key); body.append('folderKey', folder.key); body.append('name', file.name.replace(/\.[^.]+$/, '')); body.append('visibility', 'project'); body.append('uploadId', `${Date.now()}-${index}-${file.name}-${file.size}`)
+          const response = await fetch('/api/v1/assets/upload', { method: 'POST', body }); const value = await response.json()
+          if (!response.ok || !value.asset) throw new Error(value.error || '上传失败')
+          uploaded.push(value.asset)
+        } catch (reason) { failed.push(`${file.name}${reason.message ? `（${reason.message}）` : ''}`) }
+      }
+      if (uploaded.length) onSaved(uploaded, `已保存 ${uploaded.length} 项到：${library.label} / ${folder.label}`)
+      if (failed.length) { setFiles(files.filter(file => failed.some(item => item.startsWith(file.name)))); setPreviews([]); setError(`以下图片未上传成功：${failed.join('、')}。可再次确认上传。`); setProgress(''); return }
+      onClose()
     } catch (reason) { setError(reason.message || '上传失败，可重试') } finally { setBusy(false) }
   }
-  return <div className="asset-picker-modal" role="presentation"><section className="asset-picker-dialog asset-upload-dialog" role="dialog" aria-modal="true" aria-label={`上传到${library.label}${folder.label}`}><header className="asset-picker-heading"><div><strong>上传资产</strong><small>目标位置：{library.label} / {folder.label}</small></div><button type="button" className="icon-button" aria-label="关闭上传" onClick={onClose}><X size={18} /></button></header><label className="asset-upload-dropzone"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="选择上传图片" onChange={choose} />{preview ? <img src={preview} alt="上传预览" /> : <><Upload size={24} /><b>选择 PNG、JPG 或 WebP 图片</b><small>单文件不超过 20MB</small></>}</label>{file && <div className="asset-upload-details"><span>{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</span><label>图片名称<input value={name} maxLength="160" onChange={event => setName(event.target.value)} aria-label="上传图片名称" /></label></div>}{error && <p className="retouch-error" role="alert">{error}</p>}<footer className="asset-picker-footer"><span>上传后会真实归档到当前工作区。</span><div><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary-button" disabled={!file || busy} onClick={submit}>{busy ? '正在上传…' : '确认上传'}</button></div></footer></section></div>
+  return <div className="asset-picker-modal" role="presentation"><section className="asset-picker-dialog asset-upload-dialog" role="dialog" aria-modal="true" aria-label={`上传到${library.label}${folder.label}`}><header className="asset-picker-heading"><div><strong>批量上传资产</strong><small>目标位置：{library.label} / {folder.label}</small></div><button type="button" className="icon-button" aria-label="关闭上传" onClick={onClose}><X size={18} /></button></header><label className="asset-upload-dropzone"><input type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="选择上传图片" onChange={choose} />{previews.length ? <div className="asset-upload-preview-grid">{previews.slice(0, 12).map((preview, index) => <img key={`${preview}-${index}`} src={preview} alt={`${files[index]?.name || '上传图片'}预览`} />)}{previews.length > 12 && <b>另有 {previews.length - 12} 张</b>}</div> : <><Upload size={24} /><b>选择一张或多张 PNG、JPG 或 WebP 图片</b><small>单文件不超过 20MB</small></>}</label>{files.length > 0 && <div className="asset-upload-details"><strong>已选择 {files.length} 张图片</strong>{files.slice(0, 6).map(file => <span key={`${file.name}-${file.size}`}>{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</span>)}{files.length > 6 && <span>另有 {files.length - 6} 张图片</span>}</div>}{progress && <p className="record-notice" role="status">{progress}</p>}{error && <p className="retouch-error" role="alert">{error}</p>}<footer className="asset-picker-footer"><span>上传后会真实归档到当前工作区。</span><div><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary-button" disabled={!files.length || busy} onClick={submit}>{busy ? '正在上传…' : `确认上传 ${files.length} 张`}</button></div></footer></section></div>
+}
+
+function VideoLibraryPanel() {
+  const [tasks, setTasks] = useState([])
+  const [scripts, setScripts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    Promise.all([
+      fetch('/api/v1/video-tasks').then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.error || '视频库读取失败'); return value.tasks || [] }),
+      fetch('/api/v1/scripts').then(async response => { const value = await response.json(); return response.ok ? value.scripts || [] : [] }),
+    ]).then(([nextTasks, nextScripts]) => {
+      if (!active) return
+      setTasks(nextTasks); setScripts(nextScripts)
+    }).catch(reason => active && setError(reason.message || '视频库读取失败，可重试')).finally(() => active && setLoading(false))
+    return () => { active = false }
+  }, [])
+  const scriptNames = useMemo(() => new Map(scripts.map(script => [script.id, script.title || '未命名剧本'])), [scripts])
+  const grouped = useMemo(() => {
+    const groups = new Map()
+    tasks.forEach(task => {
+      const key = task.scriptId || 'unassigned'
+      groups.set(key, [...(groups.get(key) || []), task])
+    })
+    return [...groups.entries()].map(([scriptId, videos]) => ({ scriptId, title: scriptNames.get(scriptId) || (scriptId === 'unassigned' ? '未关联剧本的视频' : '剧本已删除或不可读取'), videos })).sort((a, b) => String(b.videos[0]?.createdAt || '').localeCompare(String(a.videos[0]?.createdAt || '')))
+  }, [tasks, scriptNames])
+  return <section className="video-library-panel" aria-label="视频库"><div className="showcase-toolbar glass-card asset-toolbar"><div><strong>视频库</strong><span className="video-library-caption">按已保存剧本分批管理视频生成任务与结果。</span></div><span>{tasks.length} 个视频任务</span></div>{error && <p className="retouch-error" role="alert">{error}</p>}{loading ? <div className="asset-skeleton" /> : !grouped.length ? <div className="empty-state"><Film size={28} /><p>暂无视频任务。先在短剧脚本中确认剧本与分镜，再提交视频生成。</p></div> : <div className="video-library-groups">{grouped.map(group => <section className="video-script-group glass-card" key={group.scriptId}><header><div><span className="kicker">SCRIPT BATCH</span><h2>{group.title}</h2></div><span>{group.videos.length} 个视频</span></header><div className="video-library-grid">{group.videos.map(task => <article key={task.id}><div className="video-library-frame">{task.providerVideoUrl ? <video controls preload="metadata" src={task.providerVideoUrl}>当前浏览器无法播放此视频。</video> : <div className="video-library-pending"><Film size={28} /><strong>{task.status === 'failed' ? '视频生成失败' : '等待视频结果'}</strong><small>{task.stage || '上游服务正在处理，请稍后刷新。'}</small></div>}</div><div><strong>镜头 {task.id.slice(0, 8)}</strong><small>{task.durationSeconds || '—'} 秒 · {task.aspectRatio || '—'} · {task.resolution || '—'}</small><small>{new Date(task.createdAt || Date.now()).toLocaleString('zh-CN')}</small>{task.providerVideoUrl && <a className="secondary-button" href={task.providerVideoUrl} target="_blank" rel="noreferrer">打开视频</a>}</div></article>)}</div></section>)}</div>}</section>
 }
 
 function GeneratedResultsPanel({ onNavigate }) {
@@ -1345,24 +1393,100 @@ function GeneratedResultsPanel({ onNavigate }) {
     return () => { alive = false }
   }, [selected?.id])
   const reuse = asset => onNavigate(asset.assetSpace === 'script' ? 'script' : asset.assetSpace === 'brand' ? 'brand' : 'retouch', undefined, { asset, assetId: asset.id, source: 'generated-results', focusAssistant: true })
-  return <section className="generated-results-panel" aria-label="AI 成果中心"><div className="showcase-toolbar glass-card"><div><strong>AI 成果</strong><small>查看生成结果、参考素材与创建记录。</small></div></div>{error && <p className="retouch-error" role="alert">{error}</p>}{loading ? <div className="asset-skeleton" /> : !results.length ? <div className="empty-state"><p>暂无 AI 生成成果。完成精修或品牌创作后，请在保存确认中归档。</p></div> : <div className="generated-results-layout"><div className="generated-result-list">{results.map(asset => <button key={asset.id} className={selected?.id === asset.id ? 'is-selected' : ''} onClick={() => setSelectedId(asset.id)}><CachedImage asset={asset} src={asset.thumbnailUrl || asset.url} alt="" /><span><b>{asset.name}</b><small>{asset.assetSpace === 'brand' ? '品牌创作' : asset.assetSpace === 'script' ? '短剧制作' : '产品精修'} · {new Date(asset.createdAt).toLocaleDateString('zh-CN')}</small></span></button>)}</div>{selected && <article className="generated-result-detail glass-card"><button className="asset-image-button" onClick={() => setViewerAsset(selected)} aria-label={`查看 ${selected.name}`}><CachedImage asset={selected} src={selected.previewUrl || selected.url} alt={selected.name} /></button><div><span className="kicker">GENERATED RESULT</span><h2>{selected.name}</h2><p>{selected.promptSummary || selected.finalPrompt || selected.originalPlan || '该结果未保存生成摘要。'}</p><div className="generated-result-actions"><button className="primary-button" onClick={() => reuse(selected)}>继续创作 <ArrowUpRight size={15} /></button><a className="secondary-button" href={`/api/v1/assets/${selected.id}/download`} download={selected.downloadName || selected.name}><Download size={15} />下载</a></div><h3>参考素材</h3><div className="generated-result-sources">{sources.length ? sources.map(source => <button key={source.id} onClick={() => setViewerAsset(source)}><CachedImage asset={source} src={source.thumbnailUrl || source.url} alt={source.name} /><span>{source.name}</span></button>) : <p>本次生成没有可读取的参考素材。</p>}</div></div></article>}</div>}{viewerAsset && <ImageViewer src={viewerAsset.previewUrl || viewerAsset.url} alt={viewerAsset.name} downloadUrl={`/api/v1/assets/${viewerAsset.id}/download`} downloadName={viewerAsset.downloadName || viewerAsset.name} onClose={() => setViewerAsset(null)} />}</section>
+  return <section className="generated-results-panel" aria-label="AI 成果中心"><div className="showcase-toolbar glass-card"><div><strong>AI 成果</strong><small>查看生成结果、参考素材与创建记录。</small></div></div>{error && <p className="retouch-error" role="alert">{error}</p>}{loading ? <div className="asset-skeleton" /> : !results.length ? <div className="empty-state"><p>暂无 AI 生成成果。完成精修或品牌创作后，请在保存确认中归档。</p></div> : <div className="generated-results-layout"><div className="generated-result-list">{results.map(asset => <button key={asset.id} className={selected?.id === asset.id ? 'is-selected' : ''} onClick={() => setSelectedId(asset.id)}><CachedImage asset={asset} src={asset.thumbnailUrl || asset.url} alt="" /><span><b>{asset.name}</b><small>{asset.assetSpace === 'brand' ? '品牌创作' : asset.assetSpace === 'script' ? '短剧制作' : '产品精修'} · {new Date(asset.createdAt).toLocaleDateString('zh-CN')}</small></span></button>)}</div>{selected && <article className="generated-result-detail glass-card"><button className="asset-image-button" onDoubleClick={() => setViewerAsset(selected)} aria-label={`双击查看 ${selected.name}`} title="双击放大查看"><CachedImage asset={selected} src={selected.previewUrl || selected.url} alt={selected.name} /></button><div><span className="kicker">GENERATED RESULT</span><h2>{selected.name}</h2><p>{selected.promptSummary || selected.finalPrompt || selected.originalPlan || '该结果未保存生成摘要。'}</p><div className="generated-result-actions"><button className="primary-button" onClick={() => reuse(selected)}>继续创作 <ArrowUpRight size={15} /></button><a className="secondary-button" href={`/api/v1/assets/${selected.id}/download`} download={selected.downloadName || selected.name}><Download size={15} />下载</a></div><h3>参考素材</h3><div className="generated-result-sources">{sources.length ? sources.map(source => <button key={source.id} onDoubleClick={() => setViewerAsset(source)} title="双击放大查看"><CachedImage asset={source} src={source.thumbnailUrl || source.url} alt={source.name} /><span>{source.name}</span></button>) : <p>本次生成没有可读取的参考素材。</p>}</div></div></article>}</div>}{viewerAsset && <ImageViewer src={viewerAsset.previewUrl || viewerAsset.url} alt={viewerAsset.name} downloadUrl={`/api/v1/assets/${viewerAsset.id}/download`} downloadName={viewerAsset.downloadName || viewerAsset.name} onClose={() => setViewerAsset(null)} />}</section>
 }
 
-function AssetLibraryPage({ onNavigate, initialCategory = 'retouch' }) {
-  const [libraryKey, setLibraryKey] = useState(initialCategory === 'generated' || ASSET_LIBRARY_UI.some(library => library.key === initialCategory) ? initialCategory : 'retouch')
+function AssetLibraryPageLegacy({ onNavigate, initialCategory = 'retouch' }) {
+  const [libraryKey, setLibraryKey] = useState(initialCategory === 'generated' || initialCategory === 'video-library' || ASSET_LIBRARY_UI.some(library => library.key === initialCategory) ? initialCategory : 'retouch')
   const [folderKey, setFolderKey] = useState('source'); const [libraries, setLibraries] = useState([]); const [assets, setAssets] = useState([]); const [query, setQuery] = useState(''); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [viewerAsset, setViewerAsset] = useState(null); const [uploadTarget, setUploadTarget] = useState(null); const [page, setPage] = useState(1)
   const activeLibrary = ASSET_LIBRARY_UI.find(library => library.key === libraryKey) || ASSET_LIBRARY_UI[0]
   const activeFolder = activeLibrary.folders.find(folder => folder[0] === folderKey) || activeLibrary.folders[0]
   const folderConfig = libraries.find(library => library.key === libraryKey)?.folders?.find(folder => folder.key === activeFolder[0])
   const loadLibraries = async () => { try { const response = await fetch('/api/v1/libraries?includeLegacy=true'); const value = await response.json(); if (!response.ok) throw new Error(value.error || '资产目录读取失败'); setLibraries(value.libraries || []) } catch (reason) { setError(reason.message || '资产目录读取失败') } }
-  const loadAssets = async () => { if (libraryKey === 'text' || libraryKey === 'generated') { setLoading(false); return } setLoading(true); setError(''); try { const params = new URLSearchParams({ libraryKey, folderKey: activeFolder[0], page: String(page), pageSize: '18', includeLegacy: 'true' }); if (query.trim()) params.set('q', query.trim()); const response = await fetch(`/api/v1/assets?${params}`); const value = await response.json(); if (!response.ok) throw new Error(value.error || '资产读取失败'); setAssets(value.assets || []) } catch (reason) { setAssets([]); setError(reason.message || '资产读取失败，可重试') } finally { setLoading(false) } }
-  useEffect(() => { const next = ASSET_LIBRARY_UI.find(library => library.key === initialCategory); setLibraryKey(initialCategory === 'generated' ? 'generated' : (next || ASSET_LIBRARY_UI[0]).key); setFolderKey((next || ASSET_LIBRARY_UI[0]).folders[0][0]); setPage(1) }, [initialCategory])
+  const loadAssets = async () => { if (libraryKey === 'text' || libraryKey === 'generated' || libraryKey === 'video-library') { setLoading(false); return } setLoading(true); setError(''); try { const params = new URLSearchParams({ libraryKey, folderKey: activeFolder[0], page: String(page), pageSize: '18', includeLegacy: 'true' }); if (query.trim()) params.set('q', query.trim()); const response = await fetch(`/api/v1/assets?${params}`); const value = await response.json(); if (!response.ok) throw new Error(value.error || '资产读取失败'); setAssets(value.assets || []) } catch (reason) { setAssets([]); setError(reason.message || '资产读取失败，可重试') } finally { setLoading(false) } }
+  useEffect(() => { const next = ASSET_LIBRARY_UI.find(library => library.key === initialCategory); setLibraryKey(initialCategory === 'generated' || initialCategory === 'video-library' ? initialCategory : (next || ASSET_LIBRARY_UI[0]).key); setFolderKey((next || ASSET_LIBRARY_UI[0]).folders[0][0]); setPage(1) }, [initialCategory])
   useEffect(() => { void loadLibraries() }, [])
   useEffect(() => { const timer = window.setTimeout(() => { void loadAssets() }, query ? 250 : 0); return () => window.clearTimeout(timer) }, [libraryKey, folderKey, page, query])
   const saveTemplate = async asset => { setNotice(''); setError(''); try { const response = await fetch(`/api/v1/assets/${asset.id}/save-as-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `${asset.name}-模板` }) }); const value = await response.json(); if (!response.ok) throw new Error(value.error || '保存模板失败'); setNotice(`已保存到：精修图库 / 模板${value.idempotent ? '（已存在）' : ''}`); void loadLibraries() } catch (reason) { setError(reason.message || '保存模板失败，可重试') } }
   const reuse = asset => onNavigate(libraryKey === 'script' ? 'script' : libraryKey === 'brand' ? 'brand' : 'retouch', undefined, { asset, assetId: asset.id, source: 'asset-library', focusAssistant: true })
   const textRecordType = { 'retouch-prompt': 'retouch_prompt', 'brand-prompt': 'brand_prompt', script: 'script', 'storyboard-prompt': 'storyboard_prompt' }[activeFolder[0]]
   return <div className="page-content asset-library-page"><header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按固定业务库与文件夹管理真实归档资产。</p></div><span className="connection-note">当前工作区</span></header><div className="asset-library-layout"><aside className="asset-folder-nav glass-card" aria-label="资产库目录">{ASSET_LIBRARY_UI.map(library => <section key={library.key}><button className={libraryKey === library.key ? 'is-selected' : ''} onClick={() => { setLibraryKey(library.key); setFolderKey(library.folders[0][0]); setPage(1) }}><FolderOpen size={16} />{library.label}</button><div>{library.folders.map(([key, label]) => <button key={key} className={libraryKey === library.key && activeFolder[0] === key ? 'is-selected' : ''} onClick={() => { setLibraryKey(library.key); setFolderKey(key); setPage(1) }}><span>{label}</span><small>{libraries.find(item => item.key === library.key)?.folders?.find(folder => folder.key === key)?.count ?? '—'}</small></button>)}</div></section>)}<section><button className={libraryKey === 'generated' ? 'is-selected' : ''} onClick={() => { setLibraryKey('generated'); setPage(1) }}><Sparkles size={16} />AI 成果</button></section></aside><main>{libraryKey === 'text' ? <PromptRecordPage workspace="" title={`文本库 / ${activeFolder[1]}`} description="提示词、剧本与分镜按业务类型分开归档，可直接复用。" filters={[[textRecordType, activeFolder[1]]]} initialFilter={textRecordType} onReuse={record => onNavigate(record.workspace === 'brand' ? 'brand' : record.workspace === 'retouch' ? 'retouch' : 'script', undefined, { record, source: 'text-library', focusAssistant: true })} /> : libraryKey === 'generated' ? <GeneratedResultsPanel onNavigate={onNavigate} /> : <><div className="showcase-toolbar glass-card asset-toolbar"><div><strong>{activeLibrary.label} / {activeFolder[1]}</strong>{folderConfig?.uploadEnabled && <button className="primary-button" onClick={() => setUploadTarget({ library: activeLibrary, folder: { key: activeFolder[0], label: activeFolder[1] } })}><Upload size={15} />上传资产</button>}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder="搜索名称、来源或创建人" aria-label="搜索资产" /></label></div>{notice && <p className="record-notice" role="status">{notice}</p>}{error && <p className="retouch-error" role="alert">{error}<button className="text-button" onClick={() => void loadAssets()}>重试</button></p>}<section className="asset-grid asset-grid--folders" aria-label={`${activeLibrary.label}${activeFolder[1]}列表`}>{loading && Array.from({ length: 6 }, (_, index) => <div className="asset-skeleton" key={index} />)}{!loading && assets.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onClick={() => setViewerAsset(asset)} aria-label={`查看 ${asset.name}`} title="查看图片"><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{activeFolder[1]} · {asset.sourceModule || asset.createdBy || '云端资产'}</small></span><span className="asset-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>{libraryKey === 'retouch' && activeFolder[0] === 'effect' && <button className="secondary-button" onClick={() => void saveTemplate(asset)}>保存为模板</button>}<button className="secondary-button" onClick={() => reuse(asset)}>{libraryKey === 'script' ? '用于短剧' : libraryKey === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}</section>{!loading && !assets.length && <div className="empty-state"><p>{folderConfig?.uploadEnabled ? `暂无${activeFolder[1]}，可从本地上传真实图片资产。` : `暂无${activeFolder[1]}，完成对应生成后会在保存确认中归档到这里。`}</p>{folderConfig?.uploadEnabled && <button className="primary-button" onClick={() => setUploadTarget({ library: activeLibrary, folder: { key: activeFolder[0], label: activeFolder[1] } })}>上传资产</button>}</div>}<nav className="asset-pagination" aria-label="资产库分页"><button className="secondary-button" disabled={page === 1} onClick={() => setPage(current => Math.max(1, current - 1))}><ChevronLeft size={16} />上一页</button><span>第 {page} 页</span><button className="secondary-button" disabled={assets.length < 18} onClick={() => setPage(current => current + 1)}>下一页<ChevronRight size={16} /></button></nav></>}</main></div>{uploadTarget && <AssetUploadDialog library={uploadTarget.library} folder={uploadTarget.folder} onClose={() => setUploadTarget(null)} onSaved={(asset, message) => { setNotice(message); setUploadTarget(null); void loadLibraries(); void loadAssets(); setViewerAsset(asset) }} />}{viewerAsset && <ImageViewer src={viewerAsset.previewUrl || viewerAsset.url} alt={viewerAsset.name} downloadUrl={`/api/v1/assets/${viewerAsset.id}/download`} downloadName={viewerAsset.downloadName || viewerAsset.name} onClose={() => setViewerAsset(null)} />}</div>
+}
+
+function AssetLibraryPage({ onNavigate, initialCategory = 'retouch' }) {
+  const isSpecial = initialCategory === 'generated' || initialCategory === 'video-library'
+  const [libraryKey, setLibraryKey] = useState(isSpecial || ASSET_LIBRARY_UI.some(library => library.key === initialCategory) ? initialCategory : 'retouch')
+  const [folderKey, setFolderKey] = useState('source')
+  const [libraries, setLibraries] = useState([])
+  const [assets, setAssets] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [viewerAsset, setViewerAsset] = useState(null)
+  const [uploadTarget, setUploadTarget] = useState(null)
+  const [page, setPage] = useState(1)
+  const activeLibrary = ASSET_LIBRARY_UI.find(library => library.key === libraryKey) || ASSET_LIBRARY_UI[0]
+  const activeFolder = activeLibrary.folders.find(folder => folder[0] === folderKey) || activeLibrary.folders[0]
+  const folderConfig = libraries.find(library => library.key === libraryKey)?.folders?.find(folder => folder.key === activeFolder[0])
+  const textRecordType = { 'retouch-prompt': 'retouch_prompt', 'brand-prompt': 'brand_prompt', script: 'script', 'storyboard-prompt': 'storyboard_prompt' }[activeFolder[0]]
+  const selectLibrary = (key, folder = null) => {
+    const library = ASSET_LIBRARY_UI.find(item => item.key === key)
+    setLibraryKey(key); setFolderKey(folder || library?.folders?.[0]?.[0] || 'source'); setPage(1); setQuery(''); setError('')
+  }
+  const loadLibraries = async () => {
+    try {
+      const response = await fetch('/api/v1/libraries?includeLegacy=true')
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '资产目录读取失败')
+      setLibraries(value.libraries || [])
+    } catch (reason) { setError(reason.message || '资产目录读取失败') }
+  }
+  const loadAssets = async () => {
+    if (libraryKey === 'text' || libraryKey === 'generated' || libraryKey === 'video-library') { setLoading(false); return }
+    setLoading(true); setError('')
+    try {
+      const params = new URLSearchParams({ libraryKey, folderKey: activeFolder[0], page: String(page), pageSize: '18', includeLegacy: 'true' })
+      if (query.trim()) params.set('q', query.trim())
+      const response = await fetch(`/api/v1/assets?${params}`)
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '资产读取失败')
+      setAssets(value.assets || [])
+    } catch (reason) { setAssets([]); setError(reason.message || '资产读取失败，可重试') } finally { setLoading(false) }
+  }
+  useEffect(() => {
+    const next = ASSET_LIBRARY_UI.find(library => library.key === initialCategory)
+    setLibraryKey(initialCategory === 'generated' || initialCategory === 'video-library' ? initialCategory : (next || ASSET_LIBRARY_UI[0]).key)
+    setFolderKey((next || ASSET_LIBRARY_UI[0]).folders[0][0]); setPage(1); setQuery('')
+  }, [initialCategory])
+  useEffect(() => { void loadLibraries() }, [])
+  useEffect(() => { const timer = window.setTimeout(() => { void loadAssets() }, query ? 250 : 0); return () => window.clearTimeout(timer) }, [libraryKey, folderKey, page, query])
+  const saveTemplate = async asset => {
+    setNotice(''); setError('')
+    try {
+      const response = await fetch(`/api/v1/assets/${asset.id}/save-as-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `${asset.name}-模板` }) })
+      const value = await response.json()
+      if (!response.ok) throw new Error(value.error || '保存模板失败')
+      setNotice(`已保存到：精修图库 / 模板${value.idempotent ? '（已存在）' : ''}`); void loadLibraries()
+    } catch (reason) { setError(reason.message || '保存模板失败，可重试') }
+  }
+  const reuse = asset => onNavigate(libraryKey === 'script' ? 'script' : libraryKey === 'brand' ? 'brand' : 'retouch', undefined, { asset, assetId: asset.id, source: 'asset-library', focusAssistant: true })
+  const renderSidebar = <aside className="asset-folder-nav glass-card" aria-label="资产库目录">
+    {ASSET_LIBRARY_UI.map(library => <section key={library.key}><button className={libraryKey === library.key ? 'is-selected' : ''} onClick={() => selectLibrary(library.key)}><FolderOpen size={16} />{library.label}</button><div>{library.folders.map(([key, label]) => <button key={key} className={libraryKey === library.key && activeFolder[0] === key ? 'is-selected' : ''} onClick={() => selectLibrary(library.key, key)}><span>{label}</span><small>{libraries.find(item => item.key === library.key)?.folders?.find(folder => folder.key === key)?.count ?? '—'}</small></button>)}</div></section>)}
+    <section><button className={libraryKey === 'video-library' ? 'is-selected' : ''} onClick={() => selectLibrary('video-library')}><Film size={16} />视频库</button></section>
+    <section><button className={libraryKey === 'generated' ? 'is-selected' : ''} onClick={() => selectLibrary('generated')}><Sparkles size={16} />AI 成果</button></section>
+  </aside>
+  const renderAssets = <>
+    <div className="showcase-toolbar glass-card asset-toolbar"><div><strong>{activeLibrary.label} / {activeFolder[1]}</strong>{folderConfig?.uploadEnabled && <button className="primary-button" onClick={() => setUploadTarget({ library: activeLibrary, folder: { key: activeFolder[0], label: activeFolder[1] } })}><Upload size={15} />批量上传资产</button>}</div><label className="asset-search"><span className="sr-only">搜索资产</span><input value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder="搜索名称、来源或创建人" aria-label="搜索资产" /></label></div>
+    {notice && <p className="record-notice" role="status">{notice}</p>}{error && <p className="retouch-error" role="alert">{error}<button className="text-button" onClick={() => void loadAssets()}>重试</button></p>}
+    <section className="asset-grid asset-grid--folders" aria-label={`${activeLibrary.label}${activeFolder[1]}列表`}>
+      {loading && Array.from({ length: 6 }, (_, index) => <div className="asset-skeleton" key={index} />)}
+      {!loading && assets.map(asset => <article className="asset-card glass-card" key={asset.id}><button className="asset-image-button" onDoubleClick={() => setViewerAsset(asset)} aria-label={`双击查看 ${asset.name}`} title="双击放大查看"><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /></button><div><span><strong>{asset.name}</strong><small>{activeFolder[1]} · {asset.sourceModule || asset.createdBy || '云端资产'}</small></span><span className="asset-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name} aria-label={`下载 ${asset.name}`}><Download size={15} /></a>{libraryKey === 'retouch' && activeFolder[0] === 'effect' && <button className="secondary-button" onClick={() => void saveTemplate(asset)}>保存为模板</button>}<button className="secondary-button" onClick={() => reuse(asset)}>{libraryKey === 'script' ? '用于短剧' : libraryKey === 'brand' ? '用于创作' : '用于精修'}</button></span></div></article>)}
+    </section>
+    {!loading && !assets.length && <div className="empty-state"><p>{folderConfig?.uploadEnabled ? `暂无${activeFolder[1]}，可从本地批量上传真实图片资产。` : `暂无${activeFolder[1]}，完成对应生成后会在保存确认中归档到这里。`}</p>{folderConfig?.uploadEnabled && <button className="primary-button" onClick={() => setUploadTarget({ library: activeLibrary, folder: { key: activeFolder[0], label: activeFolder[1] } })}>批量上传资产</button>}</div>}
+    <nav className="asset-pagination" aria-label="资产库分页"><button className="secondary-button" disabled={page === 1} onClick={() => setPage(current => Math.max(1, current - 1))}><ChevronLeft size={16} />上一页</button><span>第 {page} 页</span><button className="secondary-button" disabled={assets.length < 18} onClick={() => setPage(current => current + 1)}>下一页<ChevronRight size={16} /></button></nav>
+  </>
+  return <div className="page-content asset-library-page"><header className="workspace-header"><div><span className="breadcrumb">创作工作台 / 云端资产</span><h1>资产库</h1><p>按固定业务库、剧本批次和文件夹管理真实归档资产。</p></div><span className="connection-note">当前工作区</span></header><div className="asset-library-layout">{renderSidebar}<main>{libraryKey === 'text' ? <PromptRecordPage workspace="" title={`文本库 / ${activeFolder[1]}`} description="提示词、剧本与分镜按业务类型分开归档，可直接复用。" filters={[[textRecordType, activeFolder[1]]]} initialFilter={textRecordType} onReuse={record => onNavigate(record.workspace === 'brand' ? 'brand' : record.workspace === 'retouch' ? 'retouch' : 'script', undefined, { record, source: 'text-library', focusAssistant: true })} /> : libraryKey === 'generated' ? <GeneratedResultsPanel onNavigate={onNavigate} /> : libraryKey === 'video-library' ? <VideoLibraryPanel /> : renderAssets}</main></div>{uploadTarget && <AssetUploadDialog library={uploadTarget.library} folder={uploadTarget.folder} onClose={() => setUploadTarget(null)} onSaved={(uploaded, message) => { setNotice(message); void loadLibraries(); void loadAssets() }} />}{viewerAsset && <ImageViewer src={viewerAsset.previewUrl || viewerAsset.url} alt={viewerAsset.name} downloadUrl={`/api/v1/assets/${viewerAsset.id}/download`} downloadName={viewerAsset.downloadName || viewerAsset.name} onClose={() => setViewerAsset(null)} />}</div>
 }
 
 function PlaceholderPage({ type }) {
