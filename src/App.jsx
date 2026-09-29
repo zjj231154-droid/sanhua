@@ -541,6 +541,13 @@ function PromptRecordPage({ workspace, title, description, filters = [], onReuse
   </section>
 }
 
+const videoValidationMessage = (value, fallback = '视频校验失败，请刷新页面后重新选择剧本和参考图片。') => {
+  const missing = Array.isArray(value?.missing) ? value.missing.map(item => String(item || '').trim()).filter(Boolean) : []
+  if (missing.length) return `请补齐：${missing.join('、')}`
+  return String(value?.hint || '').trim() || fallback
+}
+const responseJson = async response => { try { return await response.json() } catch { return {} } }
+
 function VideoWorkbench({ scripts, activeId, scriptPlan }) {
   const [assets, setAssets] = useState([]); const [assetType, setAssetType] = useState('scene'); const [pickerOpen, setPickerOpen] = useState(false)
   const [refs, setRefs] = useState({ scene: [], character: [], prop: [] }); const [prompt, setPrompt] = useState('')
@@ -561,7 +568,7 @@ function VideoWorkbench({ scripts, activeId, scriptPlan }) {
     setRefs(current => ({ ...current, [type]: current[type].some(item => item.id === asset.id) ? current[type].filter(item => item.id !== asset.id) : [...current[type], asset] }))
   }
   const missing = !activeScript ? '请先确认并保存剧本与分镜提示词' : !refs.scene.length ? '请至少添加一张场景资产' : (prompt.trim() || activeScript.outline || scriptPlan).length < 12 ? '请输入不少于 12 字的视频提示词' : ''
-  const create = async () => { if (missing || creating) return; setCreating(true); setStatus('正在校验视频任务…'); const body = { scriptId: activeScript.id, scriptVersionId: activeScript.currentVersionId, videoPrompt: prompt.trim() || activeScript.outline || scriptPlan, shotPlan: activeScript.outline || scriptPlan, durationSeconds: Number(duration), aspectRatio: ratio, resolution, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, value]) => [key, value.map(item => item.id)])) }; try { const checked = await fetch('/api/v1/video-tasks/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const validation = await checked.json(); if (!checked.ok) throw new Error(validation.hint || `请补齐：${(validation.missing || []).join('、')}`); setStatus('正在创建 Seedance 视频任务…'); const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const value = await response.json(); if (!response.ok) throw new Error(value.hint || value.error || '视频任务创建失败'); setTasks(current => [value.task, ...current]); setStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}；分镜提示词已归档。`) } catch (reason) { setStatus(reason.message || '视频任务创建失败') } finally { setCreating(false) } }
+  const create = async () => { if (missing || creating) return; setCreating(true); setStatus('正在校验视频任务…'); const body = { scriptId: activeScript.id, scriptVersionId: activeScript.currentVersionId, videoPrompt: prompt.trim() || activeScript.outline || scriptPlan, shotPlan: activeScript.outline || scriptPlan, durationSeconds: Number(duration), aspectRatio: ratio, resolution, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, value]) => [key, value.map(item => item.id)])) }; try { const checked = await fetch('/api/v1/video-tasks/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const validation = await responseJson(checked); if (!checked.ok) throw new Error(videoValidationMessage(validation)); setStatus('正在创建 Seedance 视频任务…'); const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const value = await responseJson(response); if (!response.ok) throw new Error(videoValidationMessage(value, '视频任务创建失败，请刷新页面后重试。')); setTasks(current => [value.task, ...current]); setStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}；分镜提示词已归档。`) } catch (reason) { setStatus(reason.message || '视频任务创建失败') } finally { setCreating(false) } }
   const addMention = () => { mentionPending.current = true; setPrompt(current => current.endsWith('@') ? current : `${current}${current.trim() ? ' ' : ''}@`); setPickerOpen(true) }
   return <section className="video-workbench" aria-label="视频生成工作台">
     <header><span className="kicker">SEEDANCE VIDEO</span><h2>视频生成</h2><p>输入或点击 @ 可引用已上传的短剧素材；被选中的图片会作为真实参考内容发送给模型。</p></header>
@@ -1175,10 +1182,10 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }),
       })
-      const value = await response.json()
-      if (!response.ok) throw new Error(Array.isArray(value.missing) ? `请补齐：${value.missing.join('、')}` : value.error || '视频校验失败')
+      const value = await responseJson(response)
+      if (!response.ok) throw new Error(videoValidationMessage(value))
       setVideoReady(Boolean(value.ready))
-      setVideoStatus(value.ready ? `校验通过。${value.notice || '视频模型未接入，创建后会标记为模拟任务。'}` : `请补齐：${value.missing.join('、')}`)
+      setVideoStatus(value.ready ? `校验通过。${value.notice || '视频模型未接入，创建后会标记为模拟任务。'}` : videoValidationMessage(value))
     } catch (error) { setVideoStatus(error.message || '视频校验失败') }
   }
   const createVideoTask = async () => {
@@ -1186,8 +1193,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     try {
       const script = scripts.find(item => item.id === activeId) || scripts[0]
       const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }) })
-      const value = await response.json()
-      if (!response.ok) throw new Error(Array.isArray(value.missing) ? `请补齐：${value.missing.join('、')}` : value.error || '视频任务创建失败')
+      const value = await responseJson(response)
+      if (!response.ok) throw new Error(videoValidationMessage(value, '视频任务创建失败，请刷新页面后重试。'))
       setVideoStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}`)
       setVideoReady(false)
     } catch (error) { setVideoStatus(error.message || '视频任务创建失败') }

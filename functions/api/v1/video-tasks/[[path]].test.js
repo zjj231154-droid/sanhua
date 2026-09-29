@@ -31,6 +31,24 @@ describe('video task validation', () => {
     expect(value.missing).toEqual(expect.arrayContaining(['已保存剧本', '至少一个场景资产', '分镜或分场说明']))
   })
 
+  it('returns an actionable validation message when a selected reference file cannot be read', async () => {
+    const bucket = new MemoryBucket()
+    const context = { env: { SANHUA_ASSETS: bucket }, params: { path: 'validate' } }
+    const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })
+    await putJson(bucket, assetMetadataKey('broken-scene'), { id: 'broken-scene', name: '损坏场景', assetType: 'image', usableFor: ['script', 'video'], storageKey: 'uploads/broken-scene.png' })
+    const originalGet = bucket.get.bind(bucket)
+    bucket.get = async key => {
+      if (key === 'uploads/broken-scene.png') throw new Error('object store unavailable')
+      return originalGet(key)
+    }
+    const response = await onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks/validate', {
+      scriptId: script.id, scriptVersionId: script.currentVersionId, assetRefs: { scene: ['broken-scene'] }, videoPrompt: '镜头从茶馆门口推进到掌柜与顾客的对峙。', durationSeconds: 8,
+    }) })
+    const value = await response.json()
+    expect(response.status).toBe(422)
+    expect(value.missing).toEqual(expect.arrayContaining(['读取参考图片失败：损坏场景，请重新选择或重新上传后重试。']))
+  })
+
   it('submits a Seedance video task through the encrypted personal video connection', async () => {
     const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: undefined } }
     const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })

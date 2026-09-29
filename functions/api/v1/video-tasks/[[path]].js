@@ -44,9 +44,12 @@ const referenceImagesFor = async (context, identity, refs) => {
       images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: externalUrl })
       continue
     }
-    const object = await bucket.get(asset.storageKey)
+    if (!asset.storageKey) return { error: `参考资产缺少可读取的图片文件：${asset.name || id}，请重新上传后重试。` }
+    let object
+    try { object = await bucket.get(asset.storageKey) } catch { return { error: `读取参考图片失败：${asset.name || id}，请重新选择或重新上传后重试。` } }
     if (!object) return { error: `无法读取参考图片：${asset.name || id}` }
-    const bytes = new Uint8Array(await (typeof object.arrayBuffer === 'function' ? object.arrayBuffer() : new Response(object.body).arrayBuffer()))
+    let bytes
+    try { bytes = new Uint8Array(await (typeof object.arrayBuffer === 'function' ? object.arrayBuffer() : new Response(object.body).arrayBuffer())) } catch { return { error: `读取参考图片失败：${asset.name || id}，请重新上传后重试。` } }
     if (!bytes.byteLength || bytes.byteLength > MAX_REFERENCE_IMAGE_BYTES) return { error: `参考图片 ${asset.name || id} 超过 8MB 或文件无效。` }
     totalBytes += bytes.byteLength
     if (totalBytes > MAX_REFERENCE_TOTAL_BYTES) return { error: '参考图片总大小超过 30MB，请减少图片数量或压缩后重试。' }
@@ -74,7 +77,11 @@ const validate = async (context, input, identity) => {
   if (!Number.isFinite(durationSeconds) || durationSeconds < 4 || durationSeconds > 15) missing.push('4-15 秒的视频时长')
   const provider = await resolvedVideoProviderConnection(context, identity.user.id)
   const providerConfigured = Boolean(provider?.apiKey && provider?.model)
-  const references = missing.length ? { images: [] } : await referenceImagesFor(context, identity, assetRefs)
+  let references = { images: [] }
+  if (!missing.length) {
+    try { references = await referenceImagesFor(context, identity, assetRefs) }
+    catch { references = { images: [], error: '参考图片校验失败，请重新选择已上传的短剧图片后重试。' } }
+  }
   if (references.error) missing.push(references.error)
   return { missing, scriptId, scriptVersionId, sceneAssetIds, assetRefs, videoPrompt, shotPlan, durationSeconds, aspectRatio, resolution, provider, providerConfigured, referenceImages: references.images || [] }
 }
@@ -151,7 +158,9 @@ export async function onRequestPost(context) {
   const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const input = await inputFrom(context.request)
   if (!input) return json(400, { error: '请求格式必须是 JSON' })
-  const checked = await validate(context, input, identity)
+  let checked
+  try { checked = await validate(context, input, identity) }
+  catch { return json(422, { error: 'VIDEO_TASK_INVALID', missing: ['视频校验暂时失败，请刷新页面后重新选择剧本和参考图片。'], hint: '视频校验暂时失败，请刷新页面后重新选择剧本和参考图片。' }) }
   if (route(context) === 'validate') return json(checked.missing.length ? 422 : 200, { ready: !checked.missing.length, missing: checked.missing, providerConfigured: checked.providerConfigured, normalizedAssetRefs: checked.assetRefs, notice: checked.providerConfigured ? `已检测到 ${checked.provider.model}，提交后将创建真实视频任务并按秒计费。` : '请先到管理设置验证并保存 TokenSpace 视频模型连接。' })
   if (checked.missing.length) return json(422, { error: 'VIDEO_TASK_INVALID', missing: checked.missing })
   if (!checked.providerConfigured) return json(409, { error: 'VIDEO_PROVIDER_NOT_CONFIGURED', hint: '请先到管理设置验证并保存 TokenSpace 视频模型连接。' })
