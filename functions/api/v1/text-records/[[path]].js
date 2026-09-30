@@ -15,11 +15,11 @@ async function backfillTaskPromptRecords(context) {
     const sourceAssetIds = Array.isArray(task.sourceAssetIds) ? task.sourceAssetIds : Array.isArray(task.assets) ? task.assets : []
     if (task.type === 'agent-plan' && task.plan && ['brand', 'script', 'retouch'].includes(task.workspace)) return [{
       workspace: task.workspace, sourceModule: `${task.workspace}.prompts`, recordType: task.workspace === 'brand' ? 'brand_prompt' : task.workspace === 'script' ? 'script' : 'retouch_prompt',
-      title: task.workspace === 'brand' ? '品牌设计计划' : task.workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content: task.plan, contentFormat: 'prompt', model: task.model, provider: 'usegoodai-reasoning', sourceTaskId: task.id, sourceAssetIds,
+      title: task.workspace === 'brand' ? '品牌设计计划' : task.workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content: task.plan, contentFormat: 'prompt', model: task.model, provider: 'usegoodai-reasoning', sourceTaskId: task.workRecordId || task.id, sourceAssetIds,
     }]
     if (task.type === 'image-batch' && task.finalPrompt && ['brand', 'retouch'].includes(task.workspace)) return [{
       workspace: task.workspace, sourceModule: `${task.workspace}.prompts`, recordType: task.workspace === 'brand' ? 'brand_prompt' : 'retouch_prompt',
-      title: task.requestedName || (task.workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: task.finalPrompt, contentFormat: 'prompt', model: task.model, provider: 'usegoodai', sourceTaskId: task.id, sourceAssetIds,
+      title: task.requestedName || (task.workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: task.finalPrompt, contentFormat: 'prompt', model: task.model, provider: 'usegoodai', sourceTaskId: task.workRecordId || task.id, sourceAssetIds,
     }]
     return []
   })

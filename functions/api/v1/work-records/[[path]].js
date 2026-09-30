@@ -28,13 +28,14 @@ export async function onRequestPost(context) {
     const current = await getWorkRecord(context, id)
     if (!owned(current, identity)) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
     if (action === 'submit') {
+      if (current.providerTaskId) return json(200, { item: current, record: current, idempotent: true })
       if (!['draft', 'ready'].includes(current.status)) return json(409, { error: 'WORK_RECORD_NOT_SUBMITTABLE', status: current.status })
       const record = await updateWorkRecord(context, id, { ...input, status: 'queued', progress: 0, updatedBy: identity.user.id, expectedVersion: input.expectedVersion ?? current.version })
       if (record?.conflict) return json(409, { error: 'VERSION_CONFLICT', currentVersion: record.conflict.version, updatedAt: record.conflict.updatedAt })
       return unavailable(record) || json(200, { item: record, record })
     }
     if (action === 'retry') {
-      const record = await updateWorkRecord(context, id, { ...input, status: 'queued', progress: 0, errorCode: '', errorMessage: '', updatedBy: identity.user.id, expectedVersion: input.expectedVersion ?? current.version })
+      const record = await updateWorkRecord(context, id, { ...input, status: 'queued', progress: 0, errorCode: '', errorMessage: '', retryCount: Number(current.retryCount || 0) + 1, updatedBy: identity.user.id, expectedVersion: input.expectedVersion ?? current.version })
       if (record?.conflict) return json(409, { error: 'VERSION_CONFLICT', currentVersion: record.conflict.version, updatedAt: record.conflict.updatedAt })
       return unavailable(record) || json(200, { item: record, record })
     }

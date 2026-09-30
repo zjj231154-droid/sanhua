@@ -3,6 +3,7 @@ import { archiveImageOutputs, assetsBucket } from '../../_lib/asset-store.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
 import { requireIdentity, resolvedImageProviderConnection } from '../../_lib/collaboration.js'
+import { getWorkRecord, updateWorkRecord } from '../../_lib/work-record-store.js'
 
 const workspaceFor = value => ['retouch', 'brand'].includes(value) ? value : null
 
@@ -13,6 +14,9 @@ export async function onRequestPost(context) {
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const workspace = workspaceFor(input.workspace)
+  const workRecordId = String(input.workRecordId || input.taskId || '').trim()
+  const workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  if (workRecordId && (!workRecord || (!identity.compatibilityMode && (workRecord.workspaceId !== identity.workspaceId || workRecord.ownerUserId !== identity.user.id)))) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
   const prompt = String(input.prompt || '').trim().slice(0, 12000)
   const submittedImages = Array.isArray(input.images) ? input.images.filter(value => typeof value === 'string') : []
   const referenceImage = typeof input.referenceImage === 'string' ? input.referenceImage : ''
@@ -32,13 +36,14 @@ export async function onRequestPost(context) {
   const requestedName = String(input.requestedName || input.requested_name || '').trim().slice(0, 160)
   const namePrefix = String(input.namePrefix || input.name_prefix || '').trim().slice(0, 160)
   const task = await saveTask(context, {
-    id: crypto.randomUUID(), workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'image-batch', status: 'running', progress: 25,
+    id: crypto.randomUUID(), workRecordId, workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'image-batch', status: 'running', progress: 25,
     stage: `模型处理中（0/${count}）`, heartbeatAt: new Date().toISOString(), requirements: prompt,
     finalPrompt: String(input.metadata?.finalPrompt || prompt).slice(0, 12000), originalPlan: String(input.metadata?.originalPlan || '').slice(0, 12000), model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
   })
+  if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'running', progress: 25, providerType: 'usegoodai-image', providerModel: model, operationSummary: `模型处理中（0/${count}）`, errorCode: '', errorMessage: '' })
   const textRecord = await createTextRecord(context, {
     workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_prompt' : 'retouch_prompt',
-    workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, title: requestedName || (workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: String(input.metadata?.finalPrompt || prompt), contentFormat: 'prompt', model, provider: 'usegoodai', sourceTaskId: task.id,
+    workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, title: requestedName || (workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: String(input.metadata?.finalPrompt || prompt), contentFormat: 'prompt', model, provider: 'usegoodai', sourceTaskId: workRecordId || task.id,
     sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds : [], referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds : [],
   })
   await updateTask(context, task.id, { textRecordId: textRecord?.id || null })
@@ -55,7 +60,7 @@ export async function onRequestPost(context) {
     for (let index = 0; index < images.length; index += 1) {
       const source = dataUrlToBlob(images[index], `source-${index + 1}`)
       if (!source) {
-        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '输入图片无效', error: 'INVALID_IMAGE_INPUT' })
+        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '输入图片无效', error: 'INVALID_IMAGE_INPUT' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 25, errorCode: 'INVALID_IMAGE_INPUT', errorMessage: '输入图片无效', operationSummary: '输入图片无效' })
         return json(400, { error: '图片必须是 PNG、JPG 或 WebP 的 Data URL' })
       }
       await updateTask(context, task.id, { progress: Math.round(25 + (index / images.length) * 55), stage: `模型处理中（${index + 1}/${images.length}）`, heartbeatAt: new Date().toISOString() })
@@ -69,12 +74,12 @@ export async function onRequestPost(context) {
       if (template) form.append('image[]', template.blob, `${template.name}.${template.extension}`)
       const result = await tokenSpaceRequest(context, 'images/edits', { model, form, provider: 'usegoodai', useImageConnection: true })
       if (result.response) {
-        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' })
+        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 25, errorCode: 'PROVIDER_REQUEST_FAILED', errorMessage: '图片模型未返回结果', operationSummary: '模型调用失败' })
         return result.response
       }
       const output = Array.isArray(result.data?.data) ? result.data.data[0] : null
       if (!output) {
-        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型未返回图片', error: 'MODEL_RETURNED_NO_IMAGES' })
+        await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型未返回图片', error: 'MODEL_RETURNED_NO_IMAGES' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 25, errorCode: 'MODEL_RETURNED_NO_IMAGES', errorMessage: '模型未返回图片', operationSummary: '模型未返回图片' })
         return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id, index: index + 1 })
       }
       outputs.push(output)
@@ -84,21 +89,22 @@ export async function onRequestPost(context) {
       model, provider: 'usegoodai', useImageConnection: true, payload: { model, prompt, n: count, size: input.size || '1024x1024', response_format: 'b64_json' },
     })
     if (result.response) {
-      await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' })
+      await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型调用失败', error: '图片模型未返回结果' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 25, errorCode: 'PROVIDER_REQUEST_FAILED', errorMessage: '图片模型未返回结果', operationSummary: '模型调用失败' })
       return result.response
     }
     outputs = Array.isArray(result.data?.data) ? result.data.data : []
   }
   if (!outputs.length) {
-    await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型未返回图片', error: 'MODEL_RETURNED_NO_IMAGES' })
+    await updateTask(context, task.id, { status: 'failed', progress: 25, stage: '模型未返回图片', error: 'MODEL_RETURNED_NO_IMAGES' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 25, errorCode: 'MODEL_RETURNED_NO_IMAGES', errorMessage: '模型未返回图片', operationSummary: '模型未返回图片' })
     return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id })
   }
   await updateTask(context, task.id, { progress: 90, stage: `归档图片（${outputs.length}/${count}）`, heartbeatAt: new Date().toISOString() })
-  const archived = await archiveImageOutputs(context, { taskId: task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, limit) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, limit) : [], originalPlan: input.metadata?.originalPlan, finalPrompt: input.metadata?.finalPrompt || prompt, brandPhase })
+  const archived = await archiveImageOutputs(context, { taskId: workRecordId || task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, limit) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, limit) : [], originalPlan: input.metadata?.originalPlan, finalPrompt: input.metadata?.finalPrompt || prompt, brandPhase })
   if (archived.error) {
-    await updateTask(context, task.id, { status: 'failed', progress: 90, stage: '资产归档失败', error: 'ASSET_ARCHIVE_FAILED' })
+    await updateTask(context, task.id, { status: 'failed', progress: 90, stage: '资产归档失败', error: 'ASSET_ARCHIVE_FAILED' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 90, errorCode: 'ASSET_ARCHIVE_FAILED', errorMessage: '资产归档失败', operationSummary: '资产归档失败' })
     return archived.error
   }
   const completed = await updateTask(context, task.id, { status: 'completed', progress: 100, stage: '数据库完成并可访问', heartbeatAt: new Date().toISOString(), completedAt: new Date().toISOString(), outputIds: archived.assets.map(asset => asset.id), outputs: archived.assets.map(asset => ({ id: asset.id, url: `/api/assets/${asset.storageKey}`, name: asset.name })) })
-  return json(201, { task: completed, textRecordId: textRecord?.id || null, assets: archived.assets.map(asset => ({ ...asset, url: `/api/assets/${asset.storageKey}` })) })
+  if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'succeeded', progress: 100, resultAssetIds: archived.assets.map(asset => asset.id), resultTextRecordIds: textRecord?.id ? [...(workRecord.resultTextRecordIds || []), textRecord.id] : workRecord.resultTextRecordIds, operationSummary: '数据库完成并可访问', errorCode: '', errorMessage: '' })
+  return json(201, { workRecordId: workRecordId || null, task: completed, textRecordId: textRecord?.id || null, assets: archived.assets.map(asset => ({ ...asset, url: `/api/assets/${asset.storageKey}` })) })
 }

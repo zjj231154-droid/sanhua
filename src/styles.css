@@ -123,6 +123,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .scope-switcher strong { margin-top: 3px; font-size: 13px; }
 .top-actions { display: flex; align-items: center; gap: 10px; }
 .task-progress-menu { position: relative; z-index: 140; }
+.draft-sync-feedback { position: fixed; left: 236px; bottom: 18px; z-index: 950; display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100vw - 270px)); padding: 10px 14px; border: 1px solid rgba(101,63,43,.18); border-radius: 12px; color: #5f3826; background: #fffaf1; box-shadow: 0 10px 30px rgba(53,31,20,.16); font-size: 13px; }
+.draft-sync-feedback--failed, .draft-sync-feedback--conflict { color: #9a3029; border-color: rgba(154,48,41,.3); background: #fff4f1; }
+.draft-sync-feedback--saving { color: #806b5c; }
 .task-progress-button { min-height: 38px; padding: 0 11px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(124,82,51,.18); border-radius: 11px; color: #5f3826; background: rgba(255,250,242,.58); cursor: pointer; font-size: 14px; font-weight: 700; }
 .task-progress-button:hover, .task-progress-button.is-open { border-color: #8a4631; background: #fff7ea; }
 .task-progress-button b { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: #fff9f0; background: #7b3328; font-size: 12px; }

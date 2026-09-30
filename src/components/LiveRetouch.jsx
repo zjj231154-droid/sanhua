@@ -158,7 +158,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     }
     const reader = new FileReader()
     reader.onerror = () => setError('模版图片读取失败，请重试')
-    reader.onload = () => { setTemplateImage(reader.result); setTemplateName(file.name); setTemplateAssetId(''); setError('') }
+    reader.onload = () => { setTemplateImage(reader.result); setTemplateName(file.name); setTemplateAssetId(''); setError(''); onDraftChange?.({ currentStep: workflowStep, draftData: { templateAssetId: '', templateName: file.name }, operationSummary: '已选择修图模板参考素材' }) }
     reader.readAsDataURL(file)
     event.target.value = ''
   }
@@ -269,7 +269,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
   }
   function toggleCloudAsset(asset) {
     if (assetPickerMode === 'template') {
-      setTemplateImage(asset.url); setTemplateName(asset.name); setTemplateAssetId(asset.id); setAssetPickerOpen(false); setTemplatesOpen(false); setAssistantOpen(true)
+      setTemplateImage(asset.url); setTemplateName(asset.name); setTemplateAssetId(asset.id); setAssetPickerOpen(false); setTemplatesOpen(false); setAssistantOpen(true); onDraftChange?.({ currentStep: workflowStep, draftData: { templateAssetId: asset.id, templateName: asset.name }, operationSummary: '已选择云端修图模板参考素材' })
       return
     }
     if (assetPickerMode === 'single') { applyCloudAssets([asset]); return }
@@ -313,7 +313,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     setSelectedCloudAssets(assets); setActiveRetouchAssets(assets); setSelectedAssetId(assets[0].id); setEditedFields({})
     setImage(source); setCloudResult(null); setCloudResults([]); setCloudResultIndex(0); setJob(null); setError(''); setTransferNotice(''); localStorage.removeItem('retouch-job'); setAssetPickerOpen(false)
     if (retouchMode) setWorkflowStep(2)
-    onDraftChange?.({ currentStep: 2, draftData: { retouchMode, workflowStep: 2, selectedAssetIds: assets.map(asset => asset.id), size, scene, decor, preserve, requirements }, inputAssetIds: assets.map(asset => asset.id), operationSummary: `已选择 ${assets.length} 张精修素材` })
+    onDraftChange?.({ currentStep: 2, draftData: { retouchMode, workflowStep: 2, selectedAssetIds: assets.map(asset => asset.id), templateAssetId, templateName, size, scene, decor, preserve, requirements }, inputAssetIds: assets.map(asset => asset.id), operationSummary: `已选择 ${assets.length} 张精修素材` })
     void analyzeImage(source, assets[0].id)
   }
   useEffect(() => {
@@ -345,7 +345,16 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
       for (const [name, setter] of Object.entries({ size: setSize, scene: setScene, decor: setDecor, product: setProduct, preserve: setPreserve, requirements: setRequirements })) {
         if (typeof data[name] === 'string') setter(data[name])
       }
-      if (Array.isArray(data.selectedAssetIds)) setSelectedAssetId(data.selectedAssetIds[0] || '')
+      const selectedIds = Array.isArray(data.selectedAssetIds) ? data.selectedAssetIds.filter(Boolean) : []
+      if (selectedIds.length) {
+        const restored = (await Promise.all(selectedIds.map(async id => { try { const response = await fetch(`/api/v1/assets/${encodeURIComponent(id)}`); const value = await response.json().catch(() => ({})); return response.ok && value.asset ? toRetouchAsset(value.asset) : null } catch { return null } }))).filter(Boolean)
+        if (active && restored.length) { setActiveRetouchAssets(restored); setSelectedCloudAssets(restored); setSelectedAssetId(restored[0].id); setImage(restored[0].url || restored[0].previewUrl || restored[0].thumbnailUrl || '') }
+        if (restored.length !== selectedIds.length) setTransferNotice('部分原资产已不存在，请重新选择。')
+      }
+      if (data.templateAssetId) {
+        try { const response = await fetch(`/api/v1/assets/${encodeURIComponent(data.templateAssetId)}`); const value = await response.json().catch(() => ({})); if (active && response.ok && value.asset) { const template = toRetouchAsset(value.asset); setTemplateImage(template.url || template.previewUrl || template.thumbnailUrl || ''); setTemplateName(template.name || '模板参考'); setTemplateAssetId(template.id) } } catch { if (active) setTransferNotice('模板参考资产已无法读取，请重新选择。') }
+      }
+      if (data.resultName) setResultName(String(data.resultName))
       setTransferNotice('已恢复上次产品精修工作内容。')
     }
     void restore()
@@ -396,6 +405,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     setSelectedCloudAssets(assets); setActiveRetouchAssets(assets); setSelectedAssetId(primary.id); setEditedFields({})
     setImage(primary.url); setCloudResult(null); setCloudResults([]); setCloudResultIndex(0); setJob(null); setError(''); setTransferNotice(''); localStorage.removeItem('retouch-job')
     if (retouchMode) setWorkflowStep(2)
+    onDraftChange?.({ currentStep: 2, draftData: { retouchMode, workflowStep: 2, selectedAssetIds: assets.map(asset => asset.id), templateAssetId, templateName, size, scene, decor, preserve, requirements }, inputAssetIds: assets.map(asset => asset.id), operationSummary: `已上传 ${assets.length} 张精修素材` })
     void analyzeImage(primary.url, primary.id)
   }
   async function submit(confirm = false) {
@@ -420,7 +430,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           const submittedPrompt = `${finalPrompt || job?.plan || ''}\n${editPrompt}`.trim()
           const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(sourceUrl => toImageDataUrl(sourceUrl, '无法读取所选素材，请重新选择')))
           const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-            workspace: 'retouch', prompt: submittedPrompt,
+            workRecordId: draftRecord?.taskId || '', workspace: 'retouch', prompt: submittedPrompt,
             images: sourceImages, referenceImage: templateSource || undefined, count: Math.max(1, activeRetouchAssets.length), size: '1024x1024', title: activeRetouchAssets.length > 1 ? '批量产品精修' : '产品精修', requestedName: activeRetouchAssets.length > 1 ? '' : resultName, namePrefix: activeRetouchAssets.length > 1 ? batchNamePrefix : '', promptSummary: editPrompt, referenceAssetIds: templateAssetId ? [templateAssetId] : [], sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean), metadata: { originalPlan: job?.plan || '', finalPrompt: submittedPrompt, batchStrategy: activeRetouchAssets.length > 1 ? 'same-prompt-per-source' : 'single-source' },
           }) })
           const value = await response.json()
@@ -432,9 +442,10 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           void refreshStoredAssets()
           setCloudResults(newAssets)
           setCloudResultIndex(0)
-          setCloudResult(newAssets[0] || resultAsset)
-          setResultName((newAssets[0] || resultAsset).name || resultName)
-          setTransferNotice(newAssets.length > 1 ? `已生成 ${newAssets.length} 张结果，可用“上一张 / 下一张”逐张查看。` : '精修图片已生成，可保存到资产库。')
+           setCloudResult(newAssets[0] || resultAsset)
+           setResultName((newAssets[0] || resultAsset).name || resultName)
+           onDraftChange?.({ resultAssetIds: newAssets.map(asset => asset.id), operationSummary: '精修图片已归档' })
+           setTransferNotice(newAssets.length > 1 ? `已生成 ${newAssets.length} 张结果，可用“上一张 / 下一张”逐张查看。` : '精修图片已生成，可保存到资产库。')
           setJob({ ...job, status: 'done', taskId: value.task?.id })
         }
         return

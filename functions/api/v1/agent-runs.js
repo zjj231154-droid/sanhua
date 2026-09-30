@@ -3,6 +3,7 @@ import { registryFor } from '../../_lib/skills.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
 import { requireIdentity, resolvedProviderConnection } from '../../_lib/collaboration.js'
+import { getWorkRecord, updateWorkRecord } from '../../_lib/work-record-store.js'
 import { seedanceStoryboardInstruction } from '../../_lib/seedance-prompt-zh.js'
 const allowed = new Set(['retouch', 'brand', 'script'])
 const brandTextFor = requirements => {
@@ -27,19 +28,24 @@ export async function onRequestPost(context) {
   const workspace = String(input.workspace || '')
   const skill = registryFor(workspace, String(input.skillId || ''))
   if (!allowed.has(workspace) || !skill || skill.status !== 'enabled') return json(400, { error: 'SKILL_NOT_AVAILABLE', workspace })
+  const workRecordId = String(input.workRecordId || input.taskId || '').trim()
+  const workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  if (workRecordId && (!workRecord || (!identity.compatibilityMode && (workRecord.workspaceId !== identity.workspaceId || workRecord.ownerUserId !== identity.user.id)))) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
   const providerConnection = await resolvedProviderConnection(context, identity.user.id)
   const model = input.model || providerConnection?.reasoningModel || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
-  const task = await saveTask(context, { id: crypto.randomUUID(), workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model, createdAt: new Date().toISOString() })
+  const task = await saveTask(context, { id: crypto.randomUUID(), workRecordId, workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model, createdAt: new Date().toISOString() })
+  if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'running', progress: 10, providerType: 'usegoodai-reasoning', providerModel: model, operationSummary: 'Skill 解析与计划固化', errorCode: '', errorMessage: '' })
   const prompt = textFor(workspace, input)
   const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai-reasoning', payload: { model, messages: [{ role: 'system', content: prompt }, { role: 'user', content: requirementsText(input) }], temperature: 0.35 } })
-  if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'UseGoodAI 请求失败' }); return result.response }
+  if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'UseGoodAI 请求失败' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 10, errorCode: 'TASK_SUBMIT_FAILED', errorMessage: 'UseGoodAI 请求失败', operationSummary: '模型调用失败' }); return result.response }
   const content = result.data?.choices?.[0]?.message?.content || ''
   const textRecord = await createTextRecord(context, {
     workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_prompt' : workspace === 'script' && input.workflow === 'seedance-storyboard' ? 'storyboard_prompt' : workspace === 'script' ? 'script' : 'retouch_prompt',
     title: workspace === 'brand' ? '品牌设计计划' : workspace === 'script' && input.workflow === 'seedance-storyboard' ? '待确认 Seedance 分镜提示词' : workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content, contentFormat: 'prompt',
-    workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, model, provider: 'usegoodai-reasoning', sourceTaskId: task.id, sourceAssetIds: Array.isArray(input.assets) ? input.assets : [], referenceAssetIds: Array.isArray(input.reference_asset_ids) ? input.reference_asset_ids : [],
+    workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, model, provider: 'usegoodai-reasoning', sourceTaskId: workRecordId || task.id, sourceAssetIds: Array.isArray(input.assets) ? input.assets : [], referenceAssetIds: Array.isArray(input.reference_asset_ids) ? input.reference_asset_ids : [],
   })
   const updatedTask = await updateTask(context, task.id, { status: 'waiting_user', progress: 15, stage: '等待用户确认', plan: content, textRecordId: textRecord?.id || null })
-  return json(202, { id: task.id, status: 'waiting_user', workspace, skill, plan: content, textRecordId: textRecord?.id || null, task: updatedTask, input: { assetCount: Array.isArray(input.assets) ? input.assets.length : 0 } })
+  if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'ready', progress: 15, resultTextRecordIds: textRecord?.id ? [...(workRecord.resultTextRecordIds || []), textRecord.id] : workRecord.resultTextRecordIds, operationSummary: '等待用户确认', errorCode: '', errorMessage: '' })
+  return json(202, { id: task.id, workRecordId: workRecordId || null, status: 'waiting_user', workspace, skill, plan: content, textRecordId: textRecord?.id || null, task: updatedTask, input: { assetCount: Array.isArray(input.assets) ? input.assets.length : 0 } })
 }
 function requirementsText(input) { return String(input.requirements || input.prompt || '请根据当前选中的素材提出推荐方案').slice(0, 10000) }

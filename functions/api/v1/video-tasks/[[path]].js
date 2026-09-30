@@ -4,6 +4,7 @@ import { getTask, saveTask, listTasks, updateTask } from '../../../_lib/task-sto
 import { assetMetadataKey, assetsBucket, getJson } from '../../../_lib/asset-store.js'
 import { createTextRecord } from '../../../_lib/text-record-store.js'
 import { hasPermission, requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
+import { getWorkRecord, updateWorkRecord } from '../../../_lib/work-record-store.js'
 
 const inputFrom = async request => { try { return await request.json() } catch { return null } }
 const MAX_REFERENCE_IMAGES = 9
@@ -129,18 +130,28 @@ const syncVideoTask = async (context, task) => {
     if (!response.ok) return task
     const result = videoResultFrom(await response.json())
     const checkedAt = new Date().toISOString()
-    if (['completed', 'succeeded', 'success'].includes(result.status)) return updateTask(context, task.id, {
+    if (['completed', 'succeeded', 'success'].includes(result.status)) {
+      const next = await updateTask(context, task.id, {
       status: 'completed', progress: 100, stage: result.url ? '视频已生成，结果已同步' : '视频已生成，但上游未返回播放地址', providerVideoUrl: result.url || task.providerVideoUrl || null,
       providerStatus: result.status, lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
-    }) || task
-    if (['failed', 'error', 'cancelled', 'canceled', 'expired'].includes(result.status)) return updateTask(context, task.id, {
+      }) || task
+      if (task.workRecordId) await updateWorkRecord(context, task.workRecordId, { status: 'succeeded', progress: 100, providerTaskId: task.providerTaskId, operationSummary: next.stage, errorCode: '', errorMessage: '' })
+      return next
+    }
+    if (['failed', 'error', 'cancelled', 'canceled', 'expired'].includes(result.status)) {
+      const next = await updateTask(context, task.id, {
       status: result.status === 'expired' ? 'failed' : result.status === 'cancelled' || result.status === 'canceled' ? 'cancelled' : 'failed', progress: result.progress ?? task.progress,
       stage: result.message || '上游视频生成失败', providerStatus: result.status, lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
-    }) || task
-    return updateTask(context, task.id, {
+      }) || task
+      if (task.workRecordId) await updateWorkRecord(context, task.workRecordId, { status: next.status === 'cancelled' ? 'cancelled' : 'failed', progress: next.progress, errorCode: 'PROVIDER_REQUEST_FAILED', errorMessage: next.stage, operationSummary: next.stage })
+      return next
+    }
+    const next = await updateTask(context, task.id, {
       status: 'running', progress: result.progress === null ? Math.max(15, Number(task.progress || 0)) : Math.max(15, Math.min(95, result.progress)),
       stage: '视频服务已受理，正在生成', providerStatus: result.status || 'processing', lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
     }) || task
+    if (task.workRecordId) await updateWorkRecord(context, task.workRecordId, { status: 'running', progress: next.progress, operationSummary: next.stage, providerTaskId: task.providerTaskId })
+    return next
   } catch { return task }
 }
 
@@ -175,6 +186,9 @@ export async function onRequestPost(context) {
   const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const input = await inputFrom(context.request)
   if (!input) return json(400, { error: '请求格式必须是 JSON' })
+  const workRecordId = String(input.workRecordId || input.taskId || '').trim()
+  const workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  if (workRecordId && (!workRecord || (!identity.compatibilityMode && (workRecord.workspaceId !== identity.workspaceId || workRecord.ownerUserId !== identity.user.id)))) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
   let checked
   try { checked = await validate(context, input, identity) }
   catch { return json(422, { error: 'VIDEO_TASK_INVALID', missing: ['视频校验暂时失败，请刷新页面后重新选择剧本和参考图片。'], hint: '视频校验暂时失败，请刷新页面后重新选择剧本和参考图片。' }) }
@@ -197,22 +211,23 @@ export async function onRequestPost(context) {
       metadata: { content: checked.referenceImages.map(item => ({ type: 'image_url', role: 'reference_image', image_url: { url: item.source } })) },
     },
   })
-  if (submitted.response) return submitted.response
+  if (submitted.response) { if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 0, errorCode: 'PROVIDER_REQUEST_FAILED', errorMessage: '视频服务请求失败', operationSummary: '视频服务请求失败' }); return submitted.response }
   const providerTaskId = String(submitted.data?.id || submitted.data?.data?.id || '').slice(0, 160) || null
   const providerVideoUrl = String(submitted.data?.url || submitted.data?.data?.url || submitted.data?.data?.[0]?.url || '').slice(0, 2000) || null
   const createdAt = new Date().toISOString()
   const textRecord = await createTextRecord(context, {
     workspaceId: identity.workspaceId, projectId: 'script', createdBy: identity.user.id, updatedBy: identity.user.id, workspace: 'script', sourceModule: 'script.video', recordType: 'storyboard_prompt', title: String(input.title || '视频生成提示词').trim(),
-    content: checked.videoPrompt || checked.shotPlan, contentFormat: 'prompt', model: checked.provider.model, provider: checked.provider.name,
+    content: checked.videoPrompt || checked.shotPlan, contentFormat: 'prompt', model: checked.provider.model, provider: checked.provider.name, sourceTaskId: workRecordId || undefined,
     sourceAssetIds: [...checked.assetRefs.scene, ...checked.assetRefs.character, ...checked.assetRefs.prop, ...checked.assetRefs.other], scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId,
   })
   const task = await saveTask(context, {
-    id: crypto.randomUUID(), workspace: 'video', workspaceId: identity.workspaceId, projectId: 'script', createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'video-generation', status: providerVideoUrl ? 'completed' : 'running', progress: providerVideoUrl ? 100 : 15,
+    id: crypto.randomUUID(), workRecordId, workspace: 'video', workspaceId: identity.workspaceId, projectId: 'script', createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'video-generation', status: providerVideoUrl ? 'completed' : 'running', progress: providerVideoUrl ? 100 : 15,
     stage: providerVideoUrl ? '视频已生成，等待查看' : '视频服务已受理，正在生成', heartbeatAt: createdAt,
     requirements: checked.videoPrompt || checked.shotPlan, assets: checked.sceneAssetIds, sourceAssetIds: checked.sceneAssetIds,
     scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId, durationSeconds: checked.durationSeconds,
     assetRefs: checked.assetRefs, characterAssetIds: checked.assetRefs.character, propAssetIds: checked.assetRefs.prop, otherAssetIds: checked.assetRefs.other,
     videoPrompt: checked.videoPrompt, aspectRatio: checked.aspectRatio, resolution: checked.resolution, mode: 'provider', provider: checked.provider.name, model: checked.provider.model, providerTaskId, providerVideoUrl, referenceBindings: checked.referenceImages.map((item, index) => ({ assetId: item.id, alias: `Image${index + 1}`, name: item.name })), textRecordId: textRecord?.id || null, simulated: false, createdAt,
   })
-  return json(202, { task, textRecordId: textRecord?.id || null, notice: providerVideoUrl ? '视频已生成，结果已写入任务记录。' : `已提交至 ${checked.provider.model}，正在异步生成。` })
+  if (workRecord) await updateWorkRecord(context, workRecordId, { status: providerVideoUrl ? 'succeeded' : 'queued', progress: providerVideoUrl ? 100 : 15, providerTaskId: providerTaskId || task.id, providerType: checked.provider.name, providerModel: checked.provider.model, resultTextRecordIds: textRecord?.id ? [...(workRecord.resultTextRecordIds || []), textRecord.id] : workRecord.resultTextRecordIds, operationSummary: providerVideoUrl ? '视频已生成，结果已同步' : '视频服务已受理，正在生成', errorCode: '', errorMessage: '' })
+  return json(202, { workRecordId: workRecordId || null, task, textRecordId: textRecord?.id || null, notice: providerVideoUrl ? '视频已生成，结果已写入任务记录。' : `已提交至 ${checked.provider.model}，正在异步生成。` })
 }

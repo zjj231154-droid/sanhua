@@ -36,6 +36,8 @@ const apiRoutes = {
   '/api/v1/me': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/assets': () => import('../functions/api/assets/[[key]].js'),
   '/api/v1/tasks': () => import('../functions/api/v1/tasks.js'),
+  '/api/v1/work-records': () => import('../functions/api/v1/work-records/[[path]].js'),
+  '/api/v1/task-center': () => import('../functions/api/v1/task-center/[[path]].js'),
   '/api/debug/tokenspace': () => import('../functions/api/debug/tokenspace.js'),
   '/api/debug/usegoodai-models': () => import('../functions/api/debug/usegoodai-models.js'),
 }

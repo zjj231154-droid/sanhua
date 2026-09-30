@@ -252,7 +252,6 @@ export function TaskProgress({ onResume }) {
   })
   const [dragging, setDragging] = useState(false)
   const [tasks, setTasks] = useState([])
-  const [workRecords, setWorkRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [removingId, setRemovingId] = useState('')
@@ -267,31 +266,21 @@ export function TaskProgress({ onResume }) {
   const load = async (manual = false) => {
     if (manual) setRefreshing(true)
     try {
-      let response = await fetch('/api/v1/tasks')
+      let response = await fetch('/api/v1/task-center?page=1&pageSize=50')
       let value = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : '任务状态暂不可用，请稍后重试')
-      let nextTasks = Array.isArray(value.tasks) ? value.tasks.slice(0, 12) : []
-      let draftTaskRecords = []
-      try {
-        const workResponse = await fetch('/api/v1/work-records?page=1&pageSize=50')
-        const workValue = await workResponse.json().catch(() => ({}))
-        const records = workResponse.ok && Array.isArray(workValue.items) ? workValue.items : []
-        setWorkRecords(records)
-        draftTaskRecords = records.map(record => ({ ...record, id: record.taskId, workspace: record.moduleKey, type: 'draft_task', status: record.status === 'succeeded' ? 'completed' : record.status, progress: record.progress || 0, stage: record.operationSummary || `第 ${record.currentStep || 1} 步`, updatedAt: record.updatedAt, recordType: 'draft_task' }))
-        nextTasks = [...draftTaskRecords, ...nextTasks].sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))).slice(0, 20)
-      } catch { setWorkRecords([]) }
+      let nextTasks = Array.isArray(value.items) ? value.items.slice(0, 20) : (Array.isArray(value.tasks) ? value.tasks.slice(0, 20) : [])
       const hasActiveVideo = nextTasks.some(task => task.workspace === 'video' && ['queued', 'running'].includes(task.status))
       if (hasActiveVideo && Date.now() - lastVideoSyncAt.current >= 8000) {
         lastVideoSyncAt.current = Date.now()
         await fetch('/api/v1/video-tasks').catch(() => null)
-        response = await fetch('/api/v1/tasks')
+        response = await fetch('/api/v1/task-center?page=1&pageSize=50')
         value = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : '任务状态暂不可用，请稍后重试')
-        const refreshedTasks = Array.isArray(value.tasks) ? value.tasks.slice(0, 12) : []
-        nextTasks = [...draftTaskRecords, ...refreshedTasks].sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))).slice(0, 20)
+        nextTasks = Array.isArray(value.items) ? value.items.slice(0, 20) : (Array.isArray(value.tasks) ? value.tasks.slice(0, 20) : [])
       }
       if (hasLoadedStatuses.current) {
-        const completed = nextTasks.find(task => previousStatuses.current.get(task.id) !== 'completed' && task.status === 'completed')
+        const completed = nextTasks.find(task => !['completed', 'succeeded'].includes(previousStatuses.current.get(task.id)) && ['completed', 'succeeded'].includes(task.status))
         if (completed) setCompletedToast(completed)
       }
       previousStatuses.current = new Map(nextTasks.map(task => [task.id, task.status]))
@@ -375,7 +364,7 @@ export function TaskProgress({ onResume }) {
     setRemovingId(task.id)
     setTasks(current => current.filter(item => item.id !== task.id))
     try {
-      const response = task.recordType === 'draft_task'
+      const response = task.taskSource === 'work_record' || task.recordType === 'draft_task'
         ? await fetch(`/api/v1/work-records/${encodeURIComponent(task.id)}/archive`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
         : await fetch(`/api/v1/tasks?id=${encodeURIComponent(task.id)}`, { method: 'DELETE' })
       const value = await response.json()
@@ -587,7 +576,7 @@ function AdminSeatsPage() {
 }
 const responseJson = async response => { try { return await response.json() } catch { return {} } }
 
-function VideoWorkbench({ scripts, activeId, scriptPlan, storyboardPrompt = '' }) {
+function VideoWorkbench({ scripts, activeId, scriptPlan, storyboardPrompt = '', workRecordId = '' }) {
   const [assets, setAssets] = useState([]); const [assetType, setAssetType] = useState('scene'); const [pickerOpen, setPickerOpen] = useState(false)
   const [refs, setRefs] = useState({ scene: [], character: [], prop: [] }); const [prompt, setPrompt] = useState('')
   const [duration, setDuration] = useState('8'); const [ratio, setRatio] = useState('9:16'); const [resolution, setResolution] = useState('720p'); const [status, setStatus] = useState(''); const [creating, setCreating] = useState(false); const [tasks, setTasks] = useState([]); const [playingTask, setPlayingTask] = useState(null); const mentionPending = useRef(false); const mentionRange = useRef(null); const promptInput = useRef(null)
@@ -620,7 +609,7 @@ function VideoWorkbench({ scripts, activeId, scriptPlan, storyboardPrompt = '' }
   }
   const videoPrompt = prompt.trim() || storyboardPrompt.trim() || activeScript?.outline || scriptPlan
   const missing = !activeScript ? '请先确认并保存剧本与分镜提示词' : !refs.scene.length ? '请至少添加一张场景资产' : videoPrompt.length < 12 ? '请输入不少于 12 字的视频提示词' : ''
-  const create = async () => { if (missing || creating) return; setCreating(true); setStatus('正在校验视频任务…'); const body = { scriptId: activeScript.id, scriptVersionId: activeScript.currentVersionId, videoPrompt, shotPlan: videoPrompt, durationSeconds: Number(duration), aspectRatio: ratio, resolution, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, value]) => [key, value.map(item => item.id)])) }; try { const checked = await fetch('/api/v1/video-tasks/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const validation = await responseJson(checked); if (!checked.ok) throw new Error(videoValidationMessage(validation)); setStatus('正在创建 Seedance 视频任务…'); const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const value = await responseJson(response); if (!response.ok) throw new Error(videoValidationMessage(value, '视频任务创建失败，请刷新页面后重试。')); setTasks(current => [value.task, ...current]); setStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}；分镜提示词已归档。`) } catch (reason) { setStatus(reason.message || '视频任务创建失败') } finally { setCreating(false) } }
+   const create = async () => { if (missing || creating) return; setCreating(true); setStatus('正在校验视频任务…'); const body = { workRecordId, scriptId: activeScript.id, scriptVersionId: activeScript.currentVersionId, videoPrompt, shotPlan: videoPrompt, durationSeconds: Number(duration), aspectRatio: ratio, resolution, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, value]) => [key, value.map(item => item.id)])) }; try { const checked = await fetch('/api/v1/video-tasks/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const validation = await responseJson(checked); if (!checked.ok) throw new Error(videoValidationMessage(validation)); setStatus('正在创建 Seedance 视频任务…'); const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const value = await responseJson(response); if (!response.ok) throw new Error(videoValidationMessage(value, '视频任务创建失败，请刷新页面后重试。')); setTasks(current => [value.task, ...current]); setStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}；分镜提示词已归档。`) } catch (reason) { setStatus(reason.message || '视频任务创建失败') } finally { setCreating(false) } }
   const addMention = () => {
     const field = promptInput.current
     const start = field?.selectionStart ?? prompt.length
@@ -1134,7 +1123,7 @@ function ScriptCreationFlow({ stage, prompt, setPrompt, plan, setPlan, seedanceP
   return <div className="script-workspace-grid script-workspace-grid--expanded script-workspace-grid--brief"><div className="script-input-panel"><span className="kicker">第一步 · 定剧本与角色</span><label>短剧创作需求<textarea value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && prompt.trim() && !busy) { event.preventDefault(); onGenerate() } }} aria-label="短剧脚本需求" placeholder="描述人物、冲突、场景与时长" /></label><div className="script-inspiration" aria-label="创作灵感">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button type="button" key={item} className="secondary-button" onClick={() => onIdea(item)}>{item}</button>)}</div><div className="script-outline-actions"><DisabledReasonTooltip reason={!prompt.trim() ? '请先填写短剧创作需求' : ''}><button className="primary-button" disabled={busy || !prompt.trim()} onClick={onGenerate}>{busy ? '正在规划剧本…' : '生成待确认剧本'}</button></DisabledReasonTooltip><button type="button" className="secondary-button" onClick={onOpenImport}><Upload size={15} />本地导入剧本</button><input ref={importInputRef} className="sr-only" type="file" accept=".txt,.md,text/plain,text/markdown" aria-label="选择本地剧本文件" onChange={onImportFile} /></div><small>先选定场景和角色，再生成待确认剧本。支持 TXT、Markdown 导入。</small></div>{preview}</div>
 }
 
-function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, onIncomingContextConsumed }) {
+function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, onIncomingContextConsumed, onDraftChange }) {
   const [editor, setEditor] = useState(null)
   const [toolbarTab, setToolbarTab] = useState(0)
   const [brandPrompt, setBrandPrompt] = useState('为叁花茶馆设计一张日光茶饮品牌海报，保留叁花 Logo，突出茶汤与留白。')
@@ -1171,14 +1160,18 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     ? scriptPrompt !== DEFAULT_SCRIPT_PROMPT || scriptStage !== 'definition' || Boolean(scriptPlan.trim() || seedancePrompt.trim() || selectedAsset || selectedCharacterAsset || selectedPropAsset)
     : brandPrompt !== '为叁花茶馆设计一张日光茶饮品牌海报，保留叁花 Logo，突出茶汤与留白。' || Boolean(brandPlan.trim() || brandImage || selectedAsset)
   const draftData = type === 'script'
-    ? { scriptPrompt, scriptStage, scriptPlan, seedancePrompt, selectedAssetIds: [selectedAsset, selectedCharacterAsset, selectedPropAsset].filter(Boolean).map(asset => asset.id) }
-    : { brandPrompt, brandPlan, selectedAssetId: selectedAsset?.id || '', toolbarTab }
+    ? { scriptPrompt, scriptStage, scriptPlan, seedancePrompt, selectedAssetIds: [selectedAsset, selectedCharacterAsset, selectedPropAsset].filter(Boolean).map(asset => asset.id), selectedAssetRefs: { scene: selectedAsset?.id || '', character: selectedCharacterAsset?.id || '', prop: selectedPropAsset?.id || '' }, videoDuration }
+    : { brandPrompt, brandPlan, selectedAssetId: selectedAsset?.id || '', toolbarTab, brandImage: brandImage?.id || brandImage || '' }
   useEffect(() => {
     if (!draftStarted) return undefined
     let cancelled = false
     const timer = setTimeout(async () => {
       try {
-        if (!draftRecordRef.current) {
+        const patch = { route: 'create', subRoute: initialRoute, currentStep: type === 'script' ? (scriptStage === 'definition' ? 1 : scriptStage === 'confirm-story' ? 2 : 3) : 1, draftData, inputAssetIds: type === 'script' ? draftData.selectedAssetIds : [draftData.selectedAssetId].filter(Boolean), operationSummary: type === 'script' ? `短剧脚本 · ${scriptStage}` : '品牌创作 · 自动保存' }
+        if (onDraftChange) {
+          const saved = await onDraftChange(patch)
+          if (saved) draftRecordRef.current = saved
+        } else if (!draftRecordRef.current) {
           const response = await fetch('/api/v1/work-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ moduleKey: type, moduleName: config.title, route: type === 'script' ? 'create' : 'create', title: type === 'script' ? '短剧脚本工作记录' : '品牌创作工作记录', clientSessionId: draftClientSessionRef.current, currentStep: type === 'script' ? (scriptStage === 'definition' ? 1 : scriptStage === 'confirm-story' ? 2 : 3) : 1, initialData: draftData, inputAssetIds: type === 'script' ? draftData.selectedAssetIds : [draftData.selectedAssetId].filter(Boolean) }) })
           const value = await response.json().catch(() => ({}))
           if (response.ok) draftRecordRef.current = value.item || value.record || null
@@ -1188,10 +1181,10 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
           const value = await response.json().catch(() => ({}))
           if (response.ok) draftRecordRef.current = value.item || value.record || current
         }
-      } catch {}
+      } catch (error) { setContextNotice(error.message || '工作记录保存失败，请重试；当前内容仍保留在本页面。') }
     }, 650)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [draftStarted, type, config.title, scriptPrompt, scriptStage, scriptPlan, seedancePrompt, selectedAsset?.id, selectedCharacterAsset?.id, selectedPropAsset?.id, brandPrompt, brandPlan, brandImage, toolbarTab])
+  }, [draftStarted, type, config.title, initialRoute, scriptPrompt, scriptStage, scriptPlan, seedancePrompt, selectedAsset?.id, selectedCharacterAsset?.id, selectedPropAsset?.id, brandPrompt, brandPlan, brandImage, toolbarTab, videoDuration])
   useEffect(() => {
     const routeIndex = type === 'brand'
       ? { create: 0, library: 1, prompts: 2 }[initialRoute]
@@ -1221,16 +1214,24 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       }
       if (draftRecord?.draftData) {
         const draft = draftRecord.draftData
+        const assetIds = type === 'script'
+          ? [draft.selectedAssetRefs?.scene || draft.selectedAssetIds?.[0], draft.selectedAssetRefs?.character || draft.selectedAssetIds?.[1], draft.selectedAssetRefs?.prop || draft.selectedAssetIds?.[2]].filter(Boolean)
+          : [draft.selectedAssetId].filter(Boolean)
+        const assets = await Promise.all(assetIds.map(async id => { try { const response = await fetch(`/api/v1/assets/${encodeURIComponent(id)}`); const value = await response.json().catch(() => ({})); return response.ok ? value.asset : null } catch { return null } }))
+        if (type === 'script') { setSelectedAsset(assets[0] || null); setSelectedCharacterAsset(assets[1] || null); setSelectedPropAsset(assets[2] || null) } else if (assets[0]) setSelectedAsset(assets[0])
         if (type === 'script') {
           setScriptPrompt(String(draft.scriptPrompt || draft.prompt || DEFAULT_SCRIPT_PROMPT))
           setScriptPlan(String(draft.scriptPlan || draft.plan || ''))
           setSeedancePrompt(String(draft.seedancePrompt || ''))
           setScriptStage(String(draft.scriptStage || draftRecord.stage || 'definition'))
+          setVideoDuration(String(draft.videoDuration || '180'))
           setContextNotice('已恢复上次短剧工作内容。')
         }
         if (type === 'brand') {
           setBrandPrompt(String(draft.brandPrompt || draft.prompt || brandPrompt))
           setBrandPlan(String(draft.brandPlan || draft.plan || ''))
+          if (draft.toolbarTab !== undefined) setToolbarTab(Number(draft.toolbarTab) || 0)
+          if (draft.brandImage) setBrandImage(String(draft.brandImage))
           setContextNotice('已恢复上次品牌创作内容。')
         }
       }
@@ -1295,7 +1296,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     setScripts(current => [value.script, ...current.filter(item => item.id !== value.script.id)])
     setActiveId(value.script.id)
     setScriptPlan(values.outline)
-    await archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script', title: value.script.title || '短剧脚本大纲', content: values.outline || values.content || values.summary, contentFormat: 'markdown', sourceAssetIds, scriptId: value.script.id, scriptVersionId: value.script.currentVersionId })
+    const archived = await archiveText({ workspace: 'script', sourceModule: 'script.records', recordType: 'script', title: value.script.title || '短剧脚本大纲', content: values.outline || values.content || values.summary, contentFormat: 'markdown', sourceAssetIds, scriptId: value.script.id, scriptVersionId: value.script.currentVersionId })
+    if (archived?.record?.id || archived?.id) await onDraftChange?.({ resultTextRecordIds: [archived.record?.id || archived.id], operationSummary: '剧本正文已归档' })
     if (editor?.pendingConfirmation) {
       setToolbarTab(1)
       if (editor.sourceTaskId) {
@@ -1316,7 +1318,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       const script = scripts.find(item => item.id === activeId) || scripts[0]
       const response = await fetch('/api/v1/video-tasks/validate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }),
+         body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }),
       })
       const value = await responseJson(response)
       if (!response.ok) throw new Error(videoValidationMessage(value))
@@ -1328,7 +1330,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     setVideoStatus('正在创建视频任务…')
     try {
       const script = scripts.find(item => item.id === activeId) || scripts[0]
-      const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }) })
+       const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }) })
       const value = await responseJson(response)
       if (!response.ok) throw new Error(videoValidationMessage(value, '视频任务创建失败，请刷新页面后重试。'))
       setVideoStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}`)
@@ -1338,7 +1340,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   async function createBrandPlan(requirements = brandPrompt) {
     setBrandBusy(true); setBrandError(''); setBrandPlan(''); setBrandImage('')
     try {
-      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'brand', requirements, assets: selectedAsset ? [selectedAsset.id] : [], reference_asset_ids: selectedAsset ? [selectedAsset.id] : [], restore_reference_image: Boolean(selectedAsset) }) })
+       const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', workspace: 'brand', requirements, assets: selectedAsset ? [selectedAsset.id] : [], reference_asset_ids: selectedAsset ? [selectedAsset.id] : [], restore_reference_image: Boolean(selectedAsset) }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '设计助手暂不可用')
       const plan = value.plan || ''
@@ -1358,15 +1360,16 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       const referenceAssets = [sourceAsset, options.dielineImage].filter(Boolean)
       const images = await Promise.all(referenceAssets.map(imageAssetToDataUrl))
       const strictReference = '【严格参考图硬约束】第一张参考图是唯一视觉基准，必须还原主体造型、主要构图、关键色彩、品牌/IP/书法/图形特征、装饰元素、氛围和材质观感；不得只做风格参考、不得替换主体、不得重新设计角色或品牌识别元素。'
-      const body = { workspace: 'brand', prompt: `${finalPrompt}\n\n${strictReference}`, images, count: 1, size: '1024x1024', title: phase === 'dieline' ? '文创刀版图' : '品牌创作效果图', requestedName, promptSummary: finalPrompt.slice(0, 800), sourceAssetIds: sourceAsset.id ? [sourceAsset.id] : [], referenceAssetIds: referenceAssets.map(asset => asset.id).filter(Boolean), metadata: { originalPlan: String(originalPlan || '').slice(0, 12000), finalPrompt, brandPhase: phase, strictReference: true, dielineRequired: Boolean(options.dielineRequired), dielineConfirmed: Boolean(options.dielineConfirmed), dielineAssetId: options.dielineAssetId || options.dielineImage?.id || '' } }
+       const body = { workRecordId: draftRecordRef.current?.taskId || '', workspace: 'brand', prompt: `${finalPrompt}\n\n${strictReference}`, images, count: 1, size: '1024x1024', title: phase === 'dieline' ? '文创刀版图' : '品牌创作效果图', requestedName, promptSummary: finalPrompt.slice(0, 800), sourceAssetIds: sourceAsset.id ? [sourceAsset.id] : [], referenceAssetIds: referenceAssets.map(asset => asset.id).filter(Boolean), metadata: { originalPlan: String(originalPlan || '').slice(0, 12000), finalPrompt, brandPhase: phase, strictReference: true, dielineRequired: Boolean(options.dielineRequired), dielineConfirmed: Boolean(options.dielineConfirmed), dielineAssetId: options.dielineAssetId || options.dielineImage?.id || '' } }
       const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '品牌图片生成失败')
       const output = value.assets?.[0]
       if (!output?.url) throw new Error('模型结果未能完成资产归档')
-      setBrandImage(output)
-      setBrandAssets(current => [output, ...current.filter(asset => asset.id !== output.id)])
-      setArchiveRequest(output)
+       setBrandImage(output)
+       setBrandAssets(current => [output, ...current.filter(asset => asset.id !== output.id)])
+       await onDraftChange?.({ resultAssetIds: [output.id], operationSummary: '品牌图片已归档' })
+       setArchiveRequest(output)
       return output
     } catch (error) { setBrandError(error.message) } finally { setBrandBusy(false) }
   }
@@ -1374,7 +1377,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     setBrandBusy(true); setBrandError('')
     try {
       const sourceAssets = [selectedAsset, selectedCharacterAsset, selectedPropAsset].filter(Boolean)
-      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}\n角色素材：${selectedCharacterAsset?.name || '待选择'}\n道具素材：${selectedPropAsset?.name || '待选择'}`, assets: sourceAssets.map(asset => asset.id) }) })
+       const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}\n角色素材：${selectedCharacterAsset?.name || '待选择'}\n道具素材：${selectedPropAsset?.name || '待选择'}`, assets: sourceAssets.map(asset => asset.id) }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '编导助手暂不可用')
       const plan = value.plan || ''
@@ -1394,7 +1397,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     setBrandBusy(true); setBrandError('')
     try {
       const requirements = `短剧剧本：\n${scriptPlan.slice(0, 8000)}\n\n已确认素材（仅可引用以下素材）：\n场景素材：${scene}（@${scene} 作为场景/背景）\n角色素材：${character}（@${character} 作为人物形象）\n关键道具：${prop}${selectedPropAsset ? `（@${prop} 作为关键道具）` : ''}\n\n目标：9:16 竖屏，8 秒短剧镜头。`
-      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: 'script', skillId: 'seedance-prompt-zh', workflow: 'seedance-storyboard', requirements, assets: sourceAssets.map(asset => asset.id) }) })
+       const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', workspace: 'script', skillId: 'seedance-prompt-zh', workflow: 'seedance-storyboard', requirements, assets: sourceAssets.map(asset => asset.id) }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || 'Seedance 分镜提示词生成失败')
       const prompt = String(value.plan || '').replace(/^\s*FINAL_SEEDANCE_STORYBOARD_PROMPT:\s*/i, '').trim()
@@ -1413,8 +1416,11 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
       const records = [
         { workspace: 'script', sourceModule: 'script.seedance', recordType: 'storyboard_prompt', title: `${saved.title || '短剧'} · Seedance 分镜提示词`, content: seedancePrompt, contentFormat: 'prompt', sourceAssetIds, scriptId: saved.id, scriptVersionId: saved.currentVersionId },
       ]
-      const responses = await Promise.all(records.map(input => fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })))
-      if (responses.some(response => !response.ok)) throw new Error('剧本已保存，但文本归档失败，请在文本记录中重试')
+       const responses = await Promise.all(records.map(input => fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })))
+       if (responses.some(response => !response.ok)) throw new Error('剧本已保存，但文本归档失败，请在文本记录中重试')
+       const archivedRecords = await Promise.all(responses.map(response => response.json().catch(() => ({}))))
+       const resultTextRecordIds = archivedRecords.map(value => value.record?.id || value.id).filter(Boolean)
+       if (resultTextRecordIds.length) await onDraftChange?.({ resultTextRecordIds, operationSummary: '剧本与分镜提示词已归档' })
       setScriptStage('saved')
       setContextNotice('已保存剧本与 Seedance 分镜提示词。现在可以进入视频生成，并从短剧库添加参考资产。')
     } catch (reason) { setBrandError(reason.message || '保存剧本失败，请重试') } finally { setScriptSaveBusy(false) }
@@ -1462,7 +1468,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
           {type === 'brand' && toolbarTab === 0 && <><BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} onArchive={setArchiveRequest} />{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}</>}
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card script-workspace"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>先确定剧本和角色，再确认 Seedance 视频提示词；两次确认后才分别保存剧本与分镜提示词。</p></div>{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}<ScriptAssetUnitPicker selectedScene={selectedAsset} selectedCharacter={selectedCharacterAsset} selectedProp={selectedPropAsset} onSelectScene={setSelectedAsset} onSelectCharacter={setSelectedCharacterAsset} onSelectProp={setSelectedPropAsset} /><ScriptCreationFlow stage={scriptStage} prompt={scriptPrompt} setPrompt={setScriptPrompt} plan={scriptPlan} setPlan={setScriptPlan} seedancePrompt={seedancePrompt} setSeedancePrompt={setSeedancePrompt} busy={brandBusy} saveBusy={scriptSaveBusy} selectedScene={selectedAsset} selectedCharacter={selectedCharacterAsset} selectedProp={selectedPropAsset} onGenerate={generateScriptPlan} onConfirmStory={confirmStoryAndCharacter} onSave={saveConfirmedScript} onOpenImport={() => scriptImportInputRef.current?.click()} onImportFile={importLocalScript} importInputRef={scriptImportInputRef} onIdea={appendScriptInspiration} onOpenVideo={() => setToolbarTab(2)} />{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
-          {type === 'script' && toolbarTab === 2 && <VideoWorkbench scripts={scripts} activeId={activeId} scriptPlan={scriptPlan} storyboardPrompt={scriptPartsFor(activeScript || scripts[0] || {}).storyboard?.content || seedancePrompt} />}
+           {type === 'script' && toolbarTab === 2 && <VideoWorkbench scripts={scripts} activeId={activeId} scriptPlan={scriptPlan} storyboardPrompt={scriptPartsFor(activeScript || scripts[0] || {}).storyboard?.content || seedancePrompt} workRecordId={draftRecordRef.current?.taskId || ''} />}
           {type === 'brand' && toolbarTab === 2 && <PromptRecordPage workspace="brand" title="品牌提示词记录" description="设计计划与最终提示词会自动同步到云端文本库。" filters={[["brand_prompt", "文创提示词"]]} onReuse={record => { setBrandPlan(record.content); setToolbarTab(0) }} />}
           {type === 'script' && toolbarTab === 3 && <PromptRecordPage workspace="script" title="短剧文本记录" description="短剧正文与分镜提示词分开归档。" filters={[["script", "短剧剧本"], ["storyboard_prompt", "分镜提示词"]]} onReuse={record => { setScriptPrompt(record.content); setToolbarTab(0) }} />}
           {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2><p className="product-library-hint">单击图片选中案例并查看设计内容；双击可放大预览。</p><div className="product-library-grid">{brandAssets.map(asset => <article className={selectedBrandAsset?.id === asset.id ? 'is-selected' : ''} key={asset.id}><button type="button" className="brand-generated-preview" aria-label={`选择案例 ${asset.name}`} aria-pressed={selectedBrandAsset?.id === asset.id} onClick={() => setSelectedBrandAssetId(asset.id)} onDoubleClick={() => setViewerImage(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><small>{selectedBrandAsset?.id === asset.id ? '已选中 · 双击放大查看' : '点击选中 · 双击放大查看'}</small></button><div><strong>{asset.name}</strong><small>{new Date(asset.createdAt || Date.now()).toLocaleDateString('zh-CN')} · {asset.model || 'gpt-image-2'} · 引用 {asset.referenceAssetIds?.length || asset.sourceAssetIds?.length || 0} 项素材</small><span className="brand-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name}><Download size={15} />下载</a><button className="secondary-button" aria-label={`重命名 ${asset.name}`} onClick={async () => { const nextName = window.prompt('输入新的图片名称', asset.name); if (!nextName?.trim()) return; const response = await fetch(`/api/v1/assets/${asset.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: nextName }) }); const value = await response.json(); if (!response.ok) { setBrandError(value.error || '重命名失败'); return }; setBrandAssets(current => current.map(item => item.id === asset.id ? { ...item, ...value.asset } : item)); }}><Pencil size={15} />重命名</button></span></div></article>)}</div>{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}</section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
@@ -1637,7 +1643,9 @@ function AssetLibraryPage({ onNavigate, initialCategory = 'retouch', onDraftChan
   const textRecordType = { 'retouch-prompt': 'retouch_prompt', 'brand-prompt': 'brand_prompt', script: 'script', 'storyboard-prompt': 'storyboard_prompt' }[activeFolder[0]]
   const selectLibrary = (key, folder = null) => {
     const library = ASSET_LIBRARY_UI.find(item => item.key === key)
-    setLibraryKey(key); setFolderKey(folder || library?.folders?.[0]?.[0] || 'source'); setPage(1); setQuery(''); setError('')
+    const nextFolder = folder || library?.folders?.[0]?.[0] || 'source'
+    setLibraryKey(key); setFolderKey(nextFolder); setPage(1); setQuery(''); setError('')
+    onDraftChange?.({ currentStep: 1, draftData: { libraryKey: key, folderKey: nextFolder, query: '', page: 1 }, operationSummary: `浏览${library?.label || key}` })
   }
   const loadLibraries = async () => {
     try {
@@ -1667,7 +1675,12 @@ function AssetLibraryPage({ onNavigate, initialCategory = 'retouch', onDraftChan
   useEffect(() => {
     const draft = incomingContext?.draftRecord?.draftData
     if (!draft) return
-    if (draft.libraryKey && draft.folderKey) selectLibrary(draft.libraryKey, draft.folderKey)
+    if (draft.libraryKey && draft.folderKey) {
+      setLibraryKey(draft.libraryKey); setFolderKey(draft.folderKey)
+    }
+    if (typeof draft.query === 'string') setQuery(draft.query)
+    if (Number(draft.page) > 0) setPage(Number(draft.page))
+    if (draft.viewerAssetId) void (async () => { try { const response = await fetch(`/api/v1/assets/${encodeURIComponent(draft.viewerAssetId)}`); const value = await response.json().catch(() => ({})); if (response.ok && value.asset) setViewerAsset(value.asset); else setNotice('原资产已不存在，请重新选择') } catch { setNotice('原资产已不存在，请重新选择') } })()
   }, [incomingContext?.createdAt])
   useEffect(() => { void loadLibraries() }, [])
   useEffect(() => { const timer = window.setTimeout(() => { void loadAssets() }, query ? 250 : 0); return () => window.clearTimeout(timer) }, [libraryKey, folderKey, page, query])
@@ -1681,7 +1694,7 @@ function AssetLibraryPage({ onNavigate, initialCategory = 'retouch', onDraftChan
     } catch (reason) { setError(reason.message || '保存模板失败，可重试') }
   }
   const reuse = asset => onNavigate(libraryKey === 'script' ? 'script' : libraryKey === 'brand' ? 'brand' : 'retouch', undefined, { asset, assetId: asset.id, source: 'asset-library', focusAssistant: true })
-  const openUploadTarget = target => { setUploadTarget(target); onDraftChange?.({ currentStep: 1, draftData: { libraryKey: target.library.key, folderKey: target.folder.key }, operationSummary: `准备上传到${target.library.label} / ${target.folder.label}` }) }
+  const openUploadTarget = target => { setUploadTarget(target); onDraftChange?.({ currentStep: 1, draftData: { libraryKey: target.library.key, folderKey: target.folder.key, uploadTarget: { libraryKey: target.library.key, folderKey: target.folder.key } }, operationSummary: `准备上传到${target.library.label} / ${target.folder.label}` }) }
   const renderSidebar = <aside className="asset-folder-nav glass-card" aria-label="资产库目录">
     {ASSET_LIBRARY_UI.map(library => <section key={library.key}><button className={libraryKey === library.key ? 'is-selected' : ''} onClick={() => selectLibrary(library.key)}><FolderOpen size={16} />{library.label}</button><div>{library.folders.map(([key, label]) => <button key={key} className={libraryKey === library.key && activeFolder[0] === key ? 'is-selected' : ''} onClick={() => selectLibrary(library.key, key)}><span>{label}</span><small>{libraries.find(item => item.key === library.key)?.folders?.find(folder => folder.key === key)?.count ?? '—'}</small></button>)}</div></section>)}
     <section><button className={libraryKey === 'video-library' ? 'is-selected' : ''} onClick={() => selectLibrary('video-library')}><Film size={16} />视频库</button></section>
@@ -1746,6 +1759,9 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   const draftSessionIds = useRef(new Map())
   const draftRecords = useRef(new Map())
   const draftPromises = useRef(new Map())
+  const draftLatestPatches = useRef(new Map())
+  const [draftSync, setDraftSync] = useState(null)
+  const [draftRecordState, setDraftRecordState] = useState({})
 
   useEffect(() => {
     if (initialAuthenticated || demoRetouch) return
@@ -1775,31 +1791,50 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
     const promise = (async () => {
       try {
       const response = await fetch('/api/v1/work-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ moduleKey, moduleName: NAV_ITEMS.find(item => item.id === moduleKey)?.label || moduleKey, route, title, clientSessionId, initialData: {} }) })
-      const value = await response.json().catch(() => ({}))
-      const record = response.ok ? (value.item || value.record) : null
-      if (record) draftRecords.current.set(moduleKey, record)
+       const value = await response.json().catch(() => ({}))
+       if (!response.ok) throw new Error(value.error || '工作记录保存失败，请重试；当前内容仍保留在本页面。')
+       const record = value.item || value.record
+       if (record) { draftRecords.current.set(moduleKey, record); setDraftRecordState(current => ({ ...current, [moduleKey]: record })) }
       return record
-      } catch { return null }
+      } catch (error) {
+        setDraftSync({ moduleKey, route, status: 'failed', message: error.message || '工作记录保存失败，请重试；当前内容仍保留在本页面。', patch: null })
+        return null
+      }
     })()
     draftPromises.current.set(moduleKey, promise)
     promise.finally(() => { if (draftPromises.current.get(moduleKey) === promise) draftPromises.current.delete(moduleKey) })
     return promise
   }
   const saveDraftChange = async (moduleKey, route, patch) => {
+    draftLatestPatches.current.set(moduleKey, { route, patch })
+    setDraftSync({ moduleKey, route, status: 'saving', message: '正在保存工作记录…', patch })
     let record = draftRecords.current.get(moduleKey)
     if (!record) record = await startDraft(moduleKey, route, `${NAV_ITEMS.find(item => item.id === moduleKey)?.label || moduleKey}工作记录`)
-    if (!record) return null
+    if (!record) {
+      setDraftSync({ moduleKey, route, status: 'failed', message: '工作记录保存失败，请重试；当前内容仍保留在本页面。', patch })
+      return null
+    }
     try {
       const response = await fetch(`/api/v1/work-records/${encodeURIComponent(record.taskId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...patch, expectedVersion: record.version }) })
       const value = await response.json().catch(() => ({}))
-      const next = response.ok ? (value.item || value.record) : null
-      if (next) draftRecords.current.set(moduleKey, next)
+      if (!response.ok) {
+        const conflict = response.status === 409
+        setDraftSync({ moduleKey, route, status: conflict ? 'conflict' : 'failed', message: conflict ? '工作记录版本冲突，请重试以合并最新内容。' : (value.error || '工作记录保存失败，请重试；当前内容仍保留在本页面。'), patch })
+        return null
+      }
+      const next = value.item || value.record
+       if (next) { draftRecords.current.set(moduleKey, next); setDraftRecordState(current => ({ ...current, [moduleKey]: next })) }
+      setDraftSync({ moduleKey, route, status: 'synced', message: '工作记录已保存', patch })
       return next
-    } catch { return null }
+    } catch (error) {
+      setDraftSync({ moduleKey, route, status: 'failed', message: error.message || '工作记录保存失败，请重试；当前内容仍保留在本页面。', patch })
+      return null
+    }
   }
   const resumeTask = task => {
     const moduleKey = task.workspace || task.moduleKey
-    const record = task.recordType === 'draft_task' ? task : null
+    const record = task.recordType === 'draft_task' || task.taskSource === 'work_record' ? task : null
+    if (record?.taskId) { draftRecords.current.set(moduleKey, record); setDraftRecordState(current => ({ ...current, [moduleKey]: record })) }
     navigate(moduleKey, task.route || DEFAULT_SUB_ROUTE[moduleKey] || '', { draftRecord: record, createdAt: new Date().toISOString() })
   }
   return (
@@ -1809,15 +1844,16 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
         <Topbar timeMode={timeMode} session={session} onOpenProfile={() => navigate('profile')} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
           {page === 'home' && <HomePage onNavigate={(nextPage, nextRoute, context) => { if (context?.startDraft) { const draftPromise = startDraft(nextPage, nextRoute, context.title); navigate(nextPage, nextRoute, { ...context, draftPromise }) } else navigate(nextPage, nextRoute, context) }} />}
-          {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_prompt", "精修提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} draftRecord={retouchContext?.draftRecord} draftPromise={retouchContext?.draftPromise} onDraftChange={patch => void saveDraftChange('retouch', 'one-click', patch)} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
-          {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
-          {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} />}
+          {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_prompt", "精修提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} draftRecord={retouchContext?.draftRecord || draftRecordState.retouch} draftPromise={retouchContext?.draftPromise} onDraftChange={patch => saveDraftChange('retouch', 'one-click', patch)} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
+          {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('brand', subRoute || 'create', patch)} />}
+          {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('script', subRoute || 'create', patch)} />}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} incomingContext={assetContext} onDraftChange={patch => void saveDraftChange('assets', subRoute, patch)} />}
           {page === 'settings' && <ApiSettings />}
           {page === 'profile' && <UserProfile session={session} onSessionChange={setSession} />}
           {page === 'admin' && session?.workspace?.permissions?.includes('manage') && <AdminSeatsPage />}
         </div>
       </div>
+      {draftSync && <div className={`draft-sync-feedback draft-sync-feedback--${draftSync.status}`} role="status" aria-live="polite"><span>{draftSync.message}</span>{['failed', 'conflict'].includes(draftSync.status) && draftSync.patch && <button className="text-button" onClick={() => void saveDraftChange(draftSync.moduleKey, draftSync.route, draftSync.patch)}>立即重试</button>}</div>}
       <TaskProgress onResume={resumeTask} />
     </div>
   )
