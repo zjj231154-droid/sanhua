@@ -227,6 +227,24 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByLabelText('短剧实时预览')).toHaveTextContent(assetName)
   })
 
+  it('短剧库的两个新建入口都会回到剧本生成工作界面', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (String(url).startsWith('/api/v1/scripts')) return { ok: true, json: async () => ({ scripts: [] }) }
+      if (String(url).startsWith('/api/v1/text-records')) return { ok: true, json: async () => ({ records: [] }) }
+      return { ok: true, json: async () => ({}) }
+    }))
+    const { container } = render(<App initialAuthenticated initialPage="script" />)
+
+    fireEvent.click(within(container.querySelector('.showcase-toolbar')).getByRole('button', { name: '剧本库' }))
+    const newScriptButton = await screen.findByRole('button', { name: '新建剧本' })
+    fireEvent.click(newScriptButton)
+    expect(screen.getByRole('textbox', { name: '短剧脚本需求' })).toBeInTheDocument()
+
+    fireEvent.click(within(container.querySelector('.showcase-toolbar')).getByRole('button', { name: '剧本库' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建短剧项目' }))
+    expect(screen.getByRole('textbox', { name: '短剧脚本需求' })).toBeInTheDocument()
+  })
+
   it('短剧创作将场景、角色和道具分开选择，并弹出对应图片库', async () => {
     vi.stubGlobal('fetch', vi.fn(async url => {
       if (String(url).startsWith('/api/v1/assets?workspace=script&limit=80')) return { ok: true, json: async () => ({ assets: [{ id: 'character-1', name: '年轻掌柜', videoAssetType: 'character', url: '/character.png' }, { id: 'prop-1', name: '紫砂茶壶', videoAssetType: 'prop', url: '/prop.png' }] }) }

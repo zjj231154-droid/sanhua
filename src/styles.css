@@ -1747,6 +1747,7 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .script-asset-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 .script-asset-unit:hover, .script-asset-unit.is-selected { border-color: #ddb477; background: rgba(82,44,30,.72); box-shadow: 0 0 0 2px rgba(225,189,134,.13), inset 0 1px rgba(255,245,232,.07); transform: translateY(-1px); }
 .script-workspace-grid { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(260px,.95fr); gap: 14px; }
+.script-workspace-grid--expanded { width: 100%; min-height: 360px; }
 .script-input-panel { min-width: 0; display: grid; align-content: start; gap: 10px; }
 .script-input-panel label { display: grid; gap: 7px; color: #f4e5d3; font-size: 12px; font-weight: 700; }
 .script-input-panel textarea { min-height: 132px; color: inherit; background: rgba(20,13,10,.62); line-height: 1.65; }
@@ -2019,7 +2020,8 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .script-asset-unit-action { color: var(--color-brand-primary); background: rgba(139,58,58,.09); }
 .app-shell.time-day .script-asset-upload { border-color: var(--color-border-subtle); color: var(--color-brand-primary); background: var(--color-surface); }
 .app-shell.time-day .script-asset-unit:hover, .app-shell.time-day .script-asset-unit.is-selected { border-color: var(--color-brand-primary); background: #fbf5f3; box-shadow: 0 0 0 2px rgba(139,58,58,.1); }
-.app-shell.time-day .script-workspace-grid { grid-template-columns: minmax(320px, .35fr) minmax(620px, .65fr); gap: 24px; align-items: stretch; }
+.app-shell.time-day .script-workspace-grid--expanded { grid-template-columns: minmax(300px, .34fr) minmax(0, .66fr); gap: 24px; align-items: stretch; }
+.app-shell.time-day .script-workspace-grid--expanded .script-input-panel { min-height: 360px; }
 .app-shell.time-day .script-input-panel { gap: 12px; }
 .app-shell.time-day .script-input-panel label { gap: 8px; color: var(--color-text-primary); font-size: 14px; }
 .app-shell.time-day .script-input-panel textarea { min-height: 180px; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--color-border-subtle); border-radius: 12px; color: var(--color-text-primary); background: var(--color-surface-muted); font-size: 14px; line-height: 1.6; }
@@ -2069,11 +2071,11 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-agent-actions { margin-top: auto; }
 
 @media (max-width: 1200px) {
-  .app-shell.time-day .script-workspace-grid { grid-template-columns: minmax(300px, .4fr) minmax(0, .6fr); gap: 18px; }
+  .app-shell.time-day .script-workspace-grid--expanded { grid-template-columns: minmax(300px, .4fr) minmax(0, .6fr); gap: 18px; }
   .app-shell.time-day .brand-workspace-canvas.is-material-step { grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); gap: 18px; }
 }
 @media (max-width: 900px) {
-  .app-shell.time-day .script-workspace-grid, .app-shell.time-day .brand-workspace-canvas.is-material-step { grid-template-columns: 1fr; }
+  .app-shell.time-day .script-workspace-grid--expanded, .app-shell.time-day .brand-workspace-canvas.is-material-step { grid-template-columns: 1fr; }
   .app-shell.time-day .script-preview-canvas { min-height: 360px; }
   .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-canvas-preview, .app-shell.time-day .brand-workspace-canvas.is-material-step .brand-step-card, .app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-canvas-preview, .app-shell.time-day .brand-workspace-canvas.is-dieline-step .brand-step-card { min-height: 0; }
 }
