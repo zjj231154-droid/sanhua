@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 const DEFAULT_REASONING = { provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', model: 'gpt-5.5', apiKey: '' }
 const DEFAULT_IMAGE = { provider: 'usegoodai', baseUrl: 'https://api.usegoodai.com/v1', model: 'gpt-image-2', apiKey: '' }
-const DEFAULT_VIDEO = { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', model: 'doubao-seedance-2-0-260128', apiKey: '' }
+const DEFAULT_VIDEO = { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', model: 'doubao-seedance-2.0', apiKey: '' }
 
 function ConnectionForm({ title, kicker, connection, form, setForm, busy, message, onSave, onRemove, onCheck, checking, label }) {
   const signal = connection && <span className={`connection-signal is-${connection.healthStatus || 'unknown'}`} title={connection.lastCheckedAt ? `最后检测：${new Date(connection.lastCheckedAt).toLocaleString()}` : '尚未检测'}><i aria-hidden="true" />{connection.healthStatus === 'online' ? '已连通' : connection.healthStatus === 'offline' ? '连接异常' : checking ? '检测中' : '待检测'}</span>
@@ -46,5 +46,6 @@ export default function ApiSettings() {
     <ConnectionForm title="推理模型" kicker="REASONING" connection={reasoning} form={reasoningForm} setForm={setReasoningForm} busy={busy === 'reasoning'} checking={checking} message={messages.reasoning} onSave={() => save('reasoning', reasoningForm, setReasoning, '/api/v1/me/provider-connection/verify')} onRemove={() => remove('reasoning', setReasoning, '/api/v1/me/provider-connection')} onCheck={() => void check()} label="推理" />
     <ConnectionForm title="生图模型" kicker="IMAGE GENERATION" connection={image} form={imageForm} setForm={setImageForm} busy={busy === 'image'} checking={checking} message={messages.image} onSave={() => save('image', imageForm, setImage, '/api/v1/me/image-provider-connection/verify')} onRemove={() => remove('image', setImage, '/api/v1/me/image-provider-connection')} onCheck={() => void check()} label="生图" />
     <ConnectionForm title="短剧视频模型" kicker="SHORT DRAMA VIDEO" connection={video} form={videoForm} setForm={setVideoForm} busy={busy === 'video'} checking={checking} message={messages.video} onSave={() => save('video', videoForm, setVideo, '/api/v1/me/video-provider-connection/verify')} onRemove={() => remove('video', setVideo, '/api/v1/me/video-provider-connection')} onCheck={() => void check()} label="视频" />
+    <p className="api-cloud-notice">默认兼容 <code>doubao-seedance-2.0</code>；已有连接不会被自动修改，填写后点击“验证并保存”即可切换。</p>
   </section>
 }

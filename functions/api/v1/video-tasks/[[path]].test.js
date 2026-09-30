@@ -65,7 +65,7 @@ describe('video task validation', () => {
   it('submits a Seedance video task through the encrypted personal video connection', async () => {
     const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: undefined } }
     const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })
-    await saveVideoProviderConnection(context, 'test-user', { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', apiKey: 'sk-video-secret', model: 'doubao-seedance-2-0-260128' })
+    await saveVideoProviderConnection(context, 'test-user', { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', apiKey: 'sk-video-secret', model: 'doubao-seedance-2.0' })
     await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('tea-house-1'), { id: 'tea-house-1', name: '茶馆场景', assetType: 'image', usableFor: ['script', 'video'], externalUrl: 'https://cdn.example.test/tea-house-1.png' })
     await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('actor-1'), { id: 'actor-1', name: '掌柜角色', assetType: 'image', usableFor: ['script', 'video'], storageKey: 'uploads/actor-1.png', mimeType: 'image/png' })
     await context.env.SANHUA_ASSETS.put('uploads/actor-1.png', new Uint8Array([1, 2, 3]))
@@ -81,13 +81,13 @@ describe('video task validation', () => {
     expect(value.task.status).toBe('running')
     expect(value.task.simulated).toBe(false)
     expect(value.task.providerTaskId).toBe('seedance-job-1')
-    expect(value.task.model).toBe('doubao-seedance-2-0-260128')
+    expect(value.task.model).toBe('doubao-seedance-2.0')
     expect(value.task.assetRefs).toEqual(body.assetRefs)
     expect(value.task.aspectRatio).toBe('9:16')
     expect(value.textRecordId).toBeTruthy()
     expect(upstream).toHaveBeenCalledWith('https://tokenspace.io/v1/video/generations', expect.objectContaining({ method: 'POST' }))
     const upstreamBody = JSON.parse(upstream.mock.calls[0][1].body)
-    expect(upstreamBody).toMatchObject({ model: 'doubao-seedance-2-0-260128', duration: 8, ratio: '9:16', size: '720p' })
+    expect(upstreamBody).toMatchObject({ model: 'doubao-seedance-2.0', duration: 8, ratio: '9:16', size: '720p' })
     expect(upstreamBody.metadata.content).toEqual([
       { type: 'image_url', role: 'reference_image', image_url: { url: 'https://cdn.example.test/tea-house-1.png' } },
       { type: 'image_url', role: 'reference_image', image_url: { url: 'data:image/png;base64,AQID' } },
