@@ -58,7 +58,7 @@ const NAV_ITEMS = [
   { id: 'assets', label: '资产库', icon: FolderOpen, children: [['retouch', '精修图库'], ['brand', '茶馆文创库'], ['script', '短剧库'], ['video-library', '视频库'], ['text', '文本库'], ['generated', 'AI 成果']] },
 ]
 
-const DEFAULT_SUB_ROUTE = { home: '', retouch: 'one-click', brand: 'create', script: 'create', assets: 'retouch', settings: '', profile: '' }
+const DEFAULT_SUB_ROUTE = { home: '', retouch: 'one-click', brand: 'create', script: 'create', assets: 'retouch', settings: '', profile: '', admin: '' }
 
 const DEMO_PHOTOS = [
   { id: 'americano', name: '冰美式', meta: '3024 × 4032 · 18.2 MB', tone: 'amber', status: '待处理' },
@@ -100,7 +100,7 @@ const CREATION_CARDS = [
 
 function Login({ onLogin, previewOnly = false }) {
   const [mode, setMode] = useState('login')
-  const [form, setForm] = useState({ name: '', workspaceName: '', email: '', password: '' })
+  const [form, setForm] = useState({ name: '', username: '', inviteCode: '', password: '' })
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const update = key => event => setForm(current => ({ ...current, [key]: event.target.value }))
@@ -154,7 +154,7 @@ function Login({ onLogin, previewOnly = false }) {
         <div className="login-card-heading">
           <div>
             <h2>{mode === 'login' ? '欢迎回来' : '创建工作台'}</h2>
-            <p>{mode === 'login' ? '登录你的专属创作工作台' : '创建独立账号与第一个私有工作空间'}</p>
+            <p>{mode === 'login' ? '使用用户名和密码登录主工作区' : '使用席位邀请码创建工作台账号'}</p>
           </div>
         </div>
 
@@ -162,13 +162,13 @@ function Login({ onLogin, previewOnly = false }) {
           {mode === 'register' && <><label>
             <div className="input-shell"><span className="input-label">姓名</span><input value={form.name} onChange={update('name')} maxLength={80} aria-label="姓名" required /></div>
           </label><label>
-            <div className="input-shell"><span className="input-label">工作台</span><input value={form.workspaceName} onChange={update('workspaceName')} maxLength={100} aria-label="工作台名称" placeholder="例如：叁花品牌组" /></div>
+            <div className="input-shell"><span className="input-label">邀请码</span><input value={form.inviteCode} onChange={update('inviteCode')} autoComplete="off" aria-label="席位邀请码" placeholder="SH-XXXX-XXXX-XXXX" required /></div>
           </label></>}
           <label>
             <div className="input-shell">
               <Mail size={17} />
-              <span className="input-label">{mode === 'login' ? '账号' : '登录邮箱'}</span>
-              <input type={mode === 'login' ? 'text' : 'email'} inputMode={mode === 'login' ? 'text' : 'email'} value={form.email} onChange={update('email')} autoComplete={mode === 'login' ? 'username' : 'email'} aria-label={mode === 'login' ? '账号（手机号或邮箱）' : '登录邮箱'} placeholder={mode === 'login' ? '手机号或邮箱' : 'name@example.com'} required />
+              <span className="input-label">用户名</span>
+              <input type="text" value={form.username} onChange={update('username')} autoComplete="username" aria-label="用户名" placeholder="3–32 位字母、数字或下划线" required />
             </div>
           </label>
           <label>
@@ -181,12 +181,12 @@ function Login({ onLogin, previewOnly = false }) {
         </div>
 
         <div className="login-options">
-          <span>{mode === 'register' ? '密码至少 10 位' : '安全会话将在 14 天后自动失效'}</span>
+          <span>{mode === 'register' ? '邀请码单次有效；密码至少 10 位' : '历史邮箱或手机号也可暂时作为用户名登录'}</span>
           <button type="button" onClick={() => { setMode(current => current === 'login' ? 'register' : 'login'); setMessage('') }}>{mode === 'login' ? '创建账号' : '已有账号，登录'}</button>
         </div>
 
         <button className="primary-button primary-button--wide login-submit" type="submit">
-          {busy ? '正在验证…' : previewOnly ? '进入演示工作台' : mode === 'login' ? '登录工作台' : '创建并进入工作台'} <ArrowUpRight size={18} />
+          {busy ? '正在验证…' : previewOnly ? '进入演示工作台' : mode === 'login' ? '登录工作台' : '注册并进入主工作区'} <ArrowUpRight size={18} />
         </button>
         <p className="demo-disclaimer"><ShieldCheck size={15} /> 账号、工作空间与素材均由服务端隔离；个人密钥仅加密保存。</p>
         {message && <p className="login-error" role="alert">{message}</p>}
@@ -199,7 +199,7 @@ function Login({ onLogin, previewOnly = false }) {
   )
 }
 
-function Sidebar({ page, subRoute, onNavigate }) {
+function Sidebar({ page, subRoute, onNavigate, session }) {
   const [expandedPage, setExpandedPage] = useState(() => NAV_ITEMS.some(item => item.id === page && item.children) ? page : null)
   useEffect(() => {
     setExpandedPage(NAV_ITEMS.some(item => item.id === page && item.children) ? page : null)
@@ -233,6 +233,7 @@ function Sidebar({ page, subRoute, onNavigate }) {
         })}
       </nav>
       <div className="sidebar-bottom">
+        {session?.workspace?.permissions?.includes('manage') && <button className={page === 'admin' ? 'nav-item is-active' : 'nav-item'} onClick={() => onNavigate('admin')}><ShieldCheck size={18} /><span>成员席位</span></button>}
         <button className={page === 'settings' ? 'nav-item is-active' : 'nav-item'} onClick={() => onNavigate('settings')}><Settings size={18} /><span>管理设置</span></button>
       </div>
     </aside>
@@ -545,6 +546,30 @@ const videoValidationMessage = (value, fallback = '视频校验失败，请刷�
   const missing = Array.isArray(value?.missing) ? value.missing.map(item => String(item || '').trim()).filter(Boolean) : []
   if (missing.length) return `请补齐：${missing.join('、')}`
   return String(value?.hint || '').trim() || fallback
+}
+
+function AdminSeatsPage() {
+  const [value, setValue] = useState({ seats: [], enterprise: null })
+  const [busy, setBusy] = useState(''); const [message, setMessage] = useState(''); const [error, setError] = useState('')
+  const load = async () => {
+    const response = await fetch('/api/v1/admin/seats'); const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || '席位信息读取失败')
+    setValue(body)
+  }
+  useEffect(() => { load().catch(reason => setError(reason.message)) }, [])
+  const act = async (seat, action) => {
+    setBusy(seat.seatId); setMessage(''); setError('')
+    try {
+      const endpoint = action === 'invite' ? 'invites' : action
+      const response = await fetch(`/api/v1/admin/seats/${seat.seatId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: action === 'invite' ? JSON.stringify({ role: seat.role === 'viewer' ? 'viewer' : 'editor' }) : '{}' })
+      const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || '席位操作失败')
+      if (body.code) { await navigator.clipboard?.writeText?.(body.code); setMessage(`${seat.seatId} 邀请码已生成并复制：${body.code}（仅本次完整显示）`) }
+      else setMessage(`${seat.seatId} 已${action === 'disable' ? '禁用' : '释放'}，历史账号和资产均已保留。`)
+      await load()
+    } catch (reason) { setError(reason.message) } finally { setBusy('') }
+  }
+  const labels = { available: '可用', invited: '已邀请', occupied: '已占用', disabled: '已禁用', released: '已释放' }
+  return <section className="page-content admin-seats"><span className="kicker">ENTERPRISE ACCESS</span><h1>成员与邀请码</h1><p>主工作区固定 10 个席位；管理员占用 01，邀请码原文仅在生成时显示一次。</p>{message && <p className="record-notice" role="status">{message}</p>}{error && <p className="retouch-error" role="alert">{error}</p>}<div className="seat-summary glass-card"><b>主工作区：{value.enterprise?.workspaceId || '—'}</b><span>总席位 {value.enterprise?.seatCount || 10}</span><span>已占用 {value.seats.filter(seat => seat.status === 'occupied').length}</span></div><div className="seat-list">{value.seats.map(seat => <article className="glass-card" key={seat.seatId}><header><b>席位 {seat.seatId.slice(1)}</b><span className={`seat-status is-${seat.status}`}>{labels[seat.status] || seat.status}</span></header><p>{seat.user ? `${seat.user.name} · ${seat.user.username}` : seat.invite ? `邀请码 · ****${seat.invite.inviteCodeLast4}` : '尚未绑定账号'}</p><small>{seat.role || 'editor'} · {seat.invite?.expiresAt ? `有效至 ${new Date(seat.invite.expiresAt).toLocaleString('zh-CN')}` : seat.seatId === 'S01' ? '唯一所有者席位' : '可生成邀请码'}</small><div className="seat-actions">{seat.seatId !== 'S01' && ['available', 'released', 'invited'].includes(seat.status) && <button className="secondary-button" disabled={busy === seat.seatId} onClick={() => void act(seat, 'invite')}>{seat.status === 'invited' ? '重新生成邀请码' : '生成邀请码'}</button>}{seat.seatId !== 'S01' && seat.status !== 'disabled' && <button className="secondary-button" disabled={busy === seat.seatId} onClick={() => void act(seat, 'disable')}>禁用</button>}{seat.seatId !== 'S01' && ['occupied', 'disabled'].includes(seat.status) && <button className="secondary-button" disabled={busy === seat.seatId} onClick={() => void act(seat, 'release')}>释放席位</button>}</div></article>)}</div></section>
 }
 const responseJson = async response => { try { return await response.json() } catch { return {} } }
 
@@ -1605,7 +1630,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   }, [])
   const previewParams = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
   const previewPage = previewParams.get('preview')
-  const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'assets', 'settings', 'profile'].includes(previewPage) ? previewPage : null
+  const validPreviewPage = ['home', 'retouch', 'brand', 'script', 'assets', 'settings', 'profile', 'admin'].includes(previewPage) ? previewPage : null
   const [authenticated, setAuthenticated] = useState(initialAuthenticated)
   const [sessionReady, setSessionReady] = useState(initialAuthenticated || demoRetouch)
   const [session, setSession] = useState(null)
@@ -1636,7 +1661,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   }
   return (
     <div className={`app-shell time-${timeMode}`}>
-      <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} />
+      <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} session={session} />
       <div className="app-main">
         <Topbar timeMode={timeMode} session={session} onOpenProfile={() => navigate('profile')} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
         <div className="page-transition" key={page}>
@@ -1647,6 +1672,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} />}
           {page === 'settings' && <ApiSettings />}
           {page === 'profile' && <UserProfile session={session} onSessionChange={setSession} />}
+          {page === 'admin' && session?.workspace?.permissions?.includes('manage') && <AdminSeatsPage />}
         </div>
       </div>
       <TaskProgress />

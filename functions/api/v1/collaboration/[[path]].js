@@ -1,5 +1,6 @@
 import { getJson, putJson } from '../../../_lib/asset-store.js'
-import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createUser, createWorkspace, currentIdentity, decryptSecret, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveImageProviderConnection, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, validProviderBaseUrl, verifyUserPassword, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
+import { changeUserPassword, clearSessionCookie, collaborationPaths, createSession, createWorkspace, currentIdentity, decryptSecret, destroyCurrentSession, listMemberships, listUsers, memberKey, permissionForRole, publicUser, publicWorkspace, requireIdentity, saveImageProviderConnection, saveProviderConnection, saveUserAvatar, saveVideoProviderConnection, updateUserProfile, userKey, validProviderBaseUrl, verifyUserPasswordDetailed, withCookie, workspaceKey, workspaceMembership } from '../../../_lib/collaboration.js'
+import { createSeatInvite, disableSeat, enterprise, registerWithSeatInvite, releaseSeat, seatsForAdmin } from '../../../_lib/auth-system.js'
 import { json } from '../../../_lib/tokenspace.js'
 
 const body = async request => { try { return await request.json() } catch { return {} } }
@@ -90,6 +91,11 @@ export async function onRequestGet(context) {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     return json(200, { user: publicUser(identity.user) })
   }
+  if (pathname === '/api/v1/admin/seats') {
+    const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
+    const result = await seatsForAdmin(identity.bucket)
+    return result.error ? json(409, { error: result.error }) : json(200, result)
+  }
   if (/^\/api\/v1\/workspaces\/[^/]+\/members$/.test(pathname)) {
     const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
     const workspaceId = pathname.split('/')[4]
@@ -106,26 +112,42 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   const pathname = route(context.request); const input = await body(context.request)
   if (pathname === '/api/v1/auth/register') {
-    const bucket = context.env?.SANHUA_ASSETS
-    const email = String(input.email || '').trim().toLowerCase(); const password = String(input.password || '')
-    if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
-    if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 10) return json(400, { error: 'INVALID_REGISTRATION', hint: '请填写有效邮箱，并使用至少 10 位密码。' })
-    const created = await createUser(bucket, { name: input.name, email, password })
-    if (created.error) return json(409, { error: created.error })
-    const workspace = await createWorkspace(bucket, { name: safeWorkspaceName(input.workspaceName) || `${created.user.name} 的工作台`, ownerId: created.user.id })
-    const session = await createSession(context, created.user.id, workspace.id)
-    return withCookie(json(201, { user: publicUser(created.user), workspace: publicWorkspace(workspace, { role: 'owner' }) }), session.cookie)
+    const result = await registerWithSeatInvite(context, { username: input.username, password: input.password, name: input.name, email: input.email, inviteCode: input.inviteCode })
+    if (result.error) {
+      const conflict = ['USERNAME_ALREADY_REGISTERED', 'EMAIL_ALREADY_REGISTERED', 'INVITE_ALREADY_USED'].includes(result.error)
+      const gone = ['INVITE_EXPIRED', 'INVITE_DISABLED'].includes(result.error)
+      return json(conflict ? 409 : gone ? 410 : 400, { error: result.error })
+    }
+    return withCookie(json(201, { user: result.user, workspace: result.workspace }), result.session.cookie)
   }
   if (pathname === '/api/v1/auth/login') {
     const bucket = context.env?.SANHUA_ASSETS; if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
-    const user = await verifyUserPassword(bucket, input.account ?? input.email, String(input.password || ''))
+    const identifier = input.username ?? input.account ?? input.email ?? input.phone
+    const identifierType = input.username !== undefined ? 'username' : input.account !== undefined ? 'account' : input.email !== undefined ? 'email' : input.phone !== undefined ? 'phone' : 'missing'
+    const verified = await verifyUserPasswordDetailed(bucket, identifier, String(input.password || ''))
+    console.info('[auth-login]', { identifierType, userFound: verified.userFound, status: verified.status, passwordMatch: verified.passwordMatch })
+    const user = verified.user
     if (!user) return json(401, { error: 'INVALID_CREDENTIALS' })
     const memberships = await listMemberships(bucket, user.id); if (!memberships.length) return json(403, { error: 'NO_WORKSPACE_ACCESS' })
-    const selected = memberships[0]
+    const company = await enterprise(bucket); const selected = memberships.find(row => row.workspace.id === company?.workspaceId) || memberships[0]
     const session = await createSession(context, user.id, selected.workspace.id)
+    const signedInAt = new Date().toISOString(); await putJson(bucket, userKey(user.id), { ...user, lastLoginAt: signedInAt, updatedAt: signedInAt })
+    console.info('[auth-login]', { identifierType, membershipCount: memberships.length, workspace: selected.workspace.id, sessionCreated: Boolean(session) })
     return withCookie(json(200, { user: publicUser(user), workspace: publicWorkspace(selected.workspace, selected.member) }), session.cookie)
   }
-  if (pathname === '/api/v1/auth/logout') return withCookie(json(204, {}), clearSessionCookie(context))
+  if (pathname === '/api/v1/auth/logout') { await destroyCurrentSession(context); return withCookie(json(204, {}), clearSessionCookie(context)) }
+  const seatInvite = /^\/api\/v1\/admin\/seats\/(S\d{2})\/invites$/.exec(pathname)
+  if (seatInvite) {
+    const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
+    const result = await createSeatInvite(identity.bucket, identity.user, seatInvite[1], input.role)
+    return result.error ? json(409, { error: result.error }) : json(201, result)
+  }
+  const seatAction = /^\/api\/v1\/admin\/seats\/(S\d{2})\/(disable|release)$/.exec(pathname)
+  if (seatAction) {
+    const identity = await requireIdentity(context, 'manage'); if (identity.error) return identity.error
+    const result = seatAction[2] === 'disable' ? await disableSeat(identity.bucket, identity.user, seatAction[1]) : await releaseSeat(identity.bucket, identity.user, seatAction[1])
+    return result.error ? json(409, { error: result.error }) : json(200, result)
+  }
   if (pathname === '/api/v1/me/password') {
     const identity = await requireIdentity(context); if (identity.error) return identity.error
     const changed = await changeUserPassword(identity.bucket, identity.user, input.currentPassword, input.newPassword)

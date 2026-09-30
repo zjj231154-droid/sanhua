@@ -192,6 +192,16 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
 .member-row small { color: var(--muted); font-size: 11px; }
 .member-row em { color: var(--muted); font-size: 12px; font-style: normal; }
 .workspace-select { max-width: 180px; font-size: 11px; }
+.admin-seats { margin: 16px; border-radius: 28px; max-height: calc(100vh - 115px); overflow: auto; color: var(--workbench-cream); }
+.seat-summary { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 18px 0; padding: 16px; }
+.seat-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; padding-bottom: 36px; }
+.seat-list article { padding: 16px; }
+.seat-list article header, .seat-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.seat-list article p { margin: 16px 0 6px; overflow-wrap: anywhere; }
+.seat-list article small { color: var(--workbench-muted); }
+.seat-status { padding: 4px 8px; border-radius: 999px; background: rgba(255,255,255,.08); font-size: 11px; }
+.seat-status.is-occupied { color: #83d9a2; }.seat-status.is-invited { color: #e5be77; }.seat-status.is-disabled { color: #ef8f83; }
+.seat-actions { justify-content: flex-start; flex-wrap: wrap; margin-top: 14px; }
 .login-error { margin-top: 12px; color: #ffd1c5; font-size: 12px; line-height: 1.5; }
 .integrated-retouch .connection-note { font-size: 11px; color: var(--workbench-muted); }
 .integrated-retouch .retouch-feedback { padding: 4px 24px 8px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--workbench-muted); }

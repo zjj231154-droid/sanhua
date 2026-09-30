@@ -3,6 +3,8 @@ import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRailwayVolumeBucket } from './railway-assets.mjs'
+import { prepareAuthentication } from '../functions/_lib/auth-system.js'
+import { externalRequestUrl } from './request-origin.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const dist = path.join(root, 'dist')
@@ -10,6 +12,7 @@ const port = Number(process.env.PORT || 3000)
 const storageDirectory = String(process.env.SANHUA_STORAGE_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim()
 const volumeBucket = storageDirectory ? createRailwayVolumeBucket(storageDirectory) : null
 const functionEnv = volumeBucket ? { ...process.env, SANHUA_ASSETS: volumeBucket } : process.env
+const appCommitSha = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.APP_COMMIT_SHA || 'unknown')
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' }
 
 const apiRoutes = {
@@ -23,6 +26,7 @@ const apiRoutes = {
   '/api/v1/scripts': () => import('../functions/api/v1/scripts/[[path]].js'),
   '/api/v1/video-tasks': () => import('../functions/api/v1/video-tasks/[[path]].js'),
   '/api/v1/auth': () => import('../functions/api/v1/collaboration/[[path]].js'),
+  '/api/v1/admin': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/session': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/workspaces': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/invites': () => import('../functions/api/v1/collaboration/[[path]].js'),
@@ -63,8 +67,7 @@ async function runApi(request, response, pathname) {
     if (!fn) { response.writeHead(405, { 'content-type': 'application/json' }); response.end(JSON.stringify({ error: 'METHOD_NOT_ALLOWED' })); return true }
     const headers = new Headers()
     for (const [key, value] of Object.entries(request.headers)) if (value) headers.set(key, Array.isArray(value) ? value.join(',') : value)
-    const origin = `http://${request.headers.host || `localhost:${port}`}`
-    const webRequest = new Request(`${origin}${request.url}`, { method: request.method, headers, body: body?.length ? body : undefined })
+    const webRequest = new Request(externalRequestUrl(request, port), { method: request.method, headers, body: body?.length ? body : undefined })
     const params = route === '/api/assets' ? { key: endpoint || undefined } : { path: endpoint || undefined }
     const result = await fn({ request: webRequest, env: functionEnv, params })
     await send(response, result)
@@ -78,7 +81,7 @@ async function runApi(request, response, pathname) {
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`)
-  if (url.pathname === '/health') { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ ok: true })); return }
+  if (url.pathname === '/health' || url.pathname === '/api/v1/version') { response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify({ ok: true, version: '3.0.0-auth', commit: appCommitSha })); return }
   if (await runApi(request, response, url.pathname)) return
   const candidate = path.normalize(path.join(dist, decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)))
   const safe = candidate.startsWith(dist) ? candidate : path.join(dist, 'index.html')
@@ -87,4 +90,10 @@ const server = http.createServer(async (request, response) => {
   createReadStream(file).pipe(response)
 })
 
+let authStatus = { status: volumeBucket ? 'not-prepared' : 'storage-not-configured' }
+if (volumeBucket) {
+  try { authStatus = await prepareAuthentication({ env: functionEnv }) }
+  catch (error) { authStatus = { status: 'failed', error: error.message }; console.error('[auth-bootstrap]', authStatus) }
+}
+console.info('[app-version]', { commit: appCommitSha, authStatus: authStatus.status || authStatus.error, backupPath: authStatus.backupPath || null })
 server.listen(port, '0.0.0.0', () => console.log(`Sanhua Railway service listening on ${port}`))

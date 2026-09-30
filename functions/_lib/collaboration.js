@@ -16,7 +16,7 @@ export const collaborationBucket = context => requiredBucket(context)
 export const userKey = id => `metadata/collaboration/users/${id}.json`
 export const workspaceKey = id => `metadata/collaboration/workspaces/${id}.json`
 export const memberKey = (workspaceId, userId) => `metadata/collaboration/members/${workspaceId}/${userId}.json`
-const sessionKey = hash => `metadata/collaboration/sessions/${hash}.json`
+export const sessionKey = hash => `metadata/collaboration/sessions/${hash}.json`
 const connectionKey = id => `metadata/collaboration/connections/${id}.json`
 const imageConnectionKey = id => `metadata/collaboration/image-connections/${id}.json`
 const videoConnectionKey = id => `metadata/collaboration/video-connections/${id}.json`
@@ -34,21 +34,36 @@ export const permissionForRole = role => rolePermissions[role] || []
 export const hasPermission = (member, permission) => permissionForRole(member?.role).includes(permission)
 export const cookieValue = (request, name) => String(request?.headers?.get?.('cookie') || '').split(';').map(item => item.trim()).find(item => item.startsWith(`${name}=`))?.slice(name.length + 1) || ''
 
-async function passwordHash(password, salt = base64(crypto.getRandomValues(new Uint8Array(16)))) {
+export async function passwordHash(password, salt = base64(crypto.getRandomValues(new Uint8Array(16)))) {
   const raw = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: bytesFromBase64(salt), iterations: 210000 }, raw, 256)
   return { salt, hash: base64(new Uint8Array(bits)) }
 }
 
-export async function createUser(bucket, { name, email, password }) {
-  const normalizedEmail = text(email).toLowerCase()
+export const normalizeUsername = value => text(value).toLowerCase()
+export const validUsername = value => /^[a-z0-9_]{3,32}$/.test(normalizeUsername(value)) || /^\d{11}$/.test(normalizeUsername(value))
+
+export async function buildUserRecord(bucket, { name, username, email, phone, password }) {
+  const rawEmail = text(email).toLowerCase()
+  const normalizedEmail = /^\S+@\S+\.\S+$/.test(rawEmail) ? rawEmail : ''
+  const normalizedPhone = text(phone || (/^\d{11}$/.test(rawEmail) ? rawEmail : ''))
+  const normalizedUsername = normalizeUsername(username || normalizedPhone || normalizedEmail.split('@')[0])
+  if (!validUsername(normalizedUsername)) return { error: 'INVALID_USERNAME' }
   const users = await listUsers(bucket)
-  if (users.some(user => user.email === normalizedEmail)) return { error: 'EMAIL_ALREADY_REGISTERED' }
+  if (users.some(user => normalizeUsername(user.username) === normalizedUsername)) return { error: 'USERNAME_ALREADY_REGISTERED' }
+  if (normalizedEmail && users.some(user => text(user.email).toLowerCase() === normalizedEmail)) return { error: 'EMAIL_ALREADY_REGISTERED' }
+  if (normalizedPhone && users.some(user => text(user.phone) === normalizedPhone)) return { error: 'PHONE_ALREADY_REGISTERED' }
   const credential = await passwordHash(password)
   const id = crypto.randomUUID()
-  const user = { id, name: text(name).slice(0, 80) || normalizedEmail.split('@')[0], email: normalizedEmail, passwordHash: credential.hash, passwordSalt: credential.salt, status: 'active', createdAt: now(), updatedAt: now() }
-  await putJson(bucket, userKey(id), user)
+  const user = { id, username: normalizedUsername, email: normalizedEmail || null, phone: normalizedPhone || null, name: text(name).slice(0, 80) || normalizedUsername, passwordHash: credential.hash, passwordSalt: credential.salt, status: 'active', createdAt: now(), updatedAt: now() }
   return { user }
+}
+
+export async function createUser(bucket, input) {
+  const created = await buildUserRecord(bucket, input)
+  if (created.error) return created
+  await putJson(bucket, userKey(created.user.id), created.user)
+  return created
 }
 
 export async function listUsers(bucket) {
@@ -57,19 +72,30 @@ export async function listUsers(bucket) {
   return users.filter(Boolean)
 }
 
-export async function verifyUserPassword(bucket, account, password) {
-  const normalizedAccount = text(account).toLowerCase()
-  const user = (await listUsers(bucket)).find(candidate => candidate.email === normalizedAccount || text(candidate.phone).toLowerCase() === normalizedAccount || text(candidate.account).toLowerCase() === normalizedAccount)
-  if (!user || user.status !== 'active') return null
+export async function findUserByLoginIdentifier(bucket, identifier) {
+  const normalized = text(identifier).toLowerCase()
+  if (!normalized) return null
+  return (await listUsers(bucket)).find(candidate => normalizeUsername(candidate.username) === normalized || text(candidate.email).toLowerCase() === normalized || text(candidate.phone).toLowerCase() === normalized || text(candidate.account).toLowerCase() === normalized) || null
+}
+
+export async function verifyUserPasswordDetailed(bucket, identifier, password) {
+  const user = await findUserByLoginIdentifier(bucket, identifier)
+  if (!user) return { user: null, userFound: false, status: null, passwordMatch: false }
+  if (user.status !== 'active' || !user.passwordHash || !user.passwordSalt) return { user: null, userFound: true, status: user.status || 'invalid', passwordMatch: false }
   const candidate = await passwordHash(password, user.passwordSalt)
-  return candidate.hash === user.passwordHash ? user : null
+  const passwordMatch = candidate.hash === user.passwordHash
+  return { user: passwordMatch ? user : null, userFound: true, status: user.status, passwordMatch }
+}
+
+export async function verifyUserPassword(bucket, identifier, password) {
+  return (await verifyUserPasswordDetailed(bucket, identifier, password)).user
 }
 
 export async function updateUserProfile(bucket, user, { name, email }) {
   const nextName = name === undefined ? user.name : text(name).slice(0, 80)
   const nextEmail = email === undefined ? user.email : text(email).toLowerCase()
   if (!nextName) return { error: 'NAME_REQUIRED' }
-  if (!/^\S+@\S+\.\S+$/.test(nextEmail)) return { error: 'INVALID_EMAIL' }
+  if (nextEmail && !/^\S+@\S+\.\S+$/.test(nextEmail)) return { error: 'INVALID_EMAIL' }
   if (nextEmail !== user.email && (await listUsers(bucket)).some(item => item.id !== user.id && item.email === nextEmail)) return { error: 'EMAIL_ALREADY_REGISTERED' }
   const value = { ...user, name: nextName, email: nextEmail, updatedAt: now() }
   await putJson(bucket, userKey(user.id), value)
@@ -124,7 +150,7 @@ export async function listMemberships(bucket, userId) {
   return Promise.all(own.map(async member => ({ workspace: await getJson(bucket, workspaceKey(member.workspaceId)), member }))).then(rows => rows.filter(row => row.workspace))
 }
 
-function secureCookie(context) {
+export function secureCookie(context) {
   const url = new URL(context.request.url)
   return url.protocol === 'https:' || context.env?.SANHUA_SECURE_COOKIES === 'true'
 }
@@ -140,6 +166,12 @@ export async function createSession(context, userId, workspaceId) {
 }
 
 export const clearSessionCookie = context => `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureCookie(context) ? '; Secure' : ''}`
+
+export async function destroyCurrentSession(context) {
+  const bucket = collaborationBucket(context)
+  const token = cookieValue(context.request, SESSION_COOKIE)
+  if (bucket && token && typeof bucket.delete === 'function') await bucket.delete(sessionKey(await sha256(token)))
+}
 
 export async function currentIdentity(context) {
   const bucket = collaborationBucket(context)
@@ -167,7 +199,7 @@ export async function requireIdentity(context, permission = 'view') {
   return identity
 }
 
-export const publicUser = user => user && ({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatar?.storageKey ? `/api/v1/me/avatar?v=${encodeURIComponent(user.avatar.updatedAt || user.updatedAt || '')}` : null, createdAt: user.createdAt })
+export const publicUser = user => user && ({ id: user.id, username: user.username || user.phone || String(user.email || '').split('@')[0], name: user.name, email: user.email || null, phone: user.phone || null, avatarUrl: user.avatar?.storageKey ? `/api/v1/me/avatar?v=${encodeURIComponent(user.avatar.updatedAt || user.updatedAt || '')}` : null, createdAt: user.createdAt, lastLoginAt: user.lastLoginAt || null })
 export const publicWorkspace = (workspace, member) => workspace && ({ id: workspace.id, name: workspace.name, createdAt: workspace.createdAt, updatedAt: workspace.updatedAt, version: workspace.version, role: member?.role, permissions: permissionForRole(member?.role) })
 
 export async function updateVersioned(bucket, key, current, change, actorId, expectedVersion) {

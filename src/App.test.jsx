@@ -5,6 +5,27 @@ import App, { BrandMerchWorkflow, TaskProgress, WorkflowStepper } from './App'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('AI 创作工作台 Demo', () => {
+  it('登录与注册统一使用用户名，注册要求席位邀请码', () => {
+    render(<App demoRetouch />)
+    expect(screen.getByRole('textbox', { name: '用户名' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '创建账号' }))
+    expect(screen.getByRole('textbox', { name: '席位邀请码' })).toBeRequired()
+    expect(screen.getByRole('textbox', { name: '用户名' })).toBeRequired()
+    expect(screen.queryByLabelText('登录邮箱')).not.toBeInTheDocument()
+  })
+
+  it('owner 可进入成员席位后台并看到十个席位', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (url === '/api/v1/session') return { ok: true, json: async () => ({ user: { id: 'owner', username: 'admin', name: '管理员' }, workspace: { id: 'main', name: '主工作区', role: 'owner', permissions: ['view', 'use', 'edit', 'manage'] } }) }
+      if (url === '/api/v1/admin/seats') return { ok: true, json: async () => ({ enterprise: { workspaceId: 'main', seatCount: 10 }, seats: Array.from({ length: 10 }, (_, index) => ({ seatId: `S${String(index + 1).padStart(2, '0')}`, status: index === 0 ? 'occupied' : 'available', role: index === 0 ? 'owner' : 'editor', user: index === 0 ? { name: '管理员', username: 'admin' } : null })) }) }
+      return { ok: true, json: async () => ({}) }
+    }))
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '成员席位' }))
+    expect(await screen.findByRole('heading', { name: '成员与邀请码' })).toBeInTheDocument()
+    expect(screen.getAllByText(/^席位 \d{2}$/)).toHaveLength(10)
+  })
+
   it('使用演示账号进入工作台并打开产品精修', () => {
     render(<App demoRetouch />)
 
