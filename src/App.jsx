@@ -271,13 +271,14 @@ export function TaskProgress({ onResume }) {
       let value = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : '任务状态暂不可用，请稍后重试')
       let nextTasks = Array.isArray(value.tasks) ? value.tasks.slice(0, 12) : []
+      let draftTaskRecords = []
       try {
         const workResponse = await fetch('/api/v1/work-records?page=1&pageSize=50')
         const workValue = await workResponse.json().catch(() => ({}))
         const records = workResponse.ok && Array.isArray(workValue.items) ? workValue.items : []
         setWorkRecords(records)
-        const recordTasks = records.map(record => ({ ...record, id: record.taskId, workspace: record.moduleKey, type: 'draft_task', status: record.status === 'succeeded' ? 'completed' : record.status, progress: record.progress || 0, stage: record.operationSummary || `第 ${record.currentStep || 1} 步`, updatedAt: record.updatedAt, recordType: 'draft_task' }))
-        nextTasks = [...recordTasks, ...nextTasks].sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))).slice(0, 20)
+        draftTaskRecords = records.map(record => ({ ...record, id: record.taskId, workspace: record.moduleKey, type: 'draft_task', status: record.status === 'succeeded' ? 'completed' : record.status, progress: record.progress || 0, stage: record.operationSummary || `第 ${record.currentStep || 1} 步`, updatedAt: record.updatedAt, recordType: 'draft_task' }))
+        nextTasks = [...draftTaskRecords, ...nextTasks].sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))).slice(0, 20)
       } catch { setWorkRecords([]) }
       const hasActiveVideo = nextTasks.some(task => task.workspace === 'video' && ['queued', 'running'].includes(task.status))
       if (hasActiveVideo && Date.now() - lastVideoSyncAt.current >= 8000) {
@@ -287,8 +288,7 @@ export function TaskProgress({ onResume }) {
         value = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : '任务状态暂不可用，请稍后重试')
         const refreshedTasks = Array.isArray(value.tasks) ? value.tasks.slice(0, 12) : []
-        const recordTasks = workRecords.map(record => ({ ...record, id: record.taskId, workspace: record.moduleKey, type: 'draft_task', status: record.status === 'succeeded' ? 'completed' : record.status, progress: record.progress || 0, stage: record.operationSummary || `第 ${record.currentStep || 1} 步`, updatedAt: record.updatedAt, recordType: 'draft_task' }))
-        nextTasks = [...recordTasks, ...refreshedTasks].sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))).slice(0, 20)
+        nextTasks = [...draftTaskRecords, ...refreshedTasks].sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))).slice(0, 20)
       }
       if (hasLoadedStatuses.current) {
         const completed = nextTasks.find(task => previousStatuses.current.get(task.id) !== 'completed' && task.status === 'completed')
