@@ -253,6 +253,7 @@ describe('AI 创作工作台 Demo', () => {
     render(<App initialAuthenticated initialPage="script" />)
 
     expect(screen.getByRole('button', { name: '选择场景资产' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '短剧脚本需求' }).closest('.script-workspace-grid')).toHaveClass('script-workspace-grid--brief')
     expect(screen.getByRole('button', { name: '选择角色资产' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '选择道具资产' })).toBeInTheDocument()
     expect(screen.getByLabelText('批量上传场景资产图片')).toBeInTheDocument()

@@ -2028,6 +2028,9 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell.time-day .script-asset-unit:hover, .app-shell.time-day .script-asset-unit.is-selected { border-color: var(--color-brand-primary); background: #fbf5f3; box-shadow: 0 0 0 2px rgba(139,58,58,.1); }
 .app-shell.time-day .script-workspace-grid--expanded { grid-template-columns: minmax(300px, .34fr) minmax(0, .66fr); gap: 24px; align-items: stretch; }
 .app-shell.time-day .script-workspace-grid--expanded .script-input-panel { min-height: 360px; }
+.app-shell.time-day .script-workspace-grid--brief { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.app-shell.time-day .script-workspace-grid--brief .script-input-panel { min-height: 0; }
+.app-shell.time-day .script-workspace-grid--brief .script-input-panel textarea { height: 300px; max-height: 520px; }
 .app-shell.time-day .script-input-panel { gap: 12px; }
 .app-shell.time-day .script-input-panel label { gap: 8px; color: var(--color-text-primary); font-size: 14px; }
 .app-shell.time-day .script-input-panel textarea { min-height: 180px; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--color-border-subtle); border-radius: 12px; color: var(--color-text-primary); background: var(--color-surface-muted); font-size: 14px; line-height: 1.6; }
@@ -2078,6 +2081,7 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 
 @media (max-width: 1200px) {
   .app-shell.time-day .script-workspace-grid--expanded { grid-template-columns: minmax(300px, .4fr) minmax(0, .6fr); gap: 18px; }
+  .app-shell.time-day .script-workspace-grid--brief { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .app-shell.time-day .brand-workspace-canvas.is-material-step { grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); gap: 18px; }
 }
 @media (max-width: 900px) {
