@@ -115,7 +115,7 @@ async function archivePromptRecord(input) {
   if (!response.ok) throw new Error(value.error || '提示词记录保存失败')
   return value.record
 }
-export default function LiveRetouch({ initialTab = 'one-click', focusAssistant = false, incomingAsset = null, onIncomingAssetConsumed }) {
+export default function LiveRetouch({ initialTab = 'one-click', focusAssistant = false, incomingAsset = null, onIncomingAssetConsumed, onDraftChange, draftRecord = null, draftPromise = null }) {
   const cloudMode = isCloudDeployment()
   const [image, setImage] = useState('')
   const [assistantOpen, setAssistantOpen] = useState(true)
@@ -262,6 +262,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     setAssistantOpen(false)
     setWorkflowStep(1)
     setTemplatesOpen(false)
+    onDraftChange?.({ currentStep: 1, draftData: { retouchMode: mode, workflowStep: 1 }, operationSummary: `开始${mode === 'batch' ? '批量' : mode === 'template' ? '模板' : '单图'}精修` })
   }
   function goToAssetPickerPage(nextPage) {
     setAssetPickerPage(Math.max(1, Math.min(assetPickerTotalPages, nextPage)))
@@ -279,7 +280,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     })
   }
   const fields = { size, scene, decor, product, preserve, requirements }
-  const setField = (name, value) => ({ size: setSize, scene: setScene, decor: setDecor, product: setProduct, preserve: setPreserve, requirements: setRequirements }[name])(value)
+  const setField = (name, value) => { ({ size: setSize, scene: setScene, decor: setDecor, product: setProduct, preserve: setPreserve, requirements: setRequirements }[name])(value); onDraftChange?.({ currentStep: workflowStep, draftData: { [name]: value }, operationSummary: `编辑${name}` }) }
   const toggleSection = name => setOpenSections(current => {
     const next = { ...current, [name]: !current[name] }
     localStorage.setItem('sanhua-retouch-open-sections', JSON.stringify(next))
@@ -312,6 +313,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     setSelectedCloudAssets(assets); setActiveRetouchAssets(assets); setSelectedAssetId(assets[0].id); setEditedFields({})
     setImage(source); setCloudResult(null); setCloudResults([]); setCloudResultIndex(0); setJob(null); setError(''); setTransferNotice(''); localStorage.removeItem('retouch-job'); setAssetPickerOpen(false)
     if (retouchMode) setWorkflowStep(2)
+    onDraftChange?.({ currentStep: 2, draftData: { retouchMode, workflowStep: 2, selectedAssetIds: assets.map(asset => asset.id), size, scene, decor, preserve, requirements }, inputAssetIds: assets.map(asset => asset.id), operationSummary: `已选择 ${assets.length} 张精修素材` })
     void analyzeImage(source, assets[0].id)
   }
   useEffect(() => {
@@ -331,6 +333,24 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     setTransferNotice(`已将「${incomingAsset.name || '素材'}」加入产品精修`)
     onIncomingAssetConsumed?.()
   }, [incomingAsset?.id])
+  useEffect(() => {
+    let active = true
+    const restore = async () => {
+      const record = draftRecord?.taskId ? draftRecord : draftPromise ? await draftPromise : null
+      if (!active) return
+      const data = record?.draftData
+      if (!data) return
+      if (data.retouchMode) setRetouchMode(data.retouchMode)
+      if (Number(data.workflowStep)) setWorkflowStep(Math.max(1, Math.min(5, Number(data.workflowStep))))
+      for (const [name, setter] of Object.entries({ size: setSize, scene: setScene, decor: setDecor, product: setProduct, preserve: setPreserve, requirements: setRequirements })) {
+        if (typeof data[name] === 'string') setter(data[name])
+      }
+      if (Array.isArray(data.selectedAssetIds)) setSelectedAssetId(data.selectedAssetIds[0] || '')
+      setTransferNotice('已恢复上次产品精修工作内容。')
+    }
+    void restore()
+    return () => { active = false }
+  }, [draftRecord?.taskId, draftPromise])
   function removeActiveAsset(id) {
     setActiveRetouchAssets(current => {
       const next = current.filter(asset => asset.id !== id)

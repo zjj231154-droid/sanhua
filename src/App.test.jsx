@@ -296,6 +296,22 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('button', { name: '下一步：选择材质' })).toBeEnabled()
   })
 
+  it('文创本地上传在当前页面弹出资产上传窗口', () => {
+    render(<BrandMerchWorkflow assets={[]} selectedAsset={null} onSelectAsset={vi.fn()} busy={false} plan="" image="" error="" onPlan={vi.fn()} onGenerate={vi.fn()} onViewImage={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: '选择做产品工作流' }))
+    fireEvent.click(screen.getByRole('radio', { name: '杯垫' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步：选择材质' }))
+    fireEvent.click(screen.getByRole('radio', { name: /原色纸浆板：/ }))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '文创产品尺寸' }), { target: { value: '90 × 90 mm' } })
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '上传图片' }))
+
+    const dialog = screen.getByRole('dialog', { name: '上传到文创创作本地素材' })
+    expect(dialog.closest('.asset-picker-modal').parentElement).toBe(document.body)
+    expect(screen.getByRole('button', { name: '关闭上传' })).toBeInTheDocument()
+  })
+
   it('五步流程标识当前步骤、完成步骤和未完成步骤', () => {
     const onStep = vi.fn()
     render(<WorkflowStepper steps={['产品', '材质', '尺寸']} activeStep={2} onStep={onStep} />)
