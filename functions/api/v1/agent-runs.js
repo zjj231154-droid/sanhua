@@ -3,6 +3,7 @@ import { registryFor } from '../../_lib/skills.js'
 import { saveTask, updateTask } from '../../_lib/task-store.js'
 import { createTextRecord } from '../../_lib/text-record-store.js'
 import { requireIdentity, resolvedProviderConnection } from '../../_lib/collaboration.js'
+import { seedanceStoryboardInstruction } from '../../_lib/seedance-prompt-zh.js'
 const allowed = new Set(['retouch', 'brand', 'script'])
 const brandTextFor = requirements => {
   const dielineMode = /流程阶段：产品刀版图/.test(requirements)
@@ -14,6 +15,7 @@ const brandTextFor = requirements => {
 const textFor = (workspace, input = {}) => {
   const requirements = String(input.requirements || input.prompt || '').slice(0, 10000)
   if (workspace === 'brand') return brandTextFor(requirements)
+  if (workspace === 'script' && input.workflow === 'seedance-storyboard') return seedanceStoryboardInstruction(requirements)
   if (workspace === 'script') return `你是短剧制作工作台的编导助手，Skill short-drama-production v1.0.0。按“选题立项→故事规划→角色→分集目录→分集剧本→合规审查→资产/场次/镜头→提示词→交付”的阶段推进；本次先输出可确认的选题方向和故事规划，包含题材、受众、基调、开场钩子、人物关系、冲突、分场位置、道具、预计时长和待确认项。全部剧情必须发生在客户真实茶馆，不得虚构房间、设备或大规模场面；不要复制对标台词，不要直接发布或生成视频。需求：${requirements}`
   return `你是产品精修助手，遵循 image-edit-agent 1.1.0：先确认尺寸/比例、场景、装饰和保留项，再形成图片编辑计划。默认保护杯瓶轮廓、标签、Logo、文字和饮品质感，默认不新增道具。不要直接执行图片编辑。需求：${requirements}`
 }
@@ -23,7 +25,7 @@ export async function onRequestPost(context) {
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const workspace = String(input.workspace || '')
-  const skill = registryFor(workspace)
+  const skill = registryFor(workspace, String(input.skillId || ''))
   if (!allowed.has(workspace) || !skill || skill.status !== 'enabled') return json(400, { error: 'SKILL_NOT_AVAILABLE', workspace })
   const providerConnection = await resolvedProviderConnection(context, identity.user.id)
   const model = input.model || providerConnection?.reasoningModel || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
@@ -33,8 +35,8 @@ export async function onRequestPost(context) {
   if (result.response) { await updateTask(context, task.id, { status: 'failed', progress: 10, stage: '模型调用失败', error: 'UseGoodAI 请求失败' }); return result.response }
   const content = result.data?.choices?.[0]?.message?.content || ''
   const textRecord = await createTextRecord(context, {
-    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_prompt' : workspace === 'script' ? 'script' : 'retouch_prompt',
-    title: workspace === 'brand' ? '品牌设计计划' : workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content, contentFormat: 'prompt',
+    workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_prompt' : workspace === 'script' && input.workflow === 'seedance-storyboard' ? 'storyboard_prompt' : workspace === 'script' ? 'script' : 'retouch_prompt',
+    title: workspace === 'brand' ? '品牌设计计划' : workspace === 'script' && input.workflow === 'seedance-storyboard' ? '待确认 Seedance 分镜提示词' : workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content, contentFormat: 'prompt',
     workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, model, provider: 'usegoodai-reasoning', sourceTaskId: task.id, sourceAssetIds: Array.isArray(input.assets) ? input.assets : [], referenceAssetIds: Array.isArray(input.reference_asset_ids) ? input.reference_asset_ids : [],
   })
   const updatedTask = await updateTask(context, task.id, { status: 'waiting_user', progress: 15, stage: '等待用户确认', plan: content, textRecordId: textRecord?.id || null })

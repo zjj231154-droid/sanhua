@@ -1,3 +1,5 @@
+import { seedancePromptSkill } from './seedance-prompt-zh.js'
+
 const REGISTRY = {
   'image-edit-agent': {
     skillId: 'image-edit-agent', displayName: '精修', workspace: 'retouch', version: '1.1.0', status: 'enabled',
@@ -11,6 +13,9 @@ const REGISTRY = {
     skillId: 'short-drama-production', displayName: '短剧制作工作台', workspace: 'script', version: '1.0.0', status: 'enabled',
     allowedTools: ['text.generate', 'script.plan', 'script.write', 'script.review', 'shot.plan'], contentHash: 'F0ABE85D76C1CC927E28F7A320C9AE3B424E8B21ADF20B5DE56CBCE6FEBD83BD'
   },
+  'seedance-prompt-zh': {
+    ...seedancePromptSkill, contentHash: 'SEEDANCE_PROMPT_ZH_V1_0_0'
+  },
 }
 export function skillFor(workspace) {
   return Object.values(REGISTRY).find(skill => skill.workspace === workspace) || null
@@ -20,7 +25,8 @@ export function publicSkill(skill) {
   const { skillId, displayName, workspace, version, status, allowedTools } = skill
   return { skillId, displayName, workspace, version, status, allowedTools }
 }
-export function registryFor(workspace) {
-  const skill = skillFor(workspace)
+export function registryFor(workspace, skillId = '') {
+  const skill = skillId ? REGISTRY[skillId] : skillFor(workspace)
+  if (skill && skill.workspace !== workspace) return null
   return skill ? publicSkill(skill) : null
 }

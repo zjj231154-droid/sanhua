@@ -53,3 +53,22 @@ it('creates a separate concept-dieline prompt before a product effect plan', asy
   expect(body.messages[0].content).toContain('FINAL_DIELINE_PROMPT:')
   expect(body.messages[0].content).toContain('生产前由厂家/CAD 校核')
 })
+
+it('uses the Seedance skill to create and archive a storyboard prompt', async () => {
+  const bucket = new MemoryBucket()
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'FINAL_SEEDANCE_STORYBOARD_PROMPT: @茶馆场景作为场景背景，镜头从中景推进到近景。' } }] }), { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  const request = new Request('https://example.test/api/v1/agent-runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: 'script', skillId: 'seedance-prompt-zh', workflow: 'seedance-storyboard', requirements: '已确认角色、场景和道具，生成 8 秒竖屏分镜。', assets: ['scene-1', 'character-1'] }) })
+
+  const response = await onRequestPost({ request, env: { SANHUA_ASSETS: bucket, USEGOODAI_API_KEY: 'test-key' } })
+  const value = await response.json()
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+  const stored = [...bucket.values.entries()].find(([key]) => key.startsWith('metadata/text-records/'))
+
+  expect(response.status).toBe(202)
+  expect(value.skill).toMatchObject({ skillId: 'seedance-prompt-zh', workspace: 'script', status: 'enabled' })
+  expect(body.messages[0].content).toContain('Seedance 2.0 中文视频提示词工程师')
+  expect(body.messages[0].content).toContain('最多 9 张图片参考')
+  expect(body.messages[0].content).toContain('分时段画面')
+  expect(JSON.parse(stored[1].value)).toMatchObject({ recordType: 'storyboard_prompt', sourceAssetIds: ['scene-1', 'character-1'] })
+})
