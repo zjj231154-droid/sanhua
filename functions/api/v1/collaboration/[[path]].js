@@ -118,7 +118,7 @@ export async function onRequestPost(context) {
   }
   if (pathname === '/api/v1/auth/login') {
     const bucket = context.env?.SANHUA_ASSETS; if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
-    const user = await verifyUserPassword(bucket, input.email, String(input.password || ''))
+    const user = await verifyUserPassword(bucket, input.account ?? input.email, String(input.password || ''))
     if (!user) return json(401, { error: 'INVALID_CREDENTIALS' })
     const memberships = await listMemberships(bucket, user.id); if (!memberships.length) return json(403, { error: 'NO_WORKSPACE_ACCESS' })
     const selected = memberships[0]

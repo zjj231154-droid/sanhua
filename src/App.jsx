@@ -167,8 +167,8 @@ function Login({ onLogin, previewOnly = false }) {
           <label>
             <div className="input-shell">
               <Mail size={17} />
-              <span className="input-label">账号</span>
-              <input type="email" value={form.email} onChange={update('email')} autoComplete="email" aria-label="账号" required />
+              <span className="input-label">{mode === 'login' ? '账号' : '登录邮箱'}</span>
+              <input type={mode === 'login' ? 'text' : 'email'} inputMode={mode === 'login' ? 'text' : 'email'} value={form.email} onChange={update('email')} autoComplete={mode === 'login' ? 'username' : 'email'} aria-label={mode === 'login' ? '账号（手机号或邮箱）' : '登录邮箱'} placeholder={mode === 'login' ? '手机号或邮箱' : 'name@example.com'} required />
             </div>
           </label>
           <label>

@@ -57,9 +57,9 @@ export async function listUsers(bucket) {
   return users.filter(Boolean)
 }
 
-export async function verifyUserPassword(bucket, email, password) {
-  const normalizedEmail = text(email).toLowerCase()
-  const user = (await listUsers(bucket)).find(candidate => candidate.email === normalizedEmail)
+export async function verifyUserPassword(bucket, account, password) {
+  const normalizedAccount = text(account).toLowerCase()
+  const user = (await listUsers(bucket)).find(candidate => candidate.email === normalizedAccount || text(candidate.phone).toLowerCase() === normalizedAccount || text(candidate.account).toLowerCase() === normalizedAccount)
   if (!user || user.status !== 'active') return null
   const candidate = await passwordHash(password, user.passwordSalt)
   return candidate.hash === user.passwordHash ? user : null

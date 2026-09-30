@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { onRequestGet, onRequestPatch, onRequestPost } from './[[path]].js'
 import { onRequestGet as listAssets } from '../assets.js'
 import { putJson } from '../../../_lib/asset-store.js'
-import { resolvedImageProviderConnection } from '../../../_lib/collaboration.js'
+import { createUser, createWorkspace, resolvedImageProviderConnection } from '../../../_lib/collaboration.js'
 
 const bucket = () => {
   const data = new Map()
@@ -29,6 +29,15 @@ describe('workspace collaboration boundaries', () => {
     expect((await invisible.json()).assets).toEqual([])
     const visible = await listAssets({ env, request: request('/api/v1/assets', 'GET', null, firstCookie) })
     expect((await visible.json()).assets.map(asset => asset.id)).toEqual(['owned'])
+  })
+
+  it('allows an existing administrator account to sign in with its phone number', async () => {
+    const assets = bucket(); const env = { SANHUA_ASSETS: assets, SANHUA_CONNECTION_ENCRYPTION_KEY: 'test-secret' }
+    const owner = await createUser(assets, { name: '管理员', email: '13882052720', password: '1234567890' })
+    await createWorkspace(assets, { name: '管理员工作台', ownerId: owner.user.id })
+    const login = await onRequestPost({ env, request: request('/api/v1/auth/login', 'POST', { account: '13882052720', password: '1234567890' }) })
+    expect(login.status).toBe(200)
+    expect((await login.json()).user).toMatchObject({ id: owner.user.id, name: '管理员' })
   })
 
   it('never returns the API key while verifying and saving a personal connection', async () => {
