@@ -170,16 +170,25 @@ async function migrateLegacyUsersUnlocked(bucket, company, backupPath) {
     Object.assign(freeSeat, occupied); joinedMainWorkspace.push(user.id)
   }
   const historicalAssets = await listJson(bucket, 'metadata/assets/', 1000)
-  const sharedAssetIds = []; let skippedPrivateAssetCount = 0
+  const sharedAssetIds = []; const unsharedLegacySeedIds = []; let skippedPrivateAssetCount = 0
   for (const asset of historicalAssets) {
     const sharedWorkspaceIds = Array.isArray(asset.sharedWorkspaceIds) ? asset.sharedWorkspaceIds : []
+    if (asset.sourceModule === 'legacy-cloud-sync' && asset.workspaceId !== company.workspaceId && asset.tenantId !== company.workspaceId) {
+      if (sharedWorkspaceIds.includes(company.workspaceId)) {
+        const { sharedAt, ...preserved } = asset
+        changes.push([assetMetadataKey(asset.id), { ...preserved, sharedWorkspaceIds: sharedWorkspaceIds.filter(id => id !== company.workspaceId) }])
+        unsharedLegacySeedIds.push(asset.id)
+      }
+      continue
+    }
     if (asset.workspaceId === company.workspaceId || asset.tenantId === company.workspaceId || sharedWorkspaceIds.includes(company.workspaceId)) continue
     if (asset.visibility === 'private') { skippedPrivateAssetCount += 1; continue }
     changes.push([assetMetadataKey(asset.id), { ...asset, sharedWorkspaceIds: [...sharedWorkspaceIds, company.workspaceId], sharedAt: now() }])
     sharedAssetIds.push(asset.id)
   }
   if (changes.length) await atomicJsonWrites(bucket, changes)
-  const allSharedAssetIds = [...new Set([...(previousReport?.sharedAssetIds || []), ...sharedAssetIds])]
+  const removed = new Set(unsharedLegacySeedIds)
+  const allSharedAssetIds = [...new Set([...(previousReport?.sharedAssetIds || []).filter(id => !removed.has(id)), ...sharedAssetIds])]
   const report = { id: 'auth-v3', schemaVersion: AUTH_SCHEMA_VERSION, sharedAssetMigrationVersion: 1, backupPath, migratedUsers, joinedMainWorkspace, skippedNoSeat, sharedAssetCount: allSharedAssetIds.length, sharedAssetIds: allSharedAssetIds, skippedPrivateAssetCount, preservedPasswordHashes: true, preservedLegacyWorkspaces: true, completedAt: now() }
   await putJson(bucket, migrationKey, report)
   return report
