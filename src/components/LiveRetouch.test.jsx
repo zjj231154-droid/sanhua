@@ -105,6 +105,7 @@ it('图库图片双击后可打开缩放预览，并从右下角关闭', async (
   fireEvent.doubleClick(galleryCard)
 
   expect(screen.getByRole('dialog', { name: '图片查看器' })).toBeInTheDocument()
+  expect(screen.getByRole('dialog', { name: '图片查看器' }).querySelector('.image-viewer-dialog')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '放大' })).toBeInTheDocument()
   const close = screen.getByRole('button', { name: '关闭图片查看器' })
   expect(close).toHaveClass('image-viewer-close')

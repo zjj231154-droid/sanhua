@@ -4,10 +4,15 @@ import { imageCacheKey, imageCacheStatus, preloadImage, clearImageCache } from '
 export default function CachedImage({ asset, src, alt, className = '', loading = 'lazy', onClick }) {
   const cacheKey = useMemo(() => `${imageCacheKey(asset || src)}|${src || ''}`, [asset, src])
   const [status, setStatus] = useState(() => imageCacheStatus(cacheKey))
-  const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined')
+  const eager = loading === 'eager'
+  const [visible, setVisible] = useState(() => eager || typeof IntersectionObserver === 'undefined')
   const wrapper = useRef(null)
 
   useEffect(() => {
+    if (eager) {
+      setVisible(true)
+      return undefined
+    }
     if (visible || typeof IntersectionObserver === 'undefined') return undefined
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting) return
@@ -16,7 +21,7 @@ export default function CachedImage({ asset, src, alt, className = '', loading =
     }, { rootMargin: '360px' })
     if (wrapper.current) observer.observe(wrapper.current)
     return () => observer.disconnect()
-  }, [visible])
+  }, [eager, visible])
 
   useEffect(() => {
     if (!visible) return undefined
