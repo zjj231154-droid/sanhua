@@ -13,7 +13,7 @@ const scopedId = (workspaceId, id) => `legacy-${String(workspaceId || 'default')
 export async function syncLegacyAssets(bucket, identity) {
   const workspaceId = identity.workspaceId || 'default'
   const markerKey = `metadata/legacy-sync/${String(workspaceId).replace(/[^a-zA-Z0-9_-]/g, '_')}.json`
-  if (await getJson(bucket, markerKey)) return []
+  const previous = await getJson(bucket, markerKey)
   const now = new Date().toISOString()
   const created = []
   for (const source of records) {
@@ -25,6 +25,6 @@ export async function syncLegacyAssets(bucket, identity) {
     await putJson(bucket, `metadata/asset-locations/${id}/${source.libraryKey}-${source.folderKey}-${source.libraryKey}.json`, location)
     created.push(asset)
   }
-  await putJson(bucket, markerKey, { workspaceId, completedAt: now, assetCount: created.length })
+  await putJson(bucket, markerKey, { workspaceId, completedAt: now, assetCount: records.length, repairedCount: created.length, previousCompletedAt: previous?.completedAt || null })
   return created
 }

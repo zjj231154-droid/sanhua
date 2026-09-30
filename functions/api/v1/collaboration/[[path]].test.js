@@ -46,6 +46,23 @@ describe('authentication and collaboration boundaries', () => {
     expect(login.status).toBe(200)
   })
 
+  it('admin sees the complete invite code and a member can register then log in with it', async () => {
+    const assets = bucket(); const { env, cookie } = await adminSession(assets)
+    const inviteResponse = await onRequestPost({ env, request: request('/api/v1/admin/seats/S02/invites', 'POST', { role: 'editor' }, cookie) })
+    const created = await inviteResponse.json()
+    expect(inviteResponse.status).toBe(201)
+    expect(created.code).toMatch(/^SH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/)
+    const seatsResponse = await onRequestGet({ env, request: request('/api/v1/admin/seats', 'GET', null, cookie) })
+    const seats = await seatsResponse.json()
+    expect(seats.seats.find(seat => seat.seatId === 'S02').invite.inviteCode).toBe(created.code)
+
+    const register = await onRequestPost({ env, request: request('/api/v1/auth/register', 'POST', { name: '邀请码成员', username: 'invite_member', password: 'secure-invite-member-password', inviteCode: created.code }) })
+    expect(register.status).toBe(201)
+    const login = await onRequestPost({ env, request: request('/api/v1/auth/login', 'POST', { username: 'invite_member', password: 'secure-invite-member-password' }) })
+    expect(login.status).toBe(200)
+    expect(await login.json()).toMatchObject({ user: { username: 'invite_member' }, workspace: { id: 'main', role: 'editor' } })
+  })
+
   it('wrong_password_returns_invalid_credentials and unknown username is indistinguishable', async () => {
     const assets = bucket(); const { env } = await adminSession(assets)
     const wrong = await onRequestPost({ env, request: request('/api/v1/auth/login', 'POST', { username: 'admin', password: 'definitely-wrong' }) })

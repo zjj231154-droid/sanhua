@@ -714,6 +714,18 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
 }
+.app-shell .user-profile {
+  height: calc(100dvh - 110px);
+  min-height: 0;
+  max-height: none;
+  margin: 16px 0 0 16px;
+  padding-bottom: 72px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
 .app-shell .page-content::before { display: none; }
 .app-shell .welcome-block { padding-bottom: 0; }
 .app-shell .welcome-block::after { display: none; }

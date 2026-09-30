@@ -41,6 +41,12 @@ export async function listJson(bucket, prefix, limit = 200) {
   return rows.filter(Boolean)
 }
 
+export const assetAvailableInWorkspace = (asset, workspaceId) => {
+  const target = String(workspaceId || '')
+  if (!target) return false
+  return asset?.workspaceId === target || asset?.tenantId === target || (Array.isArray(asset?.sharedWorkspaceIds) && asset.sharedWorkspaceIds.includes(target))
+}
+
 export const normalizedLocations = asset => {
   const locations = Array.isArray(asset?.locations) ? asset.locations : []
   const safe = locations.filter(location => validAssetFolder(location.libraryKey, location.folderKey))

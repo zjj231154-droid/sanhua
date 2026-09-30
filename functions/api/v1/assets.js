@@ -1,5 +1,5 @@
 import { json } from '../../_lib/tokenspace.js'
-import { assetsBucket, assetUrl, listJson } from '../../_lib/asset-store.js'
+import { assetAvailableInWorkspace, assetsBucket, assetUrl, listJson } from '../../_lib/asset-store.js'
 import { hasLocation, locationsForAsset, validAssetFolder } from '../../_lib/library-config.js'
 import { requireIdentity, hasPermission } from '../../_lib/collaboration.js'
 import { syncLegacyAssets } from '../../_lib/legacy-assets.js'
@@ -32,8 +32,8 @@ export async function onRequestGet(context) {
     const locations = locationsForAsset(asset)
     return { ...asset, locations, libraryKey: asset.libraryKey || locations[0]?.libraryKey, folderKey: asset.folderKey || locations[0]?.folderKey, assetType: asset.assetType || 'image', videoAssetType: asset.videoAssetType || inferredType, usableFor: Array.isArray(asset.usableFor) ? asset.usableFor : ['script', 'video'], inferred: asset.videoAssetType ? Boolean(asset.inferred) : true, tags: Array.isArray(asset.tags) ? asset.tags : [] }
   }
-  const allAssets = (await listJson(bucket, 'metadata/assets/')).map(normalize)
-    .filter(asset => identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
+  const allAssets = (await listJson(bucket, 'metadata/assets/', 1000)).map(normalize)
+    .filter(asset => identity.compatibilityMode || assetAvailableInWorkspace(asset, identity.workspaceId))
     .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
     .filter(asset => !workspace || asset.assetSpace === workspace)
     .filter(asset => !libraryKey || hasLocation(asset, libraryKey, folderKey))

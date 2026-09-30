@@ -1,4 +1,4 @@
-import { getJson, putJson } from './asset-store.js'
+import { assetMetadataKey, getJson, listJson, putJson } from './asset-store.js'
 import { buildUserRecord, createSession, findUserByLoginIdentifier, listUsers, memberKey, normalizeUsername, publicUser, publicWorkspace, userKey, validUsername, verifyUserPassword, workspaceKey } from './collaboration.js'
 
 export const AUTH_SCHEMA_VERSION = 3
@@ -20,7 +20,7 @@ const randomInviteCode = () => {
   return `SH-${part()}-${part()}-${part()}`
 }
 const normalizedInvite = (invite, fallbackHash = '') => invite && ({ ...invite, inviteId: invite.inviteId || invite.id, inviteCodeHash: invite.inviteCodeHash || invite.tokenHash || fallbackHash, inviteCodeLast4: invite.inviteCodeLast4 || invite.codeLast4 || '', boundUserId: invite.boundUserId || invite.consumedBy || null, usedAt: invite.usedAt || invite.consumedAt || null, updatedAt: invite.updatedAt || invite.createdAt })
-const publicInvite = source => { const invite = normalizedInvite(source); return invite && ({ inviteId: invite.inviteId, seatId: invite.seatId, role: invite.role, status: invite.status, expiresAt: invite.expiresAt, inviteCodeLast4: invite.inviteCodeLast4, usedAt: invite.usedAt || null, boundUserId: invite.boundUserId || null, createdAt: invite.createdAt, updatedAt: invite.updatedAt }) }
+const publicInvite = source => { const invite = normalizedInvite(source); return invite && ({ inviteId: invite.inviteId, seatId: invite.seatId, role: invite.role, status: invite.status, expiresAt: invite.expiresAt, inviteCode: invite.inviteCode || null, inviteCodeLast4: invite.inviteCodeLast4, usedAt: invite.usedAt || null, boundUserId: invite.boundUserId || null, createdAt: invite.createdAt, updatedAt: invite.updatedAt }) }
 
 const inMemoryLocks = new WeakMap()
 async function localLock(bucket, name, action) {
@@ -84,7 +84,7 @@ const uniqueUsername = (candidate, used) => {
 
 async function ensureBackup(bucket) {
   const previous = await getJson(bucket, migrationKey)
-  if (previous?.backupPath) return previous.backupPath
+  if (previous?.backupPath && previous?.sharedAssetMigrationVersion === 1) return previous.backupPath
   if (typeof bucket.createBackup !== 'function') return 'test-memory-snapshot'
   return bucket.createBackup([
     'metadata/collaboration/users', 'metadata/collaboration/workspaces', 'metadata/collaboration/members',
@@ -145,6 +145,7 @@ async function normalizeEnterpriseStructureUnlocked(bucket, company, env) {
 }
 
 async function migrateLegacyUsersUnlocked(bucket, company, backupPath) {
+  const previousReport = await getJson(bucket, migrationKey)
   const users = (await listUsers(bucket)).sort((left, right) => left.id === company.ownerId ? -1 : right.id === company.ownerId ? 1 : 0)
   const used = new Set()
   const seats = []
@@ -168,8 +169,18 @@ async function migrateLegacyUsersUnlocked(bucket, company, backupPath) {
     changes.push([memberKey(company.workspaceId, user.id), member], [seatKey(freeSeat.seatId), occupied])
     Object.assign(freeSeat, occupied); joinedMainWorkspace.push(user.id)
   }
+  const historicalAssets = await listJson(bucket, 'metadata/assets/', 1000)
+  const sharedAssetIds = []; let skippedPrivateAssetCount = 0
+  for (const asset of historicalAssets) {
+    const sharedWorkspaceIds = Array.isArray(asset.sharedWorkspaceIds) ? asset.sharedWorkspaceIds : []
+    if (asset.workspaceId === company.workspaceId || asset.tenantId === company.workspaceId || sharedWorkspaceIds.includes(company.workspaceId)) continue
+    if (asset.visibility === 'private') { skippedPrivateAssetCount += 1; continue }
+    changes.push([assetMetadataKey(asset.id), { ...asset, sharedWorkspaceIds: [...sharedWorkspaceIds, company.workspaceId], sharedAt: now() }])
+    sharedAssetIds.push(asset.id)
+  }
   if (changes.length) await atomicJsonWrites(bucket, changes)
-  const report = { id: 'auth-v3', schemaVersion: AUTH_SCHEMA_VERSION, backupPath, migratedUsers, joinedMainWorkspace, skippedNoSeat, preservedPasswordHashes: true, preservedLegacyWorkspaces: true, completedAt: now() }
+  const allSharedAssetIds = [...new Set([...(previousReport?.sharedAssetIds || []), ...sharedAssetIds])]
+  const report = { id: 'auth-v3', schemaVersion: AUTH_SCHEMA_VERSION, sharedAssetMigrationVersion: 1, backupPath, migratedUsers, joinedMainWorkspace, skippedNoSeat, sharedAssetCount: allSharedAssetIds.length, sharedAssetIds: allSharedAssetIds, skippedPrivateAssetCount, preservedPasswordHashes: true, preservedLegacyWorkspaces: true, completedAt: now() }
   await putJson(bucket, migrationKey, report)
   return report
 }
@@ -208,7 +219,7 @@ export async function createSeatInvite(bucket, actor, seatIdValue, role = 'edito
     if (!company || !seat || seat.workspaceId !== company.workspaceId || seat.seatId === 'S01' || !['available', 'released', 'invited'].includes(seat.status)) return { error: 'SEAT_NOT_AVAILABLE' }
     const pointer = await getJson(bucket, inviteIndexKey(seat.seatId)); const previousHash = pointer?.inviteCodeHash || pointer?.tokenHash || ''; const previous = previousHash ? normalizedInvite(await getJson(bucket, inviteKey(previousHash)), previousHash) : null
     const code = randomInviteCode(); const inviteCodeHash = await hashInvite(code); const createdAt = now(); const safeRole = ['admin', 'editor', 'viewer'].includes(role) ? role : 'editor'
-    const invite = { inviteId: crypto.randomUUID(), seatId: seat.seatId, workspaceId: company.workspaceId, inviteCodeHash, inviteCodeLast4: code.slice(-4), role: safeRole, status: 'active', createdBy: actor.id, expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), createdAt, updatedAt: createdAt }
+    const invite = { inviteId: crypto.randomUUID(), seatId: seat.seatId, workspaceId: company.workspaceId, inviteCodeHash, inviteCode: code, inviteCodeLast4: code.slice(-4), role: safeRole, status: 'active', createdBy: actor.id, expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), createdAt, updatedAt: createdAt }
     const writes = [[seatKey(seat.seatId), { ...seat, status: 'invited', boundUserId: null, role: safeRole, updatedAt: createdAt }], [inviteKey(inviteCodeHash), invite], [inviteIndexKey(seat.seatId), { seatId: seat.seatId, inviteCodeHash }]]
     if (previous?.status === 'active') writes.push([inviteKey(previous.inviteCodeHash), { ...previous, status: 'disabled', updatedAt: createdAt }])
     await atomicJsonWrites(bucket, writes)

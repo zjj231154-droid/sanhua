@@ -11,7 +11,7 @@ class MemoryBucket {
   }
 }
 
-it('migrates the legacy remote assets once for a workspace and keeps their library mapping', async () => {
+it('migrates the legacy remote assets idempotently and repairs records missing behind an existing marker', async () => {
   const bucket = new MemoryBucket()
   const identity = { workspaceId: 'workspace-a' }
   const created = await syncLegacyAssets(bucket, identity)
@@ -22,5 +22,9 @@ it('migrates the legacy remote assets once for a workspace and keeps their libra
     externalUrl: expect.stringContaining('/cloud-assets/'),
   })
   expect(await syncLegacyAssets(bucket, identity)).toEqual([])
-  expect(await getJson(bucket, 'metadata/legacy-sync/workspace-a.json')).toMatchObject({ assetCount: created.length })
+  bucket.values.delete('metadata/assets/legacy-workspace-a-coffee-1.json')
+  const repaired = await syncLegacyAssets(bucket, identity)
+  expect(repaired).toHaveLength(1)
+  expect(repaired[0]).toMatchObject({ id: 'legacy-workspace-a-coffee-1', workspaceId: 'workspace-a' })
+  expect(await getJson(bucket, 'metadata/legacy-sync/workspace-a.json')).toMatchObject({ assetCount: created.length, repairedCount: 1 })
 })

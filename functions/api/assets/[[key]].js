@@ -1,5 +1,5 @@
 import { json } from '../../_lib/tokenspace.js'
-import { assetMetadataKey, assetUrl, assetsBucket, getJson, listJson, putJson } from '../../_lib/asset-store.js'
+import { assetAvailableInWorkspace, assetMetadataKey, assetUrl, assetsBucket, getJson, listJson, putJson } from '../../_lib/asset-store.js'
 import { hasPermission, requireIdentity } from '../../_lib/collaboration.js'
 const safeKey = value => /^[a-zA-Z0-9/_-]{1,180}\.(png|jpe?g|webp)$/i.test(value || '')
 const readDataUrl = value => {
@@ -38,8 +38,12 @@ export async function onRequestGet(context) {
   const key = Array.isArray(context.params.key) ? context.params.key.join('/') : context.params.key
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
   if (!safeKey(key)) return json(400, { error: '无效素材地址' })
-  const asset = bucket.list ? (await listJson(bucket, 'metadata/assets/')).find(item => item.storageKey === key || item.thumbnailKey === key || item.previewKey === key) : null
-  if (!identity.compatibilityMode && (!asset || (asset.workspaceId !== identity.workspaceId && asset.tenantId !== identity.workspaceId))) return json(404, { error: '素材不存在' })
+  const embeddedId = key.split('/').pop()?.replace(/\.(png|jpe?g|webp)$/i, '') || ''
+  const directAsset = embeddedId ? await getJson(bucket, assetMetadataKey(embeddedId)) : null
+  const asset = directAsset && [directAsset.storageKey, directAsset.thumbnailKey, directAsset.previewKey].includes(key)
+    ? directAsset
+    : bucket.list ? (await listJson(bucket, 'metadata/assets/', 1000)).find(item => item.storageKey === key || item.thumbnailKey === key || item.previewKey === key) : null
+  if (!identity.compatibilityMode && (!asset || !assetAvailableInWorkspace(asset, identity.workspaceId))) return json(404, { error: '素材不存在' })
   if (asset?.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return json(403, { error: 'INSUFFICIENT_PERMISSION' })
   const object = await bucket.get(key)
   if (!object) return json(404, { error: '素材不存在' })

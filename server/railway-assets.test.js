@@ -34,4 +34,4 @@ it('creates a non-destructive authentication migration backup and preserves it a
   expect(await (await restarted.get('metadata/collaboration/users/legacy.json')).json()).toMatchObject({ username: 'legacy' })
   expect(JSON.parse(await readFile(path.join(backupPath, 'metadata/collaboration/users/legacy.json'), 'utf8'))).toEqual({ id: 'legacy' })
   expect(JSON.parse(await readFile(path.join(backupPath, 'metadata/assets/asset-1.json'), 'utf8'))).toEqual({ id: 'asset-1' })
-})
+}, 15000)

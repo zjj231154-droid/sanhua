@@ -110,12 +110,17 @@ describe('auth system storage and transactions', () => {
     await putJson(bucket, 'metadata/collaboration/workspaces/legacy-space.json', { id: 'legacy-space', name: '历史空间' })
     await putJson(bucket, memberKey('legacy-space', legacy.id), { workspaceId: 'legacy-space', userId: legacy.id, role: 'owner', status: 'active' })
     await putJson(bucket, 'metadata/assets/legacy-asset.json', { id: 'legacy-asset', workspaceId: 'legacy-space' })
+    await putJson(bucket, 'metadata/assets/private-asset.json', { id: 'private-asset', workspaceId: 'legacy-space', visibility: 'private' })
     const result = await prepareAuthentication({ env: envFor(bucket) }); const migrated = await getJson(bucket, userKey(legacy.id))
     expect(migrated.username).toBe('legacy'); expect(migrated.passwordHash).toBe(credential.hash); expect(migrated.passwordSalt).toBe(credential.salt)
     expect(await verifyUserPassword(bucket, 'legacy@example.com', 'legacy-password')).toMatchObject({ id: legacy.id })
-    expect(await getJson(bucket, 'metadata/assets/legacy-asset.json')).toEqual({ id: 'legacy-asset', workspaceId: 'legacy-space' })
+    expect(await getJson(bucket, 'metadata/assets/legacy-asset.json')).toMatchObject({ id: 'legacy-asset', workspaceId: 'legacy-space', sharedWorkspaceIds: ['main'] })
+    expect(await getJson(bucket, 'metadata/assets/private-asset.json')).toEqual({ id: 'private-asset', workspaceId: 'legacy-space', visibility: 'private' })
     expect(await getJson(bucket, 'metadata/collaboration/workspaces/legacy-space.json')).toMatchObject({ id: 'legacy-space' })
     expect(result.migration.joinedMainWorkspace).toContain(legacy.id)
+    expect(result.migration).toMatchObject({ sharedAssetMigrationVersion: 1, sharedAssetCount: 1, skippedPrivateAssetCount: 1 })
+    const rerun = await prepareAuthentication({ env: envFor(bucket) })
+    expect(rerun.migration).toMatchObject({ sharedAssetMigrationVersion: 1, sharedAssetCount: 1, skippedPrivateAssetCount: 1 })
   })
 
   it('legacy_phone_user_can_login after migration', async () => {

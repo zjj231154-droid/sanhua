@@ -1,5 +1,5 @@
 import { json } from '../../../_lib/tokenspace.js'
-import { assetsBucket, listJson } from '../../../_lib/asset-store.js'
+import { assetAvailableInWorkspace, assetsBucket, listJson } from '../../../_lib/asset-store.js'
 import { ASSET_LIBRARIES, hasLocation, libraryFor } from '../../../_lib/library-config.js'
 import { hasPermission, requireIdentity } from '../../../_lib/collaboration.js'
 import { syncLegacyAssets } from '../../../_lib/legacy-assets.js'
@@ -14,8 +14,8 @@ export async function onRequestGet(context) {
   const url = new URL(context.request.url)
   if (url.searchParams.get('includeLegacy') === 'true') await syncLegacyAssets(bucket, identity)
   const [libraryKey, action] = parts(context)
-  const assets = (await listJson(bucket, 'metadata/assets/'))
-    .filter(asset => identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
+  const assets = (await listJson(bucket, 'metadata/assets/', 1000))
+    .filter(asset => identity.compatibilityMode || assetAvailableInWorkspace(asset, identity.workspaceId))
     .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
   const withCounts = library => ({ ...library, folders: library.folders.map(folder => ({ ...folder, assetType: 'image', downloadEnabled: true, saveAsTemplateEnabled: Boolean(folder.saveAsTemplateEnabled), count: assets.filter(asset => hasLocation(asset, library.key, folder.key)).length })) })
   if (!libraryKey) return json(200, { libraries: ASSET_LIBRARIES.map(withCounts) })

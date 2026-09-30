@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { onRequestGet } from './assets.js'
+import { assetAvailableInWorkspace } from '../../_lib/asset-store.js'
 
 class MemoryBucket {
   constructor() { this.values = new Map() }
@@ -26,4 +27,12 @@ it('returns stable twelve-item asset pages with pagination metadata', async () =
   expect(response.status).toBe(200)
   expect(body).toMatchObject({ page: 2, pageSize: 12, total: 13, totalPages: 2, hasPrevious: true, hasNext: false })
   expect(body.assets.map(asset => asset.id)).toEqual(['asset-13'])
+})
+
+it('makes a historical asset visible in main without changing its original workspace', () => {
+  const asset = { id: 'historical', workspaceId: 'legacy-space', sharedWorkspaceIds: ['main'] }
+  expect(assetAvailableInWorkspace(asset, 'main')).toBe(true)
+  expect(assetAvailableInWorkspace(asset, 'legacy-space')).toBe(true)
+  expect(assetAvailableInWorkspace(asset, 'unrelated')).toBe(false)
+  expect(asset.workspaceId).toBe('legacy-space')
 })
