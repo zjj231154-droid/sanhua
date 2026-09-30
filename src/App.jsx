@@ -1282,6 +1282,13 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     if (!response.ok) throw new Error(value.error || '剧本保存失败')
     return value
   }
+  const ensureDraftRecord = async operationSummary => {
+    if (draftRecordRef.current?.taskId) return draftRecordRef.current
+    if (!onDraftChange) return null
+    const saved = await onDraftChange({ route: 'create', subRoute: initialRoute, currentStep: type === 'script' ? (scriptStage === 'definition' ? 1 : scriptStage === 'confirm-story' ? 2 : 3) : 1, draftData, inputAssetIds: type === 'script' ? draftData.selectedAssetIds : [draftData.selectedAssetId].filter(Boolean), operationSummary })
+    if (saved?.taskId) draftRecordRef.current = saved
+    return saved
+  }
   const archiveText = async input => {
     const response = await fetch('/api/v1/text-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
     if (!response.ok) throw new Error('文本归档失败')
@@ -1315,6 +1322,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   const validateVideo = async () => {
     setVideoStatus('正在校验视频任务…'); setVideoReady(false); setScriptsError('')
     try {
+      const ensured = await ensureDraftRecord('准备视频生成')
+      if (!ensured?.taskId) throw new Error('工作记录保存失败，请重试后再校验视频')
       const script = scripts.find(item => item.id === activeId) || scripts[0]
       const response = await fetch('/api/v1/video-tasks/validate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1329,6 +1338,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   const createVideoTask = async () => {
     setVideoStatus('正在创建视频任务…')
     try {
+      const ensured = await ensureDraftRecord('提交视频生成')
+      if (!ensured?.taskId) throw new Error('工作记录保存失败，请重试后再提交视频')
       const script = scripts.find(item => item.id === activeId) || scripts[0]
        const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', scriptId: script?.id, scriptVersionId: script?.currentVersionId, sceneAssetIds: selectedAsset ? [selectedAsset.id] : [], shotPlan: script?.outline || scriptPlan, durationSeconds: Number(videoDuration) }) })
       const value = await responseJson(response)
@@ -1340,7 +1351,9 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   async function createBrandPlan(requirements = brandPrompt) {
     setBrandBusy(true); setBrandError(''); setBrandPlan(''); setBrandImage('')
     try {
-       const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', workspace: 'brand', requirements, assets: selectedAsset ? [selectedAsset.id] : [], reference_asset_ids: selectedAsset ? [selectedAsset.id] : [], restore_reference_image: Boolean(selectedAsset) }) })
+      const ensured = await ensureDraftRecord('生成品牌设计计划')
+      if (!ensured?.taskId) throw new Error('工作记录保存失败，请重试后再生成计划')
+      const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', workspace: 'brand', requirements, assets: selectedAsset ? [selectedAsset.id] : [], reference_asset_ids: selectedAsset ? [selectedAsset.id] : [], restore_reference_image: Boolean(selectedAsset) }) })
       const value = await response.json()
       if (!response.ok) throw new Error(value.error || '设计助手暂不可用')
       const plan = value.plan || ''
@@ -1351,7 +1364,9 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   async function generateBrandImage(requestedName = '', editablePrompt = brandPlan, originalPlan = brandPlan, options = {}) {
     setBrandBusy(true); setBrandError('')
     try {
-      const finalPrompt = String(editablePrompt || '').trim()
+       const ensured = await ensureDraftRecord('生成品牌图片')
+       if (!ensured?.taskId) throw new Error('工作记录保存失败，请重试后再生成图片')
+       const finalPrompt = String(editablePrompt || '').trim()
       if (!finalPrompt) throw new Error('提示词不能为空')
       const phase = options.phase || 'graphic-effect'
       const sourceAsset = options.sourceAsset || selectedAsset
@@ -1376,6 +1391,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
   const generateScriptPlan = async () => {
     setBrandBusy(true); setBrandError('')
     try {
+      const ensured = await ensureDraftRecord('生成短剧剧本计划')
+      if (!ensured?.taskId) throw new Error('工作记录保存失败，请重试后再生成剧本')
       const sourceAssets = [selectedAsset, selectedCharacterAsset, selectedPropAsset].filter(Boolean)
        const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', workspace: 'script', requirements: `${scriptPrompt}\n场景素材：${selectedAsset?.name || '茶馆场景待选择'}\n角色素材：${selectedCharacterAsset?.name || '待选择'}\n道具素材：${selectedPropAsset?.name || '待选择'}`, assets: sourceAssets.map(asset => asset.id) }) })
       const value = await response.json()
@@ -1396,6 +1413,8 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
     const sourceAssets = [selectedAsset, selectedCharacterAsset, selectedPropAsset].filter(Boolean)
     setBrandBusy(true); setBrandError('')
     try {
+      const ensured = await ensureDraftRecord('生成 Seedance 分镜提示词')
+      if (!ensured?.taskId) throw new Error('工作记录保存失败，请重试后再生成分镜提示词')
       const requirements = `短剧剧本：\n${scriptPlan.slice(0, 8000)}\n\n已确认素材（仅可引用以下素材）：\n场景素材：${scene}（@${scene} 作为场景/背景）\n角色素材：${character}（@${character} 作为人物形象）\n关键道具：${prop}${selectedPropAsset ? `（@${prop} 作为关键道具）` : ''}\n\n目标：9:16 竖屏，8 秒短剧镜头。`
        const response = await fetch('/api/v1/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workRecordId: draftRecordRef.current?.taskId || '', workspace: 'script', skillId: 'seedance-prompt-zh', workflow: 'seedance-storyboard', requirements, assets: sourceAssets.map(asset => asset.id) }) })
       const value = await response.json()

@@ -427,10 +427,12 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
           if (retouchMode && retouchTab === 'one-click') setWorkflowStep(5)
           else setPromptDialogOpen(true)
         } else {
+          const ensuredDraft = draftRecord?.taskId ? draftRecord : await onDraftChange?.({ currentStep: workflowStep, draftData: { retouchMode, workflowStep, selectedAssetIds: activeRetouchAssets.map(asset => asset.id), templateAssetId, templateName, size, scene, decor, product, preserve, requirements }, inputAssetIds: activeRetouchAssets.map(asset => asset.id), operationSummary: '提交产品精修' })
+          if (!ensuredDraft?.taskId) throw new Error('工作记录保存失败，请重试后再生成图片')
           const submittedPrompt = `${finalPrompt || job?.plan || ''}\n${editPrompt}`.trim()
           const sourceImages = await Promise.all((activeRetouchAssets.length ? activeRetouchAssets.map(asset => asset.url) : [image]).map(sourceUrl => toImageDataUrl(sourceUrl, '无法读取所选素材，请重新选择')))
           const response = await fetch('/api/v1/image-batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-            workRecordId: draftRecord?.taskId || '', workspace: 'retouch', prompt: submittedPrompt,
+            workRecordId: ensuredDraft.taskId, workspace: 'retouch', prompt: submittedPrompt,
             images: sourceImages, referenceImage: templateSource || undefined, count: Math.max(1, activeRetouchAssets.length), size: '1024x1024', title: activeRetouchAssets.length > 1 ? '批量产品精修' : '产品精修', requestedName: activeRetouchAssets.length > 1 ? '' : resultName, namePrefix: activeRetouchAssets.length > 1 ? batchNamePrefix : '', promptSummary: editPrompt, referenceAssetIds: templateAssetId ? [templateAssetId] : [], sourceAssetIds: (activeRetouchAssets.length ? activeRetouchAssets : [{ id: selectedAssetId }]).map(asset => asset.id).filter(Boolean), metadata: { originalPlan: job?.plan || '', finalPrompt: submittedPrompt, batchStrategy: activeRetouchAssets.length > 1 ? 'same-prompt-per-source' : 'single-source' },
           }) })
           const value = await response.json()
