@@ -32,7 +32,7 @@ export async function createScript(context, input = {}) {
   const id = crypto.randomUUID()
   const versionId = crypto.randomUUID()
   const values = { title: text(input.title, 80), kind: text(input.kind, 80), summary: text(input.summary, 3000), outline: text(input.outline, 12000), content: text(input.content, 24000) }
-  const script = { id, tenantId: input.workspaceId || 'default', workspaceId: input.workspaceId || 'default', projectId: 'script', storeId: 'day-coffee-night-bar', workspace: 'script', status: 'active', sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, 50) : [], createdBy: input.createdBy || 'demo-designer', updatedBy: input.updatedBy || input.createdBy || 'demo-designer', version: 1, currentVersionId: versionId, versionCount: 1, ...values, createdAt, updatedAt: createdAt }
+  const script = { id, tenantId: input.workspaceId || 'default', workspaceId: input.workspaceId || 'default', projectId: input.projectId || 'script', storeId: 'day-coffee-night-bar', workspace: 'script', status: 'active', sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, 50) : [], createdBy: input.createdBy || 'demo-designer', updatedBy: input.updatedBy || input.createdBy || 'demo-designer', version: 1, currentVersionId: versionId, versionCount: 1, ...values, createdAt, updatedAt: createdAt }
   const version = { id: versionId, scriptId: id, workspaceId: script.workspaceId, versionNo: 1, ...values, changeNote: '初始版本', savedBy: script.createdBy, savedAt: createdAt }
   await putJson(bucket, scriptKey(id), script)
   await putJson(bucket, versionKey(id, versionId), version)

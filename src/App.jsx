@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ScriptEditor from './components/ScriptEditor'
+import DramaProjectWorkbench from './components/DramaProjectWorkbench'
 import ApiSettings from './components/ApiSettings'
 import UserProfile from './components/UserProfile'
 import {
@@ -243,6 +244,11 @@ function Sidebar({ page, subRoute, onNavigate, session }) {
 
 export function TaskProgress({ onResume }) {
   const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const show = () => setOpen(true)
+    window.addEventListener('sanhua:open-task-progress', show)
+    return () => window.removeEventListener('sanhua:open-task-progress', show)
+  }, [])
   const [popoverPosition, setPopoverPosition] = useState({})
   const [widgetPosition, setWidgetPosition] = useState(() => {
     try {
@@ -1577,7 +1583,7 @@ function VideoLibraryPanel() {
       fetch('/api/v1/scripts').then(async response => { const value = await response.json(); return response.ok ? value.scripts || [] : [] }),
     ]).then(([nextTasks, nextScripts]) => {
       if (!active) return
-      setTasks(nextTasks); setScripts(nextScripts); setError('')
+      setTasks(nextTasks.filter(task => !task.sourceProjectId || (task.videoAssetId && !task.discardedAt))); setScripts(nextScripts); setError('')
     }).catch(reason => active && setError(reason.message || '视频库读取失败，可重试')).finally(() => active && setLoading(false))
     void load()
     const timer = window.setInterval(load, 8000)
@@ -1865,7 +1871,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
           {page === 'home' && <HomePage onNavigate={(nextPage, nextRoute, context) => { if (context?.startDraft) { const draftPromise = startDraft(nextPage, nextRoute, context.title); navigate(nextPage, nextRoute, { ...context, draftPromise }) } else navigate(nextPage, nextRoute, context) }} />}
           {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_prompt", "精修提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} draftRecord={retouchContext?.draftRecord || draftRecordState.retouch} draftPromise={retouchContext?.draftPromise} onDraftChange={patch => saveDraftChange('retouch', 'one-click', patch)} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('brand', subRoute || 'create', patch)} />}
-          {page === 'script' && <CreativeCasesPage type="script" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('script', subRoute || 'create', patch)} />}
+          {page === 'script' && (subRoute === 'legacy' ? <CreativeCasesPage type="script" initialRoute="library" incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('script', 'library', patch)} /> : <DramaProjectWorkbench initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onNavigate={navigate} />)}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} incomingContext={assetContext} onDraftChange={patch => void saveDraftChange('assets', subRoute, patch)} />}
           {page === 'settings' && <ApiSettings />}
           {page === 'profile' && <UserProfile session={session} onSessionChange={setSession} />}

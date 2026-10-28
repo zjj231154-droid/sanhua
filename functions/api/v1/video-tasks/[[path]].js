@@ -115,7 +115,7 @@ const videoResultFrom = value => {
   return { status, progress: Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, rawProgress)) : null, url, message }
 }
 
-const syncVideoTask = async (context, task) => {
+export const syncVideoTask = async (context, task) => {
   if (!task?.providerTaskId || !['queued', 'running'].includes(task.status)) return task
   const lastSync = Date.parse(task.lastProviderSyncAt || '')
   if (Number.isFinite(lastSync) && Date.now() - lastSync < 5000) return task
@@ -216,12 +216,12 @@ export async function onRequestPost(context) {
   const providerVideoUrl = String(submitted.data?.url || submitted.data?.data?.url || submitted.data?.data?.[0]?.url || '').slice(0, 2000) || null
   const createdAt = new Date().toISOString()
   const textRecord = await createTextRecord(context, {
-    workspaceId: identity.workspaceId, projectId: 'script', createdBy: identity.user.id, updatedBy: identity.user.id, workspace: 'script', sourceModule: 'script.video', recordType: 'storyboard_prompt', title: String(input.title || '视频生成提示词').trim(),
+    workspaceId: identity.workspaceId, projectId: input.projectId || 'script', createdBy: identity.user.id, updatedBy: identity.user.id, workspace: 'script', sourceModule: 'script.video', recordType: 'video_prompt', title: String(input.title || '视频生成提示词').trim(),
     content: checked.videoPrompt || checked.shotPlan, contentFormat: 'prompt', model: checked.provider.model, provider: checked.provider.name, sourceTaskId: workRecordId || undefined,
-    sourceAssetIds: [...checked.assetRefs.scene, ...checked.assetRefs.character, ...checked.assetRefs.prop, ...checked.assetRefs.other], scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId,
+    sourceAssetIds: [...checked.assetRefs.scene, ...checked.assetRefs.character, ...checked.assetRefs.prop, ...checked.assetRefs.other], scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId, shotId: input.shotId, storyboardId: input.storyboardId,
   })
   const task = await saveTask(context, {
-    id: crypto.randomUUID(), workRecordId, workspace: 'video', workspaceId: identity.workspaceId, projectId: 'script', createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'video-generation', status: providerVideoUrl ? 'completed' : 'running', progress: providerVideoUrl ? 100 : 15,
+    id: crypto.randomUUID(), workRecordId, workspace: 'video', workspaceId: identity.workspaceId, projectId: input.projectId || 'script', shotId: input.shotId || null, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'video-generation', status: providerVideoUrl ? 'completed' : 'running', progress: providerVideoUrl ? 100 : 15,
     stage: providerVideoUrl ? '视频已生成，等待查看' : '视频服务已受理，正在生成', heartbeatAt: createdAt,
     requirements: checked.videoPrompt || checked.shotPlan, assets: checked.sceneAssetIds, sourceAssetIds: checked.sceneAssetIds,
     scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId, durationSeconds: checked.durationSeconds,

@@ -41,7 +41,7 @@ export async function createTextRecord(context, input = {}) {
     contentFormat: ['plain', 'markdown', 'prompt'].includes(input.contentFormat) ? input.contentFormat : 'plain',
     model: text(input.model, 160), provider: text(input.provider, 80), sourceTaskId: text(input.sourceTaskId, 160),
     sourceAssetIds: strings(input.sourceAssetIds), referenceAssetIds: strings(input.referenceAssetIds), generatedAssetIds: strings(input.generatedAssetIds),
-    scriptId: text(input.scriptId, 160), scriptVersionId: text(input.scriptVersionId, 160), videoTaskId: text(input.videoTaskId, 160),
+    scriptId: text(input.scriptId, 160), scriptVersionId: text(input.scriptVersionId, 160), storyboardId: text(input.storyboardId, 160), storyboardVersionId: text(input.storyboardVersionId, 160), shotId: text(input.shotId, 160), videoTaskId: text(input.videoTaskId, 160),
     status: 'active', starred: Boolean(input.starred), readonlyLegacy: Boolean(input.readonlyLegacy),
     createdBy: input.createdBy || 'demo-designer', updatedBy: input.updatedBy || input.createdBy || 'demo-designer', version: 1, createdAt, updatedAt: createdAt, deletedAt: null,
   }

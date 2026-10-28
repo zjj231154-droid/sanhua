@@ -24,6 +24,7 @@ const apiRoutes = {
   '/api/v1/generated-results': () => import('../functions/api/v1/generated-results/[[path]].js'),
   '/api/v1/text-records': () => import('../functions/api/v1/text-records/[[path]].js'),
   '/api/v1/scripts': () => import('../functions/api/v1/scripts/[[path]].js'),
+  '/api/v1/drama-projects': () => import('../functions/api/v1/drama-projects/[[path]].js'),
   '/api/v1/video-tasks': () => import('../functions/api/v1/video-tasks/[[path]].js'),
   '/api/v1/auth': () => import('../functions/api/v1/collaboration/[[path]].js'),
   '/api/v1/admin': () => import('../functions/api/v1/collaboration/[[path]].js'),

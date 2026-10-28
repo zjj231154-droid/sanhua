@@ -7,6 +7,8 @@ export const seedancePromptSkill = {
   allowedTools: ['shot.plan', 'video.prompt'],
 }
 
+export const seedanceShotJsonRules = '按 seedance-prompt-zh 为每个镜头写可执行的视频提示词：明确主体、场景、动作、景别与运镜、声音、氛围和负向约束；8 秒及以上按时间段描述画面；保持人物数量、身份、服装、台词、道具和空间连续。仅引用实际选择的图片，说明每张参考图用途，不编造视频或音频素材。每个镜头 4–15 秒，避免互相冲突的运镜，避免字幕、乱码、水印及无关人物。'
+
 export const seedanceStoryboardInstruction = requirements => `你是 Seedance 2.0 中文视频提示词工程师，严格执行 seedance-prompt-zh v1.0.0。
 任务：把已确认的短剧剧本、角色、场景和道具，写成一条可直接用于 Seedance 视频生成的中文分镜提示词；不要生成视频，不要解释方法。
 

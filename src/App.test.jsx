@@ -4,6 +4,42 @@ import App, { BrandMerchWorkflow, TaskProgress, WorkflowStepper } from './App'
 
 afterEach(() => vi.unstubAllGlobals())
 
+function mockDramaApi({ assets = [] } = {}) {
+  let project = null
+  let created = 0
+  const fetchMock = vi.fn(async (url, options = {}) => {
+    const path = String(url)
+    const body = options.body && typeof options.body === 'string' ? JSON.parse(options.body) : {}
+    if (path === '/api/v1/drama-projects' && options.method === 'POST') {
+      created += 1
+      project = { projectId: `project-${created}`, title: body.title || '未命名短剧项目', brief: body.brief || '', stage: 'requirements', status: 'draft', sceneAssetIds: [], characterAssetIds: [], propAssetIds: [], shots: [], version: 1 }
+      return { ok: true, json: async () => ({ project }) }
+    }
+    if (path === '/api/v1/drama-projects') return { ok: true, json: async () => ({ projects: project ? [project] : [] }) }
+    if (path.startsWith('/api/v1/drama-projects/') && options.method === 'PATCH') {
+      project = { ...project, ...body, version: project.version + 1 }
+      return { ok: true, json: async () => ({ project }) }
+    }
+    if (path.endsWith('/generate-script-storyboard') && options.method === 'POST') {
+      project = { ...project, stage: 'script_storyboard', scriptId: 'script-1', scriptVersionId: 'version-1', storyboardId: 'board-1', script: { summary: '茶馆误会', content: '掌柜和顾客在茶馆化解误会。', version: 1 }, shots: [{ shotId: 'shot-1', shotNumber: 1, scene: '茶馆', prompt: '茶馆全景，掌柜上前解释。', action: '掌柜上前', camera: '缓推', dialogue: '请听我解释', sound: '茶杯声', negative: '', durationSeconds: 8, status: 'ready', videoTaskIds: [] }], version: project.version + 1 }
+      return { ok: true, json: async () => ({ project }) }
+    }
+    if (path.endsWith('/confirm-script-storyboard') && options.method === 'POST') {
+      project = { ...project, stage: 'video', status: 'ready', version: project.version + 1 }
+      return { ok: true, json: async () => ({ project }) }
+    }
+    if (path.endsWith('/versions')) return { ok: true, json: async () => ({ versions: [{ id: 'version-1', versionNo: 1, savedAt: new Date().toISOString() }] }) }
+    if (path.startsWith('/api/v1/drama-projects/') && path.endsWith('/video-tasks')) return { ok: true, json: async () => ({ tasks: [], project }) }
+    if (path.startsWith('/api/v1/drama-projects/')) return { ok: true, json: async () => ({ project }) }
+    if (path.startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
+    if (path.startsWith('/api/v1/assets?')) return { ok: true, json: async () => ({ assets }) }
+    if (path.startsWith('/api/v1/assets/')) return { ok: true, json: async () => ({ asset: assets.find(asset => path.includes(asset.id)) }) }
+    return { ok: true, json: async () => ({ assets: [], scripts: [], records: [], tasks: [] }) }
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return { fetchMock, getProject: () => project, getCreated: () => created }
+}
+
 describe('AI 创作工作台 Demo', () => {
   it('登录与注册统一使用用户名，注册要求席位邀请码', () => {
     render(<App demoRetouch />)
@@ -73,12 +109,13 @@ describe('AI 创作工作台 Demo', () => {
     expect(container.querySelector('.app-shell')).toHaveClass('time-day')
   })
 
-  it('每日爆款视频入口可以打开茶馆短剧案例', () => {
+  it('每日爆款视频入口打开短剧项目工作台', () => {
+    mockDramaApi()
     render(<App initialAuthenticated />)
 
     fireEvent.click(screen.getByRole('button', { name: '查看每日爆款视频内容' }))
-    expect(screen.getByRole('heading', { name: '短剧脚本' })).toBeInTheDocument()
-    expect(screen.getAllByText('《00后掌柜整顿老茶馆》')).toHaveLength(2)
+    expect(screen.getByRole('heading', { name: '短剧项目工作台' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '开始制作短剧' })).toBeInTheDocument()
   })
 
   it('品牌创作展示茶文化文创案例', () => {
@@ -209,12 +246,8 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByText('茶馆场景 8')).toBeInTheDocument()
   })
 
-  it('从资产库用于写剧本时会带入短剧脚本编辑区', async () => {
-    vi.stubGlobal('fetch', vi.fn(async url => {
-      if (String(url).startsWith('/api/v1/libraries')) return { ok: true, json: async () => ({ libraries: [] }) }
-      if (String(url).includes('libraryKey=script')) return { ok: true, json: async () => ({ assets: [{ id: 'scene-1', name: '茶馆场景 1', url: '/scene-1.png' }] }) }
-      return { ok: true, json: async () => ({ assets: [], scripts: [] }) }
-    }))
+  it('从资产库用于写剧本时带入项目素材栏', async () => {
+    mockDramaApi({ assets: [{ id: 'scene-1', name: '茶馆场景 1', videoAssetType: 'scene', url: '/scene-1.png' }] })
     render(<App initialAuthenticated initialPage="assets" />)
 
     fireEvent.click(screen.getAllByRole('button', { name: '短剧库' })[0])
@@ -222,54 +255,48 @@ describe('AI 创作工作台 Demo', () => {
     const assetName = useForScript.closest('article').querySelector('strong').textContent
     fireEvent.click(useForScript)
 
-    expect(await screen.findByRole('textbox', { name: '短剧脚本需求' })).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(`已将「${assetName}」带入短剧创作`)
-    expect(screen.getByLabelText('短剧实时预览')).toHaveTextContent(assetName)
+    expect(await screen.findByRole('textbox', { name: '短剧创作需求' })).toBeInTheDocument()
+    expect(await screen.findByText(assetName)).toBeInTheDocument()
   })
 
-  it('短剧库的两个新建入口都会回到剧本生成工作界面', async () => {
-    vi.stubGlobal('fetch', vi.fn(async url => {
-      if (String(url).startsWith('/api/v1/scripts')) return { ok: true, json: async () => ({ scripts: [] }) }
-      if (String(url).startsWith('/api/v1/text-records')) return { ok: true, json: async () => ({ records: [] }) }
-      return { ok: true, json: async () => ({}) }
-    }))
-    const { container } = render(<App initialAuthenticated initialPage="script" />)
-
-    fireEvent.click(within(container.querySelector('.showcase-toolbar')).getByRole('button', { name: '剧本库' }))
-    const newScriptButton = await screen.findByRole('button', { name: '新建剧本' })
-    fireEvent.click(newScriptButton)
-    expect(screen.getByRole('textbox', { name: '短剧脚本需求' })).toBeInTheDocument()
-
-    fireEvent.click(within(container.querySelector('.showcase-toolbar')).getByRole('button', { name: '剧本库' }))
-    fireEvent.click(screen.getByRole('button', { name: '新建短剧项目' }))
-    expect(screen.getByRole('textbox', { name: '短剧脚本需求' })).toBeInTheDocument()
-  })
-
-  it('短剧创作将场景、角色和道具分开选择，并弹出对应图片库', async () => {
-    vi.stubGlobal('fetch', vi.fn(async url => {
-      if (String(url).startsWith('/api/v1/assets?workspace=script&limit=80')) return { ok: true, json: async () => ({ assets: [{ id: 'character-1', name: '年轻掌柜', videoAssetType: 'character', url: '/character.png' }, { id: 'prop-1', name: '紫砂茶壶', videoAssetType: 'prop', url: '/prop.png' }] }) }
-      return { ok: true, json: async () => ({ scripts: [] }) }
-    }))
+  it('新建短剧项目直接进入需求阶段且不会覆盖旧项目', async () => {
+    const api = mockDramaApi()
     render(<App initialAuthenticated initialPage="script" />)
+    fireEvent.click(screen.getAllByRole('button', { name: '新建短剧项目' })[0])
+    expect(await screen.findByRole('textbox', { name: '短剧创作需求' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /项目需求/ })).toHaveClass('active')
+    fireEvent.click(screen.getAllByRole('button', { name: '新建短剧项目' })[0])
+    await waitFor(() => expect(api.getCreated()).toBe(2))
+    expect(api.getProject().projectId).toBe('project-2')
+  })
 
-    expect(screen.getByRole('button', { name: '选择场景资产' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '短剧脚本需求' }).closest('.script-workspace-grid')).toHaveClass('script-workspace-grid--brief')
-    expect(screen.getByRole('button', { name: '选择角色资产' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '选择道具资产' })).toBeInTheDocument()
-    expect(screen.getByLabelText('批量上传场景资产图片')).toBeInTheDocument()
-    expect(screen.getByLabelText('批量上传角色资产图片')).toBeInTheDocument()
-    expect(screen.getByLabelText('批量上传道具资产图片')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '本地导入剧本' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '选择场景资产' }))
-    const sceneLibrary = await screen.findByRole('dialog', { name: '场景资产图片库' })
-    fireEvent.click(within(sceneLibrary).getByRole('button', { name: /茶馆场景 1/ }))
-    expect(screen.queryByRole('dialog', { name: '场景资产图片库' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '选择场景资产' })).toHaveTextContent('已选：茶馆场景 1')
+  it('项目需求阶段使用紧凑素材栏并可选择云端素材', async () => {
+    mockDramaApi({ assets: [{ id: 'scene-1', name: '茶馆场景 1', videoAssetType: 'scene', url: '/scene.png' }] })
+    render(<App initialAuthenticated initialPage="script" />)
+    fireEvent.click(screen.getAllByRole('button', { name: '新建短剧项目' })[0])
+    const strip = await screen.findByText('场景')
+    expect(strip.closest('.drama-asset-strip')).toHaveTextContent('人物')
+    expect(strip.closest('.drama-asset-strip')).toHaveTextContent('道具')
+    fireEvent.click(within(strip.closest('.drama-asset-pill')).getByRole('button', { name: '选择' }))
+    const dialog = await screen.findByRole('dialog', { name: '选择短剧素材' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '选择' }))
+    await waitFor(() => expect(strip.closest('.drama-asset-strip')).toHaveTextContent('茶馆场景 1'))
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: '选择角色资产' }))
-    const characterLibrary = await screen.findByRole('dialog', { name: '角色资产图片库' })
-    fireEvent.click(within(characterLibrary).getByRole('button', { name: /年轻掌柜/ }))
-    expect(screen.getByRole('button', { name: '选择角色资产' })).toHaveTextContent('已选：年轻掌柜')
+  it('在同一短剧项目内一次生成剧本和分镜，并确认进入镜头视频工作台', async () => {
+    const api = mockDramaApi()
+    render(<App initialAuthenticated initialPage="script" />)
+    fireEvent.click(screen.getAllByRole('button', { name: '新建短剧项目' })[0])
+    const brief = await screen.findByRole('textbox', { name: '短剧创作需求' })
+    fireEvent.change(brief, { target: { value: '茶馆掌柜与顾客发生误会，最终和解。' } })
+    fireEvent.click(screen.getByRole('button', { name: '一键生成剧本与分镜' }))
+    expect(await screen.findByRole('textbox', { name: '剧本正文' })).toHaveValue('掌柜和顾客在茶馆化解误会。')
+    expect(screen.getByText('画面提示词')).toBeInTheDocument()
+    expect(api.getProject().shots).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '确认剧本与分镜，进入视频生成' }))
+    expect(await screen.findByRole('textbox', { name: '当前镜头视频提示词' })).toHaveValue('茶馆全景，掌柜上前解释。')
+    expect(screen.getByRole('button', { name: '生成当前镜头' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '生成全部镜头' })).toBeInTheDocument()
   })
 
   it('选中产品精修时会展开模块内的二级导航', () => {

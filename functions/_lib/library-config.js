@@ -14,6 +14,9 @@ export const ASSET_LIBRARIES = [
     { key: 'character', label: '人物资产', uploadEnabled: true, generatedArchiveEnabled: true },
     { key: 'prop', label: '道具资产', uploadEnabled: true, generatedArchiveEnabled: true },
   ] },
+  { key: 'video', label: '视频库', folders: [
+    { key: 'result', label: '视频结果', uploadEnabled: false, generatedArchiveEnabled: true },
+  ] },
   { key: 'text', label: '文本库', folders: [
     { key: 'retouch-prompt', label: '精修提示词', textType: 'retouch_prompt' },
     { key: 'brand-prompt', label: '文创提示词', textType: 'brand_prompt' },
