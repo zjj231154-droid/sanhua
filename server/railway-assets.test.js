@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -20,6 +20,18 @@ it('persists images and JSON metadata in a Railway volume directory', async () =
   expect(await (await bucket.get('metadata/assets/example.json')).json()).toEqual({ id: 'example' })
   expect((await bucket.list({ prefix: 'metadata/assets/' })).objects).toEqual([{ key: 'metadata/assets/example.json' }])
   expect(await bucket.get('missing.png')).toBeNull()
+})
+
+it('finds user records even when the volume contains more than 1000 unrelated files', async () => {
+  directory = await mkdtemp(path.join(tmpdir(), 'sanhua-volume-'))
+  const unrelated = path.join(directory, 'backups', 'old-assets')
+  await mkdir(unrelated, { recursive: true })
+  await Promise.all(Array.from({ length: 1001 }, (_, index) => writeFile(path.join(unrelated, `${index}.json`), '{}')))
+  const bucket = createRailwayVolumeBucket(directory)
+  await bucket.put('metadata/collaboration/users/owner.json', JSON.stringify({ username: 'owner' }))
+
+  expect((await bucket.list({ prefix: 'metadata/collaboration/users/', limit: 1000 })).objects)
+    .toEqual([{ key: 'metadata/collaboration/users/owner.json' }])
 })
 
 it('creates a non-destructive authentication migration backup and preserves it across restart', async () => {

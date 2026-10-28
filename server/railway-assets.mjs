@@ -22,7 +22,7 @@ export function createRailwayVolumeBucket(storageDirectory) {
     try { return JSON.parse(await fs.readFile(`${target}${metadataSuffix}`, 'utf8')) } catch { return {} }
   }
 
-  async function walk(directory, prefix, objects, limit) {
+  async function walk(directory, prefix, objects, limit, filterPrefix) {
     if (objects.length >= limit) return
     let entries
     try { entries = await fs.readdir(directory, { withFileTypes: true }) } catch (error) { if (error.code === 'ENOENT') return; throw error }
@@ -30,8 +30,8 @@ export function createRailwayVolumeBucket(storageDirectory) {
       if (objects.length >= limit) return
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name
       const target = path.join(directory, entry.name)
-      if (entry.isDirectory()) await walk(target, relative, objects, limit)
-      else if (!relative.endsWith(metadataSuffix)) objects.push({ key: relative.split(path.sep).join('/') })
+      if (entry.isDirectory()) await walk(target, relative, objects, limit, filterPrefix)
+      else if (!relative.endsWith(metadataSuffix) && relative.split(path.sep).join('/').startsWith(filterPrefix)) objects.push({ key: relative.split(path.sep).join('/') })
     }
   }
 
@@ -61,8 +61,13 @@ export function createRailwayVolumeBucket(storageDirectory) {
 
     async list({ prefix = '', limit = 1000 } = {}) {
       const objects = []
-      await walk(root, '', objects, Math.min(Number(limit) || 1000, 1000))
-      return { objects: objects.filter(item => item.key.startsWith(prefix)).slice(0, limit) }
+      const filterPrefix = String(prefix).replace(/\\/g, '/')
+      const directoryPrefix = filterPrefix.endsWith('/')
+        ? filterPrefix.slice(0, -1)
+        : filterPrefix.slice(0, filterPrefix.lastIndexOf('/'))
+      const directory = directoryPrefix ? resolveKey(directoryPrefix) : root
+      await walk(directory, directoryPrefix, objects, Math.min(Number(limit) || 1000, 1000), filterPrefix)
+      return { objects }
     },
 
     async delete(key) {
