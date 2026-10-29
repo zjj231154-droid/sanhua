@@ -4,6 +4,7 @@ import { Check, CircleHelp, LoaderCircle, RefreshCw, X } from 'lucide-react'
 
 const activeStates = new Set(['draft', 'ready', 'queued', 'running', 'retrying', 'cancelling'])
 const labels = { draft: '编辑中', ready: '待确认', queued: '排队中', running: '运行中', retrying: '重试中', cancelling: '正在取消', succeeded: '已完成', completed: '已完成', failed: '失败', cancelled: '已取消', archived: '已归档' }
+const visiblePosition = position => { const bound = (value, size) => Number.isFinite(value) && value >= 12 && value <= size - 80 ? value : Math.max(12, Math.min(28, size - 80)); return { right: bound(position?.right, window.innerWidth), bottom: bound(position?.bottom, window.innerHeight) } }
 const messages = { VERSION_CONFLICT: '任务状态已更新，请刷新后重试。', TASK_NOT_FOUND: '无法读取该工作记录，可能已切换工作区。', TASK_NOT_CANCELLABLE: '任务已经结束，不能取消。', TASK_NOT_RETRYABLE: '此记录不能重试。' }
 async function api(path, body, signal) {
   const response = await fetch(`/api/v1/task-center${path}`, { ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}), signal })
@@ -17,7 +18,12 @@ export default function TaskProgress({ onResume, onResult, scopeKey = 'default' 
   const [detail, setDetail] = useState(null), [notice, setNotice] = useState(''), [limit, setLimit] = useState(8)
   const trigger = useRef(null), panel = useRef(null), cancelDialog = useRef(null), controller = useRef(null), alive = useRef(true)
   const drag = useRef(null), suppressClick = useRef(false)
-  const [position, setPosition] = useState(() => { try { return JSON.parse(localStorage.getItem('sanhua-task-progress-position') || '{}') } catch { return {} } })
+  const [position, setPosition] = useState(() => { try { return visiblePosition(JSON.parse(localStorage.getItem('sanhua-task-progress-position') || '{}')) } catch { return visiblePosition({}) } })
+  useEffect(() => {
+    const resize = () => setPosition(current => visiblePosition(current))
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
   const startDrag = event => { if (event.button !== 0) return; const box = trigger.current.getBoundingClientRect(); drag.current = { x: event.clientX, y: event.clientY, right: innerWidth - box.right, bottom: innerHeight - box.bottom } }
   const moveDrag = event => { const point = drag.current; if (!point || Math.abs(point.x - event.clientX) + Math.abs(point.y - event.clientY) < 5) return; suppressClick.current = true; setPosition({ right: Math.max(12, Math.min(innerWidth - 80, point.right + point.x - event.clientX)), bottom: Math.max(12, Math.min(innerHeight - 80, point.bottom + point.y - event.clientY)) }) }
   const endDrag = () => { drag.current = null; if (suppressClick.current) localStorage.setItem('sanhua-task-progress-position', JSON.stringify(position)) }
@@ -111,11 +117,11 @@ export default function TaskProgress({ onResume, onResult, scopeKey = 'default' 
     </article>
   }
   return <>
-    <button ref={trigger} style={position} onMouseDown={startDrag} onMouseMove={moveDrag} onMouseUp={endDrag} className={`task-hub-ring ${summary.runningCount ? 'is-running' : 'is-editing'}`} aria-label={name} aria-expanded={open} aria-controls="task-hub-panel" onClick={() => { if (suppressClick.current) { suppressClick.current = false; return }; setOpen(value => !value) }} title="任务进度，可拖动">
+    {createPortal(<button ref={trigger} style={position} onMouseDown={startDrag} onMouseMove={moveDrag} onMouseUp={endDrag} className={`task-hub-ring ${summary.runningCount ? 'is-running' : 'is-editing'}`} aria-label={name} aria-expanded={open} aria-controls="task-hub-panel" onClick={() => { if (suppressClick.current) { suppressClick.current = false; return }; setOpen(value => !value) }} title="任务进度，可拖动">
       <svg viewBox="0 0 64 64" aria-hidden="true"><circle className="track" cx="32" cy="32" r="27" /><circle className="value" cx="32" cy="32" r="27" pathLength="100" strokeDasharray={`${average == null ? 0 : average} 100`} /></svg>
       <span>{error ? '!' : loading && !data ? <LoaderCircle className="spin-icon" size={21} /> : count ? average == null ? <CircleHelp size={22} /> : `${average}%` : recent.length ? <Check size={24} /> : '空闲'}</span>
       {count > 0 && <b>{count}</b>}{summary.hasFailed && !summary.runningCount && <i className="failure-dot" aria-label="有失败任务" />}
-    </button>
+    </button>, document.body)}
     {notice && <div className="task-hub-toast" role="status">{notice}<button aria-label="关闭任务提示" onClick={() => setNotice('')}>×</button></div>}
     {open && createPortal(<section ref={panel} className="task-hub-panel" id="task-hub-panel" aria-label="后台任务进度"><header><div><strong>任务中心</strong><small>{count} 个工作正在进行</small></div><button aria-label="刷新任务进度" disabled={loading} onClick={() => void load()}><RefreshCw size={17} className={loading ? 'spin-icon' : ''} /></button><button aria-label="关闭任务进度" onClick={close}><X size={18} /></button></header>
       {error && <div className="task-hub-error" role="alert">{error}<button onClick={() => void load()}>重试加载</button></div>}
