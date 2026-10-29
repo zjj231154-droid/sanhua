@@ -28,12 +28,15 @@ export async function onRequestPost(context) {
   const workspace = String(input.workspace || '')
   const skill = registryFor(workspace, String(input.skillId || ''))
   if (!allowed.has(workspace) || !skill || skill.status !== 'enabled') return json(400, { error: 'SKILL_NOT_AVAILABLE', workspace })
-  const workRecordId = String(input.workRecordId || input.taskId || '').trim()
-  const workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  let workRecordId = String(input.workRecordId || input.taskId || '').trim()
+  let workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
   if (workRecordId && (!workRecord || (!identity.compatibilityMode && (workRecord.workspaceId !== identity.workspaceId || workRecord.ownerUserId !== identity.user.id)))) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
   const providerConnection = await resolvedProviderConnection(context, identity.user.id)
   const model = input.model || providerConnection?.reasoningModel || context.env?.USEGOODAI_REASONING_MODEL || DEFAULT_REASONING_MODEL
   const task = await saveTask(context, { id: crypto.randomUUID(), workRecordId, workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'agent-plan', status: 'running', progress: 10, stage: 'Skill 解析与计划固化', heartbeatAt: new Date().toISOString(), requirements: requirementsText(input), assets: Array.isArray(input.assets) ? input.assets.slice(0, 50) : [], model, createdAt: new Date().toISOString() })
+  workRecordId = task.workRecordId || workRecordId
+  workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  context = { ...context, workRecordId }
   if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'running', progress: 10, providerType: 'usegoodai-reasoning', providerModel: model, operationSummary: 'Skill 解析与计划固化', errorCode: '', errorMessage: '' })
   const prompt = textFor(workspace, input)
   const result = await tokenSpaceRequest(context, 'chat/completions', { model, provider: 'usegoodai-reasoning', payload: { model, messages: [{ role: 'system', content: prompt }, { role: 'user', content: requirementsText(input) }], temperature: 0.35 } })

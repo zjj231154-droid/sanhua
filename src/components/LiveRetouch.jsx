@@ -341,7 +341,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
       const data = record?.draftData
       if (!data) return
       if (data.retouchMode) setRetouchMode(data.retouchMode)
-      if (Number(data.workflowStep)) setWorkflowStep(Math.max(1, Math.min(5, Number(data.workflowStep))))
+      if (Number(data.workflowStep || record.currentStep)) setWorkflowStep(Math.max(1, Math.min(5, Number(data.workflowStep || record.currentStep))))
       for (const [name, setter] of Object.entries({ size: setSize, scene: setScene, decor: setDecor, product: setProduct, preserve: setPreserve, requirements: setRequirements })) {
         if (typeof data[name] === 'string') setter(data[name])
       }
@@ -355,11 +355,11 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
         try { const response = await fetch(`/api/v1/assets/${encodeURIComponent(data.templateAssetId)}`); const value = await response.json().catch(() => ({})); if (active && response.ok && value.asset) { const template = toRetouchAsset(value.asset); setTemplateImage(template.url || template.previewUrl || template.thumbnailUrl || ''); setTemplateName(template.name || '模板参考'); setTemplateAssetId(template.id) } } catch { if (active) setTransferNotice('模板参考资产已无法读取，请重新选择。') }
       }
       if (data.resultName) setResultName(String(data.resultName))
-      setTransferNotice('已恢复上次产品精修工作内容。')
+      setTransferNotice(current => current.includes('已不存在') || current.includes('无法读取') ? current : '已恢复上次产品精修工作内容。')
     }
     void restore()
     return () => { active = false }
-  }, [draftRecord?.taskId, draftPromise])
+  }, [draftRecord?.taskId, draftRecord?.version, draftPromise])
   function removeActiveAsset(id) {
     setActiveRetouchAssets(current => {
       const next = current.filter(asset => asset.id !== id)

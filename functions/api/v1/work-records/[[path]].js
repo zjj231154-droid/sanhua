@@ -1,6 +1,7 @@
 import { json } from '../../../_lib/tokenspace.js'
 import { createWorkRecord, getWorkRecord, listWorkRecords, updateWorkRecord, validModule, validStatus } from '../../../_lib/work-record-store.js'
 import { requireIdentity } from '../../../_lib/collaboration.js'
+import { cancelCenterTask, retryCenterTask } from '../../../_lib/task-center-store.js'
 
 const parts = context => (Array.isArray(context.params?.path) ? context.params.path : String(context.params?.path || '').split('/')).filter(Boolean)
 const read = async request => { try { return await request.json() } catch { return null } }
@@ -27,6 +28,10 @@ export async function onRequestPost(context) {
   if (id) {
     const current = await getWorkRecord(context, id)
     if (!owned(current, identity)) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
+    if (action === 'cancel' || action === 'retry') {
+      const result = await (action === 'cancel' ? cancelCenterTask : retryCenterTask)(context, identity, id, { ...input, expectedVersion: input.expectedVersion ?? current.version })
+      return json(result.status, result.data)
+    }
     if (action === 'submit') {
       if (current.providerTaskId) return json(200, { item: current, record: current, idempotent: true })
       if (!['draft', 'ready'].includes(current.status)) return json(409, { error: 'WORK_RECORD_NOT_SUBMITTABLE', status: current.status })
@@ -67,6 +72,10 @@ export async function onRequestPatch(context) {
   if (!id || !input) return json(400, { error: !id ? 'WORK_RECORD_ID_REQUIRED' : '请求格式必须是 JSON' })
   const current = await getWorkRecord(context, id)
   if (!owned(current, identity)) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
+  if (input.status === 'cancelled') {
+    const result = await cancelCenterTask(context, identity, id, { ...input, expectedVersion: input.expectedVersion ?? current.version })
+    return json(result.status, result.data)
+  }
   if (input.status && !validStatus(input.status)) return json(400, { error: 'INVALID_STATUS' })
   const record = await updateWorkRecord(context, id, { ...input, updatedBy: identity.user.id })
   if (record?.conflict) return json(409, { error: 'VERSION_CONFLICT', currentVersion: record.conflict.version, updatedAt: record.conflict.updatedAt })

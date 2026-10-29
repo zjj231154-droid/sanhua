@@ -124,6 +124,8 @@ export async function onRequestPost(context) {
   }
   let project = await projectFor(context, identity, id)
   if (!project) return missing()
+  context = { ...context, workRecordId: project.currentTaskId }
+  if ((await getWorkRecord(context, project.currentTaskId))?.status === 'cancelled') return json(409, { error: 'TASK_CANCELLED' })
   if (action === 'generate-script-storyboard') {
     if (!clean(project.brief)) return json(422, { error: 'DRAMA_BRIEF_REQUIRED' })
     if (project.scriptId && !input.regenerate) return json(200, { project, idempotent: true })

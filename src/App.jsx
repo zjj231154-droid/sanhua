@@ -1,3 +1,4 @@
+import TaskProgress from './components/TaskProgress'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ScriptEditor from './components/ScriptEditor'
@@ -242,151 +243,7 @@ function Sidebar({ page, subRoute, onNavigate, session }) {
   )
 }
 
-export function TaskProgress({ onResume }) {
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    const show = () => setOpen(true)
-    window.addEventListener('sanhua:open-task-progress', show)
-    return () => window.removeEventListener('sanhua:open-task-progress', show)
-  }, [])
-  const [popoverPosition, setPopoverPosition] = useState({})
-  const [widgetPosition, setWidgetPosition] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('sanhua-task-progress-position') || '{}')
-      return Number.isFinite(saved.right) && Number.isFinite(saved.bottom) ? { right: saved.right, bottom: saved.bottom } : {}
-    } catch { return {} }
-  })
-  const [dragging, setDragging] = useState(false)
-  const [tasks, setTasks] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [removingId, setRemovingId] = useState('')
-  const [error, setError] = useState('')
-  const [completedToast, setCompletedToast] = useState(null)
-  const previousStatuses = useRef(new Map())
-  const hasLoadedStatuses = useRef(false)
-  const lastVideoSyncAt = useRef(0)
-  const triggerRef = useRef(null)
-  const dragStart = useRef(null)
-  const suppressClick = useRef(false)
-  const load = async (manual = false) => {
-    if (manual) setRefreshing(true)
-    try {
-      let response = await fetch('/api/v1/task-center?page=1&pageSize=50')
-      let value = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : '任务状态暂不可用，请稍后重试')
-      let nextTasks = Array.isArray(value.items) ? value.items.slice(0, 20) : (Array.isArray(value.tasks) ? value.tasks.slice(0, 20) : [])
-      const hasActiveVideo = nextTasks.some(task => task.workspace === 'video' && ['queued', 'running'].includes(task.status))
-      if (hasActiveVideo && Date.now() - lastVideoSyncAt.current >= 8000) {
-        lastVideoSyncAt.current = Date.now()
-        await fetch('/api/v1/video-tasks').catch(() => null)
-        response = await fetch('/api/v1/task-center?page=1&pageSize=50')
-        value = await response.json().catch(() => ({}))
-        if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : '任务状态暂不可用，请稍后重试')
-        nextTasks = Array.isArray(value.items) ? value.items.slice(0, 20) : (Array.isArray(value.tasks) ? value.tasks.slice(0, 20) : [])
-      }
-      if (hasLoadedStatuses.current) {
-        const completed = nextTasks.find(task => !['completed', 'succeeded'].includes(previousStatuses.current.get(task.id)) && ['completed', 'succeeded'].includes(task.status))
-        if (completed) setCompletedToast(completed)
-      }
-      previousStatuses.current = new Map(nextTasks.map(task => [task.id, task.status]))
-      hasLoadedStatuses.current = true
-      setTasks(nextTasks)
-      setError('')
-    } catch (err) { setError(err.message) }
-    finally { setLoading(false); setRefreshing(false) }
-  }
-  useEffect(() => {
-    load()
-    const timer = setInterval(load, 4000)
-    return () => clearInterval(timer)
-  }, [])
-  useEffect(() => {
-    if (!completedToast) return undefined
-    const timer = setTimeout(() => setCompletedToast(null), 3000)
-    return () => clearTimeout(timer)
-  }, [completedToast])
-  const active = tasks.filter(task => ['draft', 'ready', 'queued', 'running', 'waiting_user', 'retrying'].includes(task.status))
-  const status = task => task.status === 'completed' || task.status === 'succeeded' ? '已完成' : task.status === 'failed' ? '失败' : task.status === 'cancelled' ? '已取消' : task.status === 'archived' ? '已归档' : task.status === 'draft' ? '编辑中' : task.status === 'ready' ? '待确认' : task.status === 'waiting_user' ? '等待确认' : task.status === 'queued' ? '排队中' : task.status === 'retrying' ? '重试中' : '运行中'
-  const togglePopover = () => {
-    if (suppressClick.current) {
-      suppressClick.current = false
-      return
-    }
-    if (open) { setOpen(false); return }
-    const rect = triggerRef.current?.getBoundingClientRect()
-    if (rect) {
-      const right = `${Math.max(12, window.innerWidth - rect.right)}px`
-      setPopoverPosition(rect.top > 32 && rect.top < window.innerHeight / 2
-        ? { top: `${Math.max(12, rect.bottom + 10)}px`, right }
-        : { bottom: `${Math.max(12, window.innerHeight - rect.top + 10)}px`, right })
-    }
-    setOpen(true)
-  }
-  const startDragging = event => {
-    if (event.button !== 0) return
-    const rect = triggerRef.current?.getBoundingClientRect()
-    if (!rect) return
-    dragStart.current = {
-      x: event.clientX,
-      y: event.clientY,
-      right: window.innerWidth - rect.right,
-      bottom: window.innerHeight - rect.bottom,
-      width: rect.width,
-      height: rect.height,
-      moved: false,
-    }
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-  const dragWidget = event => {
-    const start = dragStart.current
-    if (!start) return
-    const deltaX = event.clientX - start.x
-    const deltaY = event.clientY - start.y
-    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) start.moved = true
-    if (!start.moved) return
-    setDragging(true)
-    setWidgetPosition({
-      right: Math.max(12, Math.min(window.innerWidth - start.width - 12, start.right - deltaX)),
-      bottom: Math.max(12, Math.min(window.innerHeight - start.height - 12, start.bottom - deltaY)),
-    })
-  }
-  const stopDragging = event => {
-    const start = dragStart.current
-    if (!start) return
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
-    if (start.moved) {
-      suppressClick.current = true
-      setWidgetPosition(current => {
-        localStorage.setItem('sanhua-task-progress-position', JSON.stringify(current))
-        return current
-      })
-    }
-    dragStart.current = null
-    setDragging(false)
-  }
-  const dismissTask = async task => {
-    const previous = tasks
-    setRemovingId(task.id)
-    setTasks(current => current.filter(item => item.id !== task.id))
-    try {
-      const response = task.taskSource === 'work_record' || task.recordType === 'draft_task'
-        ? await fetch(`/api/v1/work-records/${encodeURIComponent(task.id)}/archive`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
-        : await fetch(`/api/v1/tasks?id=${encodeURIComponent(task.id)}`, { method: 'DELETE' })
-      const value = await response.json()
-      if (!response.ok) throw new Error(value.error || '删除任务失败')
-    } catch (err) {
-      setTasks(previous)
-      setError(err.message)
-    } finally { setRemovingId('') }
-  }
-  const progressPopover = <section className="task-progress-popover task-progress-popover--portal" style={popoverPosition} aria-label="后台任务进度"><header><div><strong>任务中心</strong><small>{active.length ? `${active.length} 个工作正在进行` : '当前没有进行中的工作'}</small></div><div><button className="icon-button" disabled={refreshing} onClick={() => load(true)} aria-label="刷新任务进度"><RefreshCw className={refreshing ? 'spin-icon' : ''} size={16} /></button><button className="icon-button" onClick={() => setOpen(false)} aria-label="关闭任务进度"><X size={17} /></button></div></header>{loading && <p className="task-progress-empty">正在读取任务…</p>}{error && <p className="task-progress-error">{error}</p>}{!loading && !error && !tasks.length && <p className="task-progress-empty">暂无工作记录。开始输入、选择素材或提交生成后会自动保存到这里。</p>}<div className="task-progress-list">{tasks.map(task => { const finished = ['completed', 'succeeded', 'failed', 'cancelled', 'archived'].includes(task.status); const moduleName = task.moduleName || (task.workspace === 'retouch' ? '产品精修' : task.workspace === 'brand' ? '品牌创作' : task.workspace === 'script' ? '短剧脚本' : task.workspace === 'assets' ? '资产库' : '视频生成'); return <article key={task.id} className={`task-progress-item task-status--${task.status}`}><div><strong>{task.title || moduleName}</strong><span>{moduleName} · {status(task)} · {task.stage || `第 ${task.currentStep || 1} 步`}</span></div>{task.recordType === 'draft_task' && !finished && <button className="secondary-button task-continue-button" onClick={() => onResume?.(task)}>继续</button>}{finished && <button className="task-dismiss-button" disabled={removingId === task.id} onClick={() => dismissTask(task)} aria-label={`删除任务 ${String(task.id).slice(0, 8)}`}><X size={15} /></button>}<b>{Number(task.progress || 0)}%</b><i><em style={{ width: `${Math.max(0, Math.min(100, Number(task.progress || 0)))}%` }} /></i><small>任务 {String(task.id).slice(0, 8)} · 更新于 {task.updatedAt ? new Date(task.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '刚刚'}</small></article> })}</div></section>
-  return <div className="task-progress-menu task-progress-menu--widget" style={widgetPosition}>
-    <button ref={triggerRef} className={`task-progress-button${open ? ' is-open' : ''}${dragging ? ' is-dragging' : ''}`} aria-label="查看后台任务进度" aria-expanded={open} onPointerDown={startDragging} onPointerMove={dragWidget} onPointerUp={stopDragging} onPointerCancel={stopDragging} onMouseDown={startDragging} onMouseMove={dragWidget} onMouseUp={stopDragging} onClick={togglePopover} title="按住可拖动"><ListChecks size={18} /><span>任务进度</span><b>{active.length}</b></button>
-    {open && createPortal(progressPopover, document.body)}
-    {completedToast && <div className="task-complete-toast" role="status"><CheckCircle2 size={19} /><span><strong>{completedToast.workspace === 'retouch' ? '产品精修' : completedToast.workspace === 'brand' ? '品牌创作' : completedToast.workspace === 'script' ? '短剧脚本' : '视频生成'}任务已完成</strong><small>结果已保存到对应资产库</small></span><button onClick={() => setCompletedToast(null)} aria-label="关闭完成提醒"><X size={16} /></button></div>}
-  </div>
-}
+export { TaskProgress }
 
 function Topbar({ timeMode, onToggleTimeMode, onLogout, session, onSwitchWorkspace, onOpenProfile }) {
   const isNight = timeMode === 'night'
@@ -582,13 +439,27 @@ function AdminSeatsPage() {
 }
 const responseJson = async response => { try { return await response.json() } catch { return {} } }
 
-function VideoWorkbench({ scripts, activeId, scriptPlan, storyboardPrompt = '', workRecordId = '' }) {
+function VideoWorkbench({ scripts, activeId, scriptPlan, storyboardPrompt = '', workRecordId = '', restoredRecord, onDraftChange }) {
   const [assets, setAssets] = useState([]); const [assetType, setAssetType] = useState('scene'); const [pickerOpen, setPickerOpen] = useState(false)
   const [refs, setRefs] = useState({ scene: [], character: [], prop: [] }); const [prompt, setPrompt] = useState('')
   const [duration, setDuration] = useState('8'); const [ratio, setRatio] = useState('9:16'); const [resolution, setResolution] = useState('720p'); const [status, setStatus] = useState(''); const [creating, setCreating] = useState(false); const [tasks, setTasks] = useState([]); const [playingTask, setPlayingTask] = useState(null); const mentionPending = useRef(false); const mentionRange = useRef(null); const promptInput = useRef(null)
   useEffect(() => { let active = true; fetch('/api/v1/assets?workspace=script&usableFor=video&limit=80&includeLegacy=true').then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.error); return value.assets || [] }).then(value => { if (active) setAssets(value) }).catch(() => { if (active) setAssets(CLOUD_ASSETS.filter(item => item.category === 'script').map(item => ({ ...item, assetSpace: 'script', assetType: 'image', videoAssetType: 'scene', usableFor: ['script', 'video'], isDemo: true }))) }); return () => { active = false } }, [])
   useEffect(() => { let active = true; const load = () => fetch('/api/v1/video-tasks').then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.error); return value.tasks || [] }).then(value => { if (active) setTasks(value) }).catch(() => {}); void load(); const timer = window.setInterval(load, 8000); return () => { active = false; window.clearInterval(timer) } }, [])
   useEffect(() => { if (!prompt.trim() && storyboardPrompt.trim()) setPrompt(storyboardPrompt) }, [storyboardPrompt])
+  const [videoRecordId, setVideoRecordId] = useState(restoredRecord?.taskId || '')
+  useEffect(() => {
+    if (!restoredRecord?.draftData) return
+    const draft = restoredRecord.draftData
+    setPrompt(draft.videoPrompt || draft.prompt || ''); setDuration(String(draft.durationSeconds || 8)); setRatio(draft.aspectRatio || '9:16'); setResolution(draft.resolution || '720p'); setVideoRecordId(restoredRecord.taskId)
+    let active = true
+    Promise.all(['scene', 'character', 'prop'].map(async key => [key, (await Promise.all((draft.assetRefs?.[key] || []).map(async id => { const response = await fetch(`/api/v1/assets/${encodeURIComponent(id)}`); return response.ok ? (await response.json()).asset : null }))).filter(Boolean)])).then(groups => { if (active) setRefs(Object.fromEntries(groups)) }).catch(() => { if (active) setStatus('部分参考素材无法读取，请替换后重试。') })
+    return () => { active = false }
+  }, [restoredRecord?.taskId, restoredRecord?.version])
+  useEffect(() => {
+    if (!prompt.trim() && !Object.values(refs).flat().length) return
+    const timer = setTimeout(() => { void onDraftChange?.({ currentStep: 3, draftData: { videoPrompt: prompt, durationSeconds: Number(duration), aspectRatio: ratio, resolution, scriptId: activeId, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, values]) => [key, values.map(asset => asset.id)])) }, operationSummary: '视频生成 · 编辑中' }).then(record => { if (record?.taskId) setVideoRecordId(record.taskId) }).catch(() => setStatus('视频草稿保存失败，请重试。')) }, 700)
+    return () => clearTimeout(timer)
+  }, [prompt, duration, ratio, resolution, refs, activeId])
   const activeScript = scripts.find(item => item.id === activeId) || scripts[0]
   const selected = Object.values(refs).flat(); const filtered = assets.filter(asset => asset.videoAssetType === assetType)
   const toggle = asset => {
@@ -615,7 +486,7 @@ function VideoWorkbench({ scripts, activeId, scriptPlan, storyboardPrompt = '', 
   }
   const videoPrompt = prompt.trim() || storyboardPrompt.trim() || activeScript?.outline || scriptPlan
   const missing = !activeScript ? '请先确认并保存剧本与分镜提示词' : !refs.scene.length ? '请至少添加一张场景资产' : videoPrompt.length < 12 ? '请输入不少于 12 字的视频提示词' : ''
-   const create = async () => { if (missing || creating) return; setCreating(true); setStatus('正在校验视频任务…'); const body = { workRecordId, scriptId: activeScript.id, scriptVersionId: activeScript.currentVersionId, videoPrompt, shotPlan: videoPrompt, durationSeconds: Number(duration), aspectRatio: ratio, resolution, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, value]) => [key, value.map(item => item.id)])) }; try { const checked = await fetch('/api/v1/video-tasks/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const validation = await responseJson(checked); if (!checked.ok) throw new Error(videoValidationMessage(validation)); setStatus('正在创建 Seedance 视频任务…'); const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const value = await responseJson(response); if (!response.ok) throw new Error(videoValidationMessage(value, '视频任务创建失败，请刷新页面后重试。')); setTasks(current => [value.task, ...current]); setStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}；分镜提示词已归档。`) } catch (reason) { setStatus(reason.message || '视频任务创建失败') } finally { setCreating(false) } }
+   const create = async () => { if (missing || creating) return; setCreating(true); setStatus('正在校验视频任务…'); const body = { workRecordId: videoRecordId || workRecordId, scriptId: activeScript.id, scriptVersionId: activeScript.currentVersionId, videoPrompt, shotPlan: videoPrompt, durationSeconds: Number(duration), aspectRatio: ratio, resolution, assetRefs: Object.fromEntries(Object.entries(refs).map(([key, value]) => [key, value.map(item => item.id)])) }; try { const checked = await fetch('/api/v1/video-tasks/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const validation = await responseJson(checked); if (!checked.ok) throw new Error(videoValidationMessage(validation)); setStatus('正在创建 Seedance 视频任务…'); const response = await fetch('/api/v1/video-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const value = await responseJson(response); if (!response.ok) throw new Error(videoValidationMessage(value, '视频任务创建失败，请刷新页面后重试。')); setTasks(current => [value.task, ...current]); setStatus(`${value.notice} 任务 ID：${value.task.id.slice(0, 8)}；分镜提示词已归档。`) } catch (reason) { setStatus(reason.message || '视频任务创建失败') } finally { setCreating(false) } }
   const addMention = () => {
     const field = promptInput.current
     const start = field?.selectionStart ?? prompt.length
@@ -1129,7 +1000,8 @@ function ScriptCreationFlow({ stage, prompt, setPrompt, plan, setPlan, seedanceP
   return <div className="script-workspace-grid script-workspace-grid--expanded script-workspace-grid--brief"><div className="script-input-panel"><span className="kicker">第一步 · 定剧本与角色</span><label>短剧创作需求<textarea value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && prompt.trim() && !busy) { event.preventDefault(); onGenerate() } }} aria-label="短剧脚本需求" placeholder="描述人物、冲突、场景与时长" /></label><div className="script-inspiration" aria-label="创作灵感">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button type="button" key={item} className="secondary-button" onClick={() => onIdea(item)}>{item}</button>)}</div><div className="script-outline-actions"><DisabledReasonTooltip reason={!prompt.trim() ? '请先填写短剧创作需求' : ''}><button className="primary-button" disabled={busy || !prompt.trim()} onClick={onGenerate}>{busy ? '正在规划剧本…' : '生成待确认剧本'}</button></DisabledReasonTooltip><button type="button" className="secondary-button" onClick={onOpenImport}><Upload size={15} />本地导入剧本</button><input ref={importInputRef} className="sr-only" type="file" accept=".txt,.md,text/plain,text/markdown" aria-label="选择本地剧本文件" onChange={onImportFile} /></div><small>先选定场景和角色，再生成待确认剧本。支持 TXT、Markdown 导入。</small></div>{preview}</div>
 }
 
-function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, onIncomingContextConsumed, onDraftChange }) {
+function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, onIncomingContextConsumed, onDraftChange, onVideoDraftChange }) {
+  const [videoRestoredRecord, setVideoRestoredRecord] = useState(null)
   const [editor, setEditor] = useState(null)
   const [toolbarTab, setToolbarTab] = useState(0)
   const [brandPrompt, setBrandPrompt] = useState('为叁花茶馆设计一张日光茶饮品牌海报，保留叁花 Logo，突出茶汤与留白。')
@@ -1231,6 +1103,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
           setSeedancePrompt(String(draft.seedancePrompt || ''))
           setScriptStage(String(draft.scriptStage || draftRecord.stage || 'definition'))
           setVideoDuration(String(draft.videoDuration || '180'))
+          if (draftRecord.moduleKey === 'video') { setActiveId(draft.scriptId); setVideoRestoredRecord(draftRecord); setToolbarTab(2) }
           setContextNotice('已恢复上次短剧工作内容。')
         }
         if (type === 'brand') {
@@ -1493,7 +1366,7 @@ function CreativeCasesPage({ type, initialRoute = '', incomingContext = null, on
           {type === 'brand' && toolbarTab === 0 && <><BrandMerchWorkflow assets={CLOUD_ASSETS.filter(asset => asset.category === 'brand')} selectedAsset={selectedAsset} onSelectAsset={setSelectedAsset} busy={brandBusy} plan={brandPlan} image={brandImage} error={brandError} onPlan={createBrandPlan} onGenerate={generateBrandImage} onViewImage={setViewerImage} onArchive={setArchiveRequest} />{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}</>}
           {type === 'script' && toolbarTab === 0 && <div className="brand-agent-card glass-card script-workspace"><div><span className="kicker">编导助手 · 茶馆场景 Skill</span><p>先确定剧本和角色，再确认 Seedance 视频提示词；两次确认后才分别保存剧本与分镜提示词。</p></div>{contextNotice && <p className="retouch-feedback" role="status">{contextNotice}</p>}<ScriptAssetUnitPicker selectedScene={selectedAsset} selectedCharacter={selectedCharacterAsset} selectedProp={selectedPropAsset} onSelectScene={setSelectedAsset} onSelectCharacter={setSelectedCharacterAsset} onSelectProp={setSelectedPropAsset} /><ScriptCreationFlow stage={scriptStage} prompt={scriptPrompt} setPrompt={setScriptPrompt} plan={scriptPlan} setPlan={setScriptPlan} seedancePrompt={seedancePrompt} setSeedancePrompt={setSeedancePrompt} busy={brandBusy} saveBusy={scriptSaveBusy} selectedScene={selectedAsset} selectedCharacter={selectedCharacterAsset} selectedProp={selectedPropAsset} onGenerate={generateScriptPlan} onConfirmStory={confirmStoryAndCharacter} onSave={saveConfirmedScript} onOpenImport={() => scriptImportInputRef.current?.click()} onImportFile={importLocalScript} importInputRef={scriptImportInputRef} onIdea={appendScriptInspiration} onOpenVideo={() => setToolbarTab(2)} />{brandError && <p className="retouch-error" role="alert">{brandError}</p>}</div>}
           {toolbarTab === 0 && <div className="legacy-case-cache" aria-hidden="true">{config.cases.map((item, index) => <span key={item.id}>{item.title}{index === 0 && <span>{item.title}</span>}</span>)}</div>}
-           {type === 'script' && toolbarTab === 2 && <VideoWorkbench scripts={scripts} activeId={activeId} scriptPlan={scriptPlan} storyboardPrompt={scriptPartsFor(activeScript || scripts[0] || {}).storyboard?.content || seedancePrompt} workRecordId={draftRecordRef.current?.taskId || ''} />}
+           {type === 'script' && toolbarTab === 2 && <VideoWorkbench scripts={scripts} activeId={activeId} scriptPlan={scriptPlan} storyboardPrompt={scriptPartsFor(activeScript || scripts[0] || {}).storyboard?.content || seedancePrompt} workRecordId={draftRecordRef.current?.taskId || ''} restoredRecord={videoRestoredRecord} onDraftChange={onVideoDraftChange} />}
           {type === 'brand' && toolbarTab === 2 && <PromptRecordPage workspace="brand" title="品牌提示词记录" description="设计计划与最终提示词会自动同步到云端文本库。" filters={[["brand_prompt", "文创提示词"]]} onReuse={record => { setBrandPlan(record.content); setToolbarTab(0) }} />}
           {type === 'script' && toolbarTab === 3 && <PromptRecordPage workspace="script" title="短剧文本记录" description="短剧正文与分镜提示词分开归档。" filters={[["script", "短剧剧本"], ["storyboard_prompt", "分镜提示词"]]} onReuse={record => { setScriptPrompt(record.content); setToolbarTab(0) }} />}
           {type === 'brand' && toolbarTab === 1 ? <section className="product-library-panel glass-card" aria-label="品牌产品库"><h2>品牌成品与设计方案</h2><p className="product-library-hint">单击图片选中案例并查看设计内容；双击可放大预览。</p><div className="product-library-grid">{brandAssets.map(asset => <article className={selectedBrandAsset?.id === asset.id ? 'is-selected' : ''} key={asset.id}><button type="button" className="brand-generated-preview" aria-label={`选择案例 ${asset.name}`} aria-pressed={selectedBrandAsset?.id === asset.id} onClick={() => setSelectedBrandAssetId(asset.id)} onDoubleClick={() => setViewerImage(asset)}><CachedImage asset={asset} src={asset.previewUrl || asset.thumbnailUrl || asset.url} alt={asset.name} /><small>{selectedBrandAsset?.id === asset.id ? '已选中 · 双击放大查看' : '点击选中 · 双击放大查看'}</small></button><div><strong>{asset.name}</strong><small>{new Date(asset.createdAt || Date.now()).toLocaleDateString('zh-CN')} · {asset.model || 'gpt-image-2'} · 引用 {asset.referenceAssetIds?.length || asset.sourceAssetIds?.length || 0} 项素材</small><span className="brand-card-actions"><a className="secondary-button" href={`/api/v1/assets/${asset.id}/download`} download={asset.downloadName || asset.name}><Download size={15} />下载</a><button className="secondary-button" aria-label={`重命名 ${asset.name}`} onClick={async () => { const nextName = window.prompt('输入新的图片名称', asset.name); if (!nextName?.trim()) return; const response = await fetch(`/api/v1/assets/${asset.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: nextName }) }); const value = await response.json(); if (!response.ok) { setBrandError(value.error || '重命名失败'); return }; setBrandAssets(current => current.map(item => item.id === asset.id ? { ...item, ...value.asset } : item)); }}><Pencil size={15} />重命名</button></span></div></article>)}</div>{!brandAssets.length && <p>暂无已归档的品牌成品。确认生成后会自动保存在这里。</p>}</section> : ((type === 'script' && toolbarTab === 1) ? <section className={`case-grid case-grid--${type}`} aria-label={`${config.title}剧本库`}>
@@ -1857,11 +1730,22 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
     }
   }
   const resumeTask = task => {
-    const moduleKey = task.workspace || task.moduleKey
-    const record = task.recordType === 'draft_task' || task.taskSource === 'work_record' ? task : null
-    if (record?.taskId) { draftRecords.current.set(moduleKey, record); setDraftRecordState(current => ({ ...current, [moduleKey]: record })) }
-    navigate(moduleKey, task.route || DEFAULT_SUB_ROUTE[moduleKey] || '', { draftRecord: record, createdAt: new Date().toISOString() })
+    if (['cancelled', 'archived'].includes(task.status)) throw new Error('已结束任务不能继续执行')
+    const moduleKey = task.moduleKey || task.workspace
+    if (!['retouch', 'brand', 'script', 'video', 'assets'].includes(moduleKey)) throw new Error('没有可恢复的模块')
+    const record = task.recordType === 'draft_task' || task.taskSource === 'work_record' ? task : { ...task, taskId: task.workRecordId || task.id, draftData: task.draftData || {} }
+    draftRecords.current.set(moduleKey, record); setDraftRecordState(current => ({ ...current, [moduleKey]: record }))
+    const projectId = record.draftData?.dramaProjectId
+    const targetModule = moduleKey === 'video' ? 'script' : moduleKey
+    const route = projectId ? (moduleKey === 'video' ? 'video' : 'create') : ['video', 'script'].includes(moduleKey) ? 'legacy' : (record.subRoute || record.route || DEFAULT_SUB_ROUTE[moduleKey] || '')
+    navigate(targetModule, route, { draftRecord: record, createdAt: new Date().toISOString() })
+    setDraftSync({ status: 'synced', message: '已恢复上次工作' })
   }
+  const openTaskResult = task => {
+    if (task.moduleKey === 'video' && task.draftData?.dramaProjectId) return resumeTask(task)
+    navigate('assets', task.resultAssetIds?.length ? task.moduleKey === 'video' ? 'video-library' : 'generated' : 'text', { resultTextRecordIds: task.resultTextRecordIds, resultAssetIds: task.resultAssetIds })
+  }
+
   return (
     <div className={`app-shell time-${timeMode}`}>
       <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} session={session} />
@@ -1871,7 +1755,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
           {page === 'home' && <HomePage onNavigate={(nextPage, nextRoute, context) => { if (context?.startDraft) { const draftPromise = startDraft(nextPage, nextRoute, context.title); navigate(nextPage, nextRoute, { ...context, draftPromise }) } else navigate(nextPage, nextRoute, context) }} />}
           {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_prompt", "精修提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} draftRecord={retouchContext?.draftRecord || draftRecordState.retouch} draftPromise={retouchContext?.draftPromise} onDraftChange={patch => saveDraftChange('retouch', 'one-click', patch)} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('brand', subRoute || 'create', patch)} />}
-          {page === 'script' && (subRoute === 'legacy' ? <CreativeCasesPage type="script" initialRoute="library" incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('script', 'library', patch)} /> : <DramaProjectWorkbench initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onNavigate={navigate} />)}
+          {page === 'script' && (subRoute === 'legacy' ? <CreativeCasesPage type="script" onVideoDraftChange={patch => saveDraftChange('video', 'video', patch)} initialRoute={creationContext?.draftRecord?.moduleKey === 'video' ? 'video' : 'library'} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('script', 'library', patch)} /> : <DramaProjectWorkbench initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onNavigate={navigate} />)}
           {page === 'assets' && <AssetLibraryPage onNavigate={navigate} initialCategory={subRoute} incomingContext={assetContext} onDraftChange={patch => void saveDraftChange('assets', subRoute, patch)} />}
           {page === 'settings' && <ApiSettings />}
           {page === 'profile' && <UserProfile session={session} onSessionChange={setSession} />}
@@ -1879,7 +1763,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
         </div>
       </div>
       {draftSync && <div className={`draft-sync-feedback draft-sync-feedback--${draftSync.status}`} role="status" aria-live="polite"><span>{draftSync.message}</span>{['failed', 'conflict'].includes(draftSync.status) && draftSync.patch && <button className="text-button" onClick={() => void saveDraftChange(draftSync.moduleKey, draftSync.route, draftSync.patch)}>立即重试</button>}</div>}
-      <TaskProgress onResume={resumeTask} />
+      <TaskProgress key={`${session?.user?.id || 'demo'}:${session?.workspace?.id || 'default'}`} scopeKey={`${session?.user?.id || 'demo'}:${session?.workspace?.id || 'default'}`} onResume={resumeTask} onResult={openTaskResult} />
     </div>
   )
 }

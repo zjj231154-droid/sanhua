@@ -59,15 +59,18 @@ export function createRailwayVolumeBucket(storageDirectory) {
       }
     },
 
-    async list({ prefix = '', limit = 1000 } = {}) {
+    async list({ prefix = '', limit = 1000, cursor } = {}) {
       const objects = []
       const filterPrefix = String(prefix).replace(/\\/g, '/')
       const directoryPrefix = filterPrefix.endsWith('/')
         ? filterPrefix.slice(0, -1)
         : filterPrefix.slice(0, filterPrefix.lastIndexOf('/'))
       const directory = directoryPrefix ? resolveKey(directoryPrefix) : root
-      await walk(directory, directoryPrefix, objects, Math.min(Number(limit) || 1000, 1000), filterPrefix)
-      return { objects }
+      await walk(directory, directoryPrefix, objects, Infinity, filterPrefix)
+      objects.sort((a, b) => a.key.localeCompare(b.key))
+      const after = cursor ? objects.filter(item => item.key.localeCompare(cursor) > 0) : objects
+      const page = after.slice(0, Math.min(Number(limit) || 1000, 1000))
+      return { objects: page, truncated: after.length > page.length, cursor: after.length > page.length ? page.at(-1)?.key : undefined }
     },
 
     async delete(key) {

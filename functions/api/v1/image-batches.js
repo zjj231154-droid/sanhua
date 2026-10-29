@@ -14,8 +14,8 @@ export async function onRequestPost(context) {
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const workspace = workspaceFor(input.workspace)
-  const workRecordId = String(input.workRecordId || input.taskId || '').trim()
-  const workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  let workRecordId = String(input.workRecordId || input.taskId || '').trim()
+  let workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
   if (workRecordId && (!workRecord || (!identity.compatibilityMode && (workRecord.workspaceId !== identity.workspaceId || workRecord.ownerUserId !== identity.user.id)))) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
   const prompt = String(input.prompt || '').trim().slice(0, 12000)
   const submittedImages = Array.isArray(input.images) ? input.images.filter(value => typeof value === 'string') : []
@@ -38,8 +38,12 @@ export async function onRequestPost(context) {
   const task = await saveTask(context, {
     id: crypto.randomUUID(), workRecordId, workspace, workspaceId: identity.workspaceId, projectId: workspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'image-batch', status: 'running', progress: 25,
     stage: `模型处理中（0/${count}）`, heartbeatAt: new Date().toISOString(), requirements: prompt,
+    draftData: { requirements: prompt, workflowStep: 5, selectedAssetIds: input.sourceAssetIds || [], size: input.size || '1024x1024', count, ...input.metadata },
     finalPrompt: String(input.metadata?.finalPrompt || prompt).slice(0, 12000), originalPlan: String(input.metadata?.originalPlan || '').slice(0, 12000), model, createdAt: new Date().toISOString(), requestedCount: count, requestedName, namePrefix,
   })
+  workRecordId = task.workRecordId || workRecordId
+  workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  context = { ...context, workRecordId }
   if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'running', progress: 25, providerType: 'usegoodai-image', providerModel: model, operationSummary: `模型处理中（0/${count}）`, errorCode: '', errorMessage: '' })
   const textRecord = await createTextRecord(context, {
     workspace, sourceModule: `${workspace}.prompts`, recordType: workspace === 'brand' ? 'brand_prompt' : 'retouch_prompt',

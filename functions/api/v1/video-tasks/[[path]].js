@@ -4,7 +4,7 @@ import { getTask, saveTask, listTasks, updateTask } from '../../../_lib/task-sto
 import { assetMetadataKey, assetsBucket, getJson } from '../../../_lib/asset-store.js'
 import { createTextRecord } from '../../../_lib/text-record-store.js'
 import { hasPermission, requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
-import { getWorkRecord, updateWorkRecord } from '../../../_lib/work-record-store.js'
+import { createWorkRecord, getWorkRecord, updateWorkRecord } from '../../../_lib/work-record-store.js'
 import { dramaProjectOwned, getDramaProject } from '../../../_lib/drama-project-store.js'
 
 const inputFrom = async request => { try { return await request.json() } catch { return null } }
@@ -112,13 +112,15 @@ const route = context => (Array.isArray(context.params?.path) ? context.params.p
 const videoResultFrom = value => {
   const payload = value?.data && typeof value.data === 'object' && !Array.isArray(value.data) ? value.data : value || {}
   const status = String(payload.status || payload.state || payload.task_status || '').toLowerCase()
-  const rawProgress = Number(String(payload.progress ?? payload.percentage ?? '').replace('%', ''))
+  const rawValue = payload.progress ?? payload.percentage
+  const rawProgress = rawValue == null ? NaN : Number(String(rawValue).replace('%', ''))
   const url = [payload.url, payload.video_url, payload.result_url, payload.output?.video_url, payload.output?.url, payload.metadata?.url, payload.result?.url, payload.result?.video_url].find(item => typeof item === 'string' && /^https?:\/\//.test(item)) || null
   const message = String(payload.error?.message || payload.error_message || payload.message || '').trim().slice(0, 800)
   return { status, progress: Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, rawProgress)) : null, url, message }
 }
 
 export const syncVideoTask = async (context, task) => {
+  if (task?.workRecordId && (await getWorkRecord(context, task.workRecordId))?.status === 'cancelled') return { ...task, status: 'cancelled' }
   if (!task?.providerTaskId || !['queued', 'running'].includes(task.status)) return task
   const lastSync = Date.parse(task.lastProviderSyncAt || '')
   if (Number.isFinite(lastSync) && Date.now() - lastSync < 5000) return task
@@ -143,7 +145,7 @@ export const syncVideoTask = async (context, task) => {
     }
     if (['failed', 'error', 'cancelled', 'canceled', 'expired'].includes(result.status)) {
       const next = await updateTask(context, task.id, {
-      status: result.status === 'expired' ? 'failed' : result.status === 'cancelled' || result.status === 'canceled' ? 'cancelled' : 'failed', progress: result.progress ?? task.progress,
+      status: result.status === 'expired' ? 'failed' : result.status === 'cancelled' || result.status === 'canceled' ? 'cancelled' : 'failed', progress: result.progress ?? task.progress, progressSource: result.progress == null ? 'platform_estimate' : 'provider',
       stage: result.message || '上游视频生成失败', providerStatus: result.status, lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
       }) || task
       if (task.workRecordId) await updateWorkRecord(context, task.workRecordId, { status: next.status === 'cancelled' ? 'cancelled' : 'failed', progress: next.progress, errorCode: 'PROVIDER_REQUEST_FAILED', errorMessage: next.stage, operationSummary: next.stage })
@@ -189,8 +191,8 @@ export async function onRequestPost(context) {
   const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const input = await inputFrom(context.request)
   if (!input) return json(400, { error: '请求格式必须是 JSON' })
-  const workRecordId = String(input.workRecordId || input.taskId || '').trim()
-  const workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
+  let workRecordId = String(input.workRecordId || input.taskId || '').trim()
+  let workRecord = workRecordId ? await getWorkRecord(context, workRecordId) : null
   if (workRecordId && (!workRecord || (!identity.compatibilityMode && (workRecord.workspaceId !== identity.workspaceId || workRecord.ownerUserId !== identity.user.id)))) return json(404, { error: 'WORK_RECORD_NOT_FOUND' })
   let checked
   try { checked = await validate(context, input, identity) }
@@ -198,6 +200,13 @@ export async function onRequestPost(context) {
   if (route(context) === 'validate') return json(checked.missing.length ? 422 : 200, { ready: !checked.missing.length, missing: checked.missing, providerConfigured: checked.providerConfigured, normalizedAssetRefs: checked.assetRefs, notice: checked.providerConfigured ? `已检测到 ${checked.provider.model}，提交后将创建真实视频任务并按秒计费。` : '请先到管理设置验证并保存 TokenSpace 视频模型连接。' })
   if (checked.missing.length) return json(422, { error: 'VIDEO_TASK_INVALID', missing: checked.missing })
   if (!checked.providerConfigured) return json(409, { error: 'VIDEO_PROVIDER_NOT_CONFIGURED', hint: '请先到管理设置验证并保存 TokenSpace 视频模型连接。' })
+  if (!workRecord) {
+    workRecord = await createWorkRecord(context, { moduleKey: 'video', moduleName: '视频生成', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: input.title || '视频生成', route: 'video', initialData: input })
+    workRecordId = workRecord.taskId
+  }
+  context = { ...context, workRecordId }
+  if (workRecord.status === 'cancelled') return json(409, { error: 'TASK_CANCELLED' })
+  await updateWorkRecord(context, workRecordId, { status: 'running', progress: null, operationSummary: '正在提交视频服务' })
   const submitted = await tokenSpaceRequest(context, 'video/generations', {
     model: checked.provider.model,
     provider: 'tokenspace',

@@ -434,37 +434,29 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('textbox', { name: '品牌最终提示词' })).toHaveValue('FINAL_IMAGE_PROMPT: 茶猫四季系列')
   })
 
-  it('任务进度可删除已完成任务而不显示运行中任务的删除按钮', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url, options) => {
-      if (options?.method === 'DELETE') return { ok: true, json: async () => ({ ok: true }) }
-      return { ok: true, json: async () => ({ tasks: [{ id: 'done-task', workspace: 'brand', status: 'completed', progress: 100, stage: '完成' }, { id: 'live-task', workspace: 'retouch', status: 'running', progress: 50, stage: '处理中' }] }) }
-    }))
+  it('任务圆环显示统一接口的进度和分组', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ summary: { activeCount: 1, averageProgress: 50 }, active: [{ id: 'live', title: '正在精修', status: 'running', moduleName: '产品精修', progress: 50, progressSource: 'provider' }], recentCompleted: [{ id: 'done', title: '已完成的品牌图', status: 'succeeded', moduleName: '品牌创作' }] }) })))
     render(<TaskProgress />)
-    fireEvent.click(screen.getByRole('button', { name: '查看后台任务进度' }))
-    expect(await screen.findByRole('button', { name: '删除任务 done-tas' })).toBeInTheDocument()
-    const popover = document.body.querySelector('.task-progress-popover--portal')
-    expect(popover.style.top).toBe('')
-    expect(popover.style.bottom).not.toBe('')
-    expect(screen.queryByRole('button', { name: '删除任务 live-tas' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '删除任务 done-tas' }))
-    await waitFor(() => expect(screen.queryByText('品牌创作')).not.toBeInTheDocument())
+    const ring = await screen.findByRole('button', { name: /当前 1 个任务，整体进度 50%/ })
+    fireEvent.click(ring)
+    expect(await screen.findByText('进行中的任务')).toBeInTheDocument()
+    expect(screen.getByText('最近完成的任务')).toBeInTheDocument()
+    expect(screen.getByText('正在精修')).toBeInTheDocument()
+    expect(screen.getByText('已完成的品牌图')).toBeInTheDocument()
   })
 
-  it('任务进度按钮支持拖拽定位，拖拽结束不会误打开面板', () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ tasks: [] }) })))
+  it('任务圆环支持拖拽定位，拖拽结束不会误打开面板', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ summary: {}, active: [], recentCompleted: [] }) })))
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
     render(<TaskProgress />)
-
-    const trigger = screen.getByRole('button', { name: '查看后台任务进度' })
-    trigger.getBoundingClientRect = () => ({ right: 760, bottom: 570, width: 120, height: 44 })
-    fireEvent.mouseDown(trigger, { button: 0, buttons: 1, clientX: 700, clientY: 548 })
-    fireEvent.mouseMove(trigger, { buttons: 1, clientX: 600, clientY: 448 })
-    fireEvent.mouseUp(trigger, { button: 0, buttons: 0, clientX: 600, clientY: 448 })
+    const trigger = screen.getByRole('button', { name: /当前空闲/ })
+    trigger.getBoundingClientRect = () => ({ right: 760, bottom: 570, width: 68, height: 68 })
+    fireEvent.mouseDown(trigger, { button: 0, clientX: 700, clientY: 548 })
+    fireEvent.mouseMove(trigger, { clientX: 600, clientY: 448 })
+    fireEvent.mouseUp(trigger)
     fireEvent.click(trigger)
-
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(trigger.closest('.task-progress-menu--widget')).toHaveStyle({ right: '140px', bottom: '130px' })
-    expect(localStorage.getItem('sanhua-task-progress-position')).toContain('140')
+    expect(trigger).toHaveStyle({ right: '140px', bottom: '130px' })
   })
 })

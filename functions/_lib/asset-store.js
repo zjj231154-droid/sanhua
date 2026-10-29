@@ -40,6 +40,15 @@ export async function listJson(bucket, prefix, limit = 200) {
   const rows = await Promise.all(listed.objects.map(item => getJson(bucket, item.key)))
   return rows.filter(Boolean)
 }
+export async function listAllJson(bucket, prefix) {
+  const rows = []; let cursor
+  do {
+    const page = await bucket.list({ prefix, limit: 1000, cursor })
+    rows.push(...await Promise.all(page.objects.map(item => getJson(bucket, item.key))))
+    cursor = page.truncated ? page.cursor : undefined
+  } while (cursor)
+  return rows.filter(Boolean)
+}
 
 export const assetAvailableInWorkspace = (asset, workspaceId) => {
   const target = String(workspaceId || '')
@@ -86,6 +95,7 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
   const [year, month, day] = dateParts()
   const assets = []
   for (let index = 0; index < outputs.length; index += 1) {
+    if (context.workRecordId && (await getJson(bucket, `metadata/work-records/${context.workRecordId}.json`))?.status === 'cancelled') return { error: json(409, { error: 'TASK_CANCELLED' }) }
     const converted = outputBytes(outputs[index])
     if (!converted) return { error: json(502, { error: 'MODEL_OUTPUT_NOT_ARCHIVABLE', index: index + 1 }) }
     const id = crypto.randomUUID()

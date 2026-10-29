@@ -1,4 +1,5 @@
 const USEGOODAI_BASE_URL = 'https://api.usegoodai.com'
+import { executionCancelled, requestControl, noteLateResult } from './task-execution.js'
 export const DEFAULT_REASONING_MODEL = 'gpt-5.5'
 export const json = (status, body) => new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 export const providerFrom = (context, preferred) => {
@@ -27,6 +28,8 @@ export async function tokenSpaceRequest(context, endpoint, { model, payload, for
   const provider = personalProvider || (identity.compatibilityMode ? providerFrom(context, preferred) : null)
   if (!provider?.apiKey) return { response: json(409, { error: 'PERSONAL_API_KEY_NOT_CONFIGURED', hint: '请先在管理设置中验证并保存你的个人模型连接。' }) }
   console.log({ provider: provider.name, apiKeyConfigured: true, endpoint, model })
+  if (await executionCancelled(context)) return { response: json(409, { error: 'TASK_CANCELLED', hint: '任务已取消，平台已停止处理和归档。' }) }
+  const control = requestControl(context.workRecordId)
   try {
     const baseUrl = provider.baseUrl.replace(/\/$/, '')
     const apiPath = /\/v1$/.test(baseUrl) ? `${baseUrl}/${endpoint}` : `${baseUrl}/v1/${endpoint}`
@@ -34,15 +37,20 @@ export async function tokenSpaceRequest(context, endpoint, { model, payload, for
       method: 'POST',
       headers: form ? { Authorization: `Bearer ${provider.apiKey}` } : { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` },
       body: form || JSON.stringify(payload),
-      signal: AbortSignal.timeout(1800000),
+      signal: control.signal,
     })
     const text = await response.text()
+    if (await executionCancelled(context)) { await noteLateResult(context); return { response: json(409, { error: 'TASK_CANCELLED' }) } }
     if (!response.ok) {
       const failure = providerFailure(text, response.status)
       console.error({ provider: provider.name, status: response.status, code: failure.code, requestId: failure.requestId })
       return { response: json(response.status, { provider: provider.name, status: response.status, error: 'PROVIDER_REQUEST_FAILED', hint: failure.hint, providerCode: failure.code, providerRequestId: failure.requestId }) }
     }
     try { return { data: JSON.parse(text) } } catch { return { response: json(502, { provider: provider.name, status: 502, error: 'Provider returned invalid JSON' }) } }
-  } catch (error) { console.error({ provider: provider.name, status: 502, response: error.message }); return { response: json(502, { provider: provider.name, status: 502, error: error.cause?.code || error.message }) } }
+  } catch (error) {
+    if (await executionCancelled(context)) return { response: json(409, { error: 'TASK_CANCELLED' }) }
+    console.error({ provider: provider.name, status: 502, response: error.message })
+    return { response: json(502, { provider: provider.name, status: 502, error: error.cause?.code || error.message }) }
+  } finally { control.release() }
 }
 import { requireIdentity, resolvedImageProviderConnection, resolvedProviderConnection, resolvedVideoProviderConnection } from './collaboration.js'

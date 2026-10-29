@@ -1,4 +1,4 @@
-import { assetsBucket, getJson, listJson, putJson } from './asset-store.js'
+import { assetsBucket, getJson, listAllJson, putJson } from './asset-store.js'
 
 const prefix = 'metadata/work-records/'
 const keyFor = id => `${prefix}${id}.json`
@@ -6,7 +6,7 @@ const now = () => new Date().toISOString()
 const text = (value, limit) => String(value ?? '').trim().slice(0, limit)
 const strings = value => Array.isArray(value) ? [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))].slice(0, 100) : []
 const allowedModules = new Set(['home', 'retouch', 'brand', 'script', 'assets', 'video'])
-const allowedStatuses = new Set(['draft', 'ready', 'queued', 'running', 'succeeded', 'failed', 'cancelled', 'archived'])
+const allowedStatuses = new Set(['draft', 'ready', 'queued', 'running', 'retrying', 'cancelling', 'succeeded', 'failed', 'cancelled', 'archived'])
 const draftEnvelope = (value, { moduleKey = '', route = '', subRoute = '', currentStep = 1 } = {}) => ({ ...(value && typeof value === 'object' && !Array.isArray(value) ? value : {}), moduleKey, currentRoute: route, currentSubRoute: subRoute, currentStep })
 
 function sanitize(value, depth = 0) {
@@ -29,7 +29,7 @@ export async function listWorkRecords(context, { workspaceId, ownerUserId, modul
   const bucket = assetsBucket(context)
   if (!bucket) return null
   const wantedStatuses = String(status || '').split(',').map(item => item.trim()).filter(Boolean)
-  const rows = (await listJson(bucket, prefix))
+  const rows = (await listAllJson(bucket, prefix))
     .filter(record => !workspaceId || record.workspaceId === workspaceId)
     .filter(record => !ownerUserId || record.ownerUserId === ownerUserId)
     .filter(record => !moduleKey || record.moduleKey === moduleKey)
@@ -53,7 +53,7 @@ export async function createWorkRecord(context, input = {}) {
     moduleKey, moduleName: text(input.moduleName, 120) || moduleKey, route: text(input.route, 160), subRoute: text(input.subRoute, 160), title: text(input.title, 180) || `${text(input.moduleName, 120) || moduleKey}工作记录`,
     currentStep: Math.max(1, Number(input.currentStep) || 1), status: 'draft', draftData: draftEnvelope(sanitize(input.initialData || {}), { moduleKey, route: text(input.route, 160), subRoute: text(input.subRoute, 160), currentStep: Math.max(1, Number(input.currentStep) || 1) }), stepSnapshots: [], operationSummary: text(input.operationSummary, 400),
     inputAssetIds: strings(input.inputAssetIds), sourceTextRecordIds: strings(input.sourceTextRecordIds), resultAssetIds: strings(input.resultAssetIds), resultTextRecordIds: strings(input.resultTextRecordIds),
-    providerTaskId: text(input.providerTaskId, 200), providerType: text(input.providerType, 80), providerModel: text(input.providerModel, 160), syncState: 'synced', lastSyncError: '', progress: 0, errorCode: '', errorMessage: '', retryCount: 0, version: 1, createdAt, updatedAt: createdAt, submittedAt: null, completedAt: null, archivedAt: null,
+    providerTaskId: text(input.providerTaskId, 200), providerType: text(input.providerType, 80), providerModel: text(input.providerModel, 160), syncState: 'synced', lastSyncError: '', progress: null, progressSource: 'unknown', progressUpdatedAt: createdAt, providerCancelSupported: false, errorCode: '', errorMessage: '', retryCount: 0, version: 1, createdAt, updatedAt: createdAt, submittedAt: null, completedAt: null, archivedAt: null,
     clientSessionId: text(input.clientSessionId, 160), createdBy: text(input.ownerUserId, 160), updatedBy: text(input.ownerUserId, 160),
   }
   await putJson(bucket, keyFor(record.taskId), record)
@@ -64,6 +64,12 @@ export async function updateWorkRecord(context, id, patch = {}) {
   const bucket = assetsBucket(context)
   const current = bucket ? await getJson(bucket, keyFor(id)) : null
   if (!current) return null
+  if (current.status === 'cancelled' && patch.status !== 'archived') {
+    if (!patch.lateResultAt) return current
+    const late = { ...current, lateResultAt: patch.lateResultAt, lateResultNotice: text(patch.lateResultNotice, 400) }
+    await putJson(bucket, keyFor(id), late)
+    return late
+  }
   if (patch.expectedVersion !== undefined && Number(patch.expectedVersion) !== Number(current.version)) return { conflict: current }
   const nextStatus = patch.status === undefined ? current.status : String(patch.status)
   if (!validStatus(nextStatus)) return { invalid: 'INVALID_STATUS' }
@@ -85,7 +91,9 @@ export async function updateWorkRecord(context, id, patch = {}) {
     providerModel: patch.providerModel === undefined ? (current.providerModel || '') : text(patch.providerModel, 160),
     syncState: patch.syncState === undefined ? (current.syncState || 'synced') : ['synced', 'pending', 'failed', 'conflict'].includes(String(patch.syncState)) ? String(patch.syncState) : (current.syncState || 'synced'),
     lastSyncError: patch.lastSyncError === undefined ? (current.lastSyncError || '') : text(patch.lastSyncError, 1000),
-    progress: patch.progress === undefined ? current.progress : Math.max(0, Math.min(100, Number(patch.progress) || 0)),
+    progress: patch.progress === undefined ? current.progress : patch.progress === null ? null : Math.max(0, Math.min(100, Number(patch.progress) || 0)),
+    progressSource: patch.progressSource || (patch.progress === undefined ? current.progressSource || 'unknown' : patch.progress === null ? 'unknown' : 'platform_estimate'),
+    progressUpdatedAt: patch.progress === undefined ? current.progressUpdatedAt : now(),
     errorCode: patch.errorCode === undefined ? current.errorCode : text(patch.errorCode, 120),
     errorMessage: patch.errorMessage === undefined ? current.errorMessage : text(patch.errorMessage, 1000),
     retryCount: patch.retryCount === undefined ? Number(current.retryCount || 0) : Math.max(0, Math.min(100, Number(patch.retryCount) || 0)),
@@ -93,6 +101,7 @@ export async function updateWorkRecord(context, id, patch = {}) {
     updatedBy: text(patch.updatedBy, 160) || current.updatedBy,
     version: Number(current.version || 0) + 1, updatedAt: now(),
   }
+  for (const field of ['cancelledAt', 'cancelledBy', 'cancelReason', 'providerCancelResult', 'providerCancelSupported', 'cancelRequestedAt', 'sourceTaskId']) if (patch[field] !== undefined) next[field] = sanitize(patch[field])
   if (patch.captureSnapshot !== false && (patch.draftData !== undefined || patch.currentStep !== undefined || patch.route !== undefined || patch.subRoute !== undefined)) {
     const snapshot = { route: next.route, subRoute: next.subRoute || '', currentStep: next.currentStep, draftData: sanitize(next.draftData), capturedAt: next.updatedAt }
     next.stepSnapshots = [...(Array.isArray(current.stepSnapshots) ? current.stepSnapshots : []), snapshot].slice(-30)

@@ -31,6 +31,7 @@ export async function createTextRecord(context, input = {}) {
   const bucket = assetsBucket(context)
   if (!bucket) return null
   const content = text(input.content, 20000)
+  if (context.workRecordId && (await getJson(bucket, `metadata/work-records/${context.workRecordId}.json`))?.status === 'cancelled') return null
   if (!content) return { invalid: 'TEXT_RECORD_CONTENT_REQUIRED' }
   const createdAt = now()
   const record = {
