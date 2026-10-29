@@ -3,7 +3,7 @@ import { onRequestGet, onRequestPatch, onRequestPost } from './[[path]].js'
 import { getScript } from '../../../_lib/script-store.js'
 import { listTextRecords } from '../../../_lib/text-record-store.js'
 import { saveVideoProviderConnection } from '../../../_lib/collaboration.js'
-import { assetMetadataKey, putJson } from '../../../_lib/asset-store.js'
+import { assetMetadataKey } from '../../../_lib/asset-store.js'
 import { updateTask } from '../../../_lib/task-store.js'
 
 class Bucket {
@@ -85,15 +85,13 @@ describe('v2.5 drama projects', () => {
     expect(changed.textRecordIds.length).toBeGreaterThan(generated.textRecordIds.length)
   })
 
-  it('submits selected shots once, tracks results and archives an accepted video with project relations', async () => {
+  it('submits selected shots without mandatory assets, tracks results and archives an accepted video with project relations', async () => {
     const storage = env()
     const created = (await (await post(storage, '', { title: '视频测试', brief: '茶馆里掌柜和顾客发生误会。' })).json()).project
     mockReasoning()
     const generated = (await (await post(storage, `${created.projectId}/generate-script-storyboard`, {})).json()).project
     await post(storage, `${created.projectId}/confirm-script-storyboard`, {})
     await saveVideoProviderConnection({ env: storage }, 'test-user', { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', apiKey: 'sk-test', model: 'doubao-seedance-2.0' })
-    await putJson(storage.SANHUA_ASSETS, assetMetadataKey('scene-1'), { id: 'scene-1', workspaceId: 'default', name: '茶馆', assetType: 'image', usableFor: ['script', 'video'], externalUrl: 'https://cdn.example.test/scene.png' })
-    await patch(storage, created.projectId, { sceneAssetIds: ['scene-1'] })
     const upstream = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'provider-1', url: 'https://cdn.example.test/video.mp4' }), { status: 200 }))
     vi.stubGlobal('fetch', upstream)
@@ -103,6 +101,7 @@ describe('v2.5 drama projects', () => {
     const first = (await submitted.json()).tasks[0]
     expect(first.projectId).toBe(created.projectId)
     expect(first.shotId).toBe(generated.shots[0].shotId)
+    expect(JSON.parse(upstream.mock.calls[0][1].body).metadata.content).toEqual([])
     const detail = await onRequestGet(context(storage, `${created.projectId}/video-tasks/${first.id}`))
     expect((await detail.json()).task.id).toBe(first.id)
     const repeated = await post(storage, `${created.projectId}/video-tasks`, body)

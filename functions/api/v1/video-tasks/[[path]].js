@@ -5,6 +5,7 @@ import { assetMetadataKey, assetsBucket, getJson } from '../../../_lib/asset-sto
 import { createTextRecord } from '../../../_lib/text-record-store.js'
 import { hasPermission, requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
 import { getWorkRecord, updateWorkRecord } from '../../../_lib/work-record-store.js'
+import { dramaProjectOwned, getDramaProject } from '../../../_lib/drama-project-store.js'
 
 const inputFrom = async request => { try { return await request.json() } catch { return null } }
 const MAX_REFERENCE_IMAGES = 9
@@ -88,9 +89,11 @@ const validate = async (context, input, identity) => {
   const durationSeconds = Number(input?.durationSeconds || 0)
   const resolution = ['480p', '720p', '1080p'].includes(input?.resolution) ? input.resolution : '720p'
   const script = scriptId ? await getScript(context, scriptId) : null
+  const project = input?.projectId ? await getDramaProject(context, String(input.projectId)) : null
+  const optionalProjectReferences = dramaProjectOwned(project, identity) && project.scriptId === scriptId && ['video', 'completed'].includes(project.stage)
   if (!script || script.deletedAt || (!identity.compatibilityMode && script.workspaceId !== identity.workspaceId)) missing.push('已保存剧本')
   if (!scriptVersionId || script?.currentVersionId !== scriptVersionId) missing.push('当前已保存剧本版本')
-  if (!sceneAssetIds.length) missing.push('至少一个场景资产')
+  if (!sceneAssetIds.length && !optionalProjectReferences) missing.push('至少一个场景资产')
   if (Math.max(videoPrompt.length, shotPlan.length) < 12) missing.push('分镜或分场说明')
   if (!Number.isFinite(durationSeconds) || durationSeconds < 4 || durationSeconds > 15) missing.push('4-15 秒的视频时长')
   const provider = await resolvedVideoProviderConnection(context, identity.user.id)

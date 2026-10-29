@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createScript } from '../../../_lib/script-store.js'
 import { saveVideoProviderConnection } from '../../../_lib/collaboration.js'
 import { assetMetadataKey, putJson } from '../../../_lib/asset-store.js'
+import { createDramaProject, updateDramaProject } from '../../../_lib/drama-project-store.js'
 import { onRequestGet, onRequestPost } from './[[path]].js'
 
 class MemoryBucket {
@@ -29,6 +30,20 @@ describe('video task validation', () => {
     const value = await response.json()
     expect(response.status).toBe(422)
     expect(value.missing).toEqual(expect.arrayContaining(['已保存剧本', '至少一个场景资产', '分镜或分场说明']))
+  })
+
+  it('allows text-only video only for a confirmed project linked to the saved script', async () => {
+    const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: 'validate' } }
+    const project = await createDramaProject(context, { workspaceId: 'default', user: { id: 'test-user' } }, { title: '纯文本短剧' })
+    const script = await createScript(context, { projectId: project.projectId, title: '茶杯短剧', outline: '茶杯旁的纸条被微风轻轻吹动。' })
+    const body = { projectId: project.projectId, scriptId: script.id, scriptVersionId: script.currentVersionId, videoPrompt: script.outline, durationSeconds: 4 }
+    const validateBody = value => onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks/validate', value) })
+    expect((await validateBody(body)).status).toBe(422)
+    await updateDramaProject(context, project, { scriptId: script.id, stage: 'video' })
+    expect((await validateBody(body)).status).toBe(200)
+    const unrelated = await validateBody({ ...body, projectId: 'unrelated-project' })
+    expect(unrelated.status).toBe(422)
+    expect((await unrelated.json()).missing).toContain('至少一个场景资产')
   })
 
   it('returns an actionable validation message when a selected reference file cannot be read', async () => {
