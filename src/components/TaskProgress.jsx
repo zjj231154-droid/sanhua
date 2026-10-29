@@ -127,7 +127,7 @@ function ScopedTaskProgress({ onResume, onResult, scopeKey = 'default' }) {
       <svg viewBox="0 0 64 64" aria-hidden="true"><circle className="track" cx="32" cy="32" r="27" /><circle className="value" cx="32" cy="32" r="27" pathLength="100" strokeDasharray={`${ringProgress ?? 0} 100`} /></svg>
       <span>{error ? '!' : loading && !data ? <LoaderCircle className="spin-icon" size={21} /> : tracked ? ringProgress == null ? <LoaderCircle className="spin-icon" aria-label="处理中，进度未知" size={22} /> : `${ringProgress}%` : recent.length ? <Check size={24} /> : '空闲'}</span>
       {count > 0 && <b>{count}</b>}{summary.hasFailed && !summary.runningCount && <i className="failure-dot" aria-label="有失败任务" />}
-    </button></div>, document.body)}
+    </button>{tracked && <span className="task-hub-current-title" title={tracked.title || tracked.moduleName}>正在跟踪<strong>{tracked.title || tracked.moduleName}</strong></span>}</div>, document.body)}
     {notice && <div className="task-hub-toast" role="status">{notice}<button aria-label="关闭任务提示" onClick={() => setNotice('')}>×</button></div>}
     {open && createPortal(<section ref={panel} className="task-hub-panel" id="task-hub-panel" aria-label="后台任务进度"><header><div><strong>任务中心</strong><small>{count} 个工作正在进行</small></div><button aria-label="刷新任务进度" disabled={loading} onClick={() => void load()}><RefreshCw size={17} className={loading ? 'spin-icon' : ''} /></button><button aria-label="关闭任务进度" onClick={close}><X size={18} /></button></header>
       {error && <div className="task-hub-error" role="alert">{error}<button onClick={() => void load()}>重试加载</button></div>}

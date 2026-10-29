@@ -1,0 +1,136 @@
+{
+  "verificationDate": "2026-10-29",
+  "environment": "local real HTTP service, NODE_ENV=production, persistent filesystem, no mocks",
+  "productionModified": false,
+  "serviceStoppedAfterRun": true,
+  "checks": [
+    {
+      "name": "A real login",
+      "result": "passed"
+    },
+    {
+      "name": "Issue real seat invite",
+      "result": "passed"
+    },
+    {
+      "name": "B real invite registration",
+      "result": "passed"
+    },
+    {
+      "name": "Upload 可读场景",
+      "result": "passed"
+    },
+    {
+      "name": "Upload 不可读场景",
+      "result": "passed"
+    },
+    {
+      "name": "B can reference A workspace-shared image bytes",
+      "result": "passed"
+    },
+    {
+      "name": "Unreadable image blocks preflight",
+      "result": "passed"
+    },
+    {
+      "name": "Readable image remains available",
+      "result": "passed"
+    },
+    {
+      "name": "Failure points to exact image name",
+      "result": "passed"
+    },
+    {
+      "name": "Create persistent project",
+      "result": "passed"
+    },
+    {
+      "name": "Save project with version check",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account project read",
+      "result": "passed"
+    },
+    {
+      "name": "Create own persistent draft",
+      "result": "passed"
+    },
+    {
+      "name": "Create own persistent draft",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account task read",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account cancel",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account retry",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account archive",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account task read",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account cancel",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account retry",
+      "result": "passed"
+    },
+    {
+      "name": "Cross-account archive",
+      "result": "passed"
+    },
+    {
+      "name": "B task list excludes A",
+      "result": "passed"
+    },
+    {
+      "name": "Cancel own draft",
+      "result": "passed"
+    },
+    {
+      "name": "Actual upstream video generation",
+      "result": "blocked",
+      "reason": "Isolated acceptance accounts have no configured personal video model key; no production keys were copied"
+    },
+    {
+      "name": "Missing personal key is a real, explicit failure",
+      "result": "passed"
+    },
+    {
+      "name": "Generation failure preserves project input",
+      "result": "passed"
+    },
+    {
+      "name": "Session and saved input survive service restart",
+      "result": "passed"
+    },
+    {
+      "name": "Generation settings survive restart",
+      "result": "passed"
+    },
+    {
+      "name": "Cancellation survives restart",
+      "result": "passed"
+    },
+    {
+      "name": "Stale version cannot overwrite saved input",
+      "result": "passed"
+    }
+  ],
+  "passed": 30,
+  "browserAndViewportAcceptance": "blocked: browser runtime cannot write kernel assets",
+  "realGeneration": "blocked: personal provider key not configured"
+}

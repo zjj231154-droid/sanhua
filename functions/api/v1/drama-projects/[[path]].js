@@ -1,4 +1,5 @@
 import { ownsTask, mayReadTaskResult } from '../../../_lib/task-ownership.js'
+import { referenceIdsFrom, referenceBindingsFor, promptSegmentsFor } from '../../../_lib/reference-bindings.js'
 import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL } from '../../../_lib/tokenspace.js'
 import { hasPermission, requireIdentity, resolvedProviderConnection } from '../../../_lib/collaboration.js'
 import { createDramaProject, dramaProjectOwned, getDramaProject, listDramaProjects, projectAssets, updateDramaProject } from '../../../_lib/drama-project-store.js'
@@ -17,6 +18,7 @@ const unavailable = () => json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
 const stamp = () => new Date().toISOString()
 const generationLocks = new Set()
 const videoLocks = new Set()
+const archiveLocks = new Set()
 const clean = (value, limit = 20000) => String(value ?? '').trim().slice(0, limit)
 const choices = content => {
   const text = clean(content, 50000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
@@ -27,10 +29,12 @@ const choices = content => {
 const shotFrom = (value, index, old) => ({
   shotId: old?.shotId || crypto.randomUUID(), shotNumber: old?.shotNumber || index + 1,
   scene: clean(value.scene, 160), characters: Array.isArray(value.characters) ? value.characters.map(item => clean(item, 100)).slice(0, 8) : [],
-  prompt: clean(value.prompt, 4000), action: clean(value.action, 2000), camera: clean(value.camera, 1000),
+  prompt: String(value.prompt ?? '').slice(0, 12000), action: clean(value.action, 2000), camera: clean(value.camera, 1000),
   dialogue: clean(value.dialogue, 2000), sound: clean(value.sound, 1000), negative: clean(value.negative, 1000),
   durationSeconds: Math.max(4, Math.min(15, Number(value.durationSeconds) || 8)), status: old?.status || 'ready',
   videoTaskIds: old?.videoTaskIds || [], acceptedVideoTaskId: old?.acceptedVideoTaskId || null,
+  lastWorkRecordId: old?.lastWorkRecordId || null,
+  ...(Array.isArray(value.referencedAssetIds) ? { referencedAssetIds: referenceIdsFrom(value.referencedAssetIds), referenceBindings: referenceBindingsFor(referenceIdsFrom(value.referencedAssetIds), value.referenceBindings || []), promptSegments: promptSegmentsFor(String(value.prompt ?? '').slice(0, 12000), referenceBindingsFor(referenceIdsFrom(value.referencedAssetIds), value.referenceBindings || [])) } : {}),
   version: Number(old?.version || 0) + 1, updatedAt: stamp(),
 })
 const promptFor = shot => [shot.prompt, shot.action && `动作：${shot.action}`, shot.camera && `运镜：${shot.camera}`, shot.dialogue && `台词：${shot.dialogue}`, shot.sound && `声音：${shot.sound}`, shot.negative && `负向约束：${shot.negative}`].filter(Boolean).join('\n')
@@ -114,7 +118,7 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const [id, action, target, tail] = parts(context)
-  const input = await read(context.request)
+  let input = await read(context.request)
   if (!input) return json(400, { error: 'INVALID_JSON' })
   if (!id) {
     if (input.sceneAssetIds?.length || input.characterAssetIds?.length || input.propAssetIds?.length) {
@@ -219,6 +223,7 @@ export async function onRequestPost(context) {
       if (tail === 'retry') input.mode = 'single', input.shotIds = [task.shotId], input.regenerate = true
       else return json(404, { error: 'DRAMA_ROUTE_NOT_FOUND' })
     }
+    input = { ...input, aspectRatio: input.generationParams?.aspectRatio || input.aspectRatio, resolution: input.generationParams?.resolution || input.resolution, durationSeconds: input.generationParams?.durationSeconds || input.durationSeconds }
     const resolvedMode = input.mode || mode
     const selected = resolvedMode === 'all' ? project.shots : resolvedMode === 'failed' ? project.shots.filter(shot => shot.status === 'failed') : project.shots.filter(shot => (input.shotIds || []).includes(shot.shotId))
     if (!selected.length || selected.length > 20) return json(422, { error: 'SHOT_SELECTION_REQUIRED' })
@@ -230,9 +235,16 @@ export async function onRequestPost(context) {
       const existing = await Promise.all((shot.videoTaskIds || []).map(taskId => getTask(context, taskId)))
       const active = [...existing].reverse().find(task => task && (['queued', 'running'].includes(task.status) || (!input.regenerate && task.status === 'completed')))
       if (active) { created.push(active); continue }
-      const generationParams = { aspectRatio: input.aspectRatio || '9:16', resolution: input.resolution || '720p', durationSeconds: resolvedMode === 'single' ? input.durationSeconds || shot.durationSeconds : shot.durationSeconds }
-      const work = await createWorkRecord(context, { moduleKey: 'video', moduleName: '短剧视频', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: `${project.title} · 镜头 ${shot.shotNumber}`, route: 'video', currentStep: 3, sourceProjectId: id, sourceScriptId: project.scriptId, sourceShotId: shot.shotId, inputAssetIds: projectAssets(project), generationParams, clientSessionId: `drama-video-${id}-${shot.shotId}-${crypto.randomUUID()}`, initialData: { dramaProjectId: id, shotId: shot.shotId, prompt: promptFor(shot), generationParams } })
-      const body = { workRecordId: work.taskId, projectId: id, shotId: shot.shotId, storyboardId: project.storyboardId, scriptId: project.scriptId, scriptVersionId: project.scriptVersionId, assetRefs: { scene: project.sceneAssetIds, character: project.characterAssetIds, prop: project.propAssetIds }, videoPrompt: promptFor(shot), shotPlan: promptFor(shot), aspectRatio: input.aspectRatio || '9:16', resolution: input.resolution || '720p', durationSeconds: resolvedMode === 'single' ? input.durationSeconds || shot.durationSeconds : shot.durationSeconds, title: `${project.title} · 镜头 ${shot.shotNumber}` }
+      const override = resolvedMode === 'single' ? input : (input.shots || []).find(item => item.shotId === shot.shotId) || {}
+      const referencedAssetIds = referenceIdsFrom(override.referencedAssetIds ?? shot.referencedAssetIds ?? projectAssets(project))
+      const referenceBindings = override.referenceBindings || shot.referenceBindings || []
+      const prompt = clean(override.prompt || promptFor(shot), 12000)
+      const generationParams = { aspectRatio: input.aspectRatio || project.generationParams?.aspectRatio || '9:16', resolution: input.resolution || project.generationParams?.resolution || '720p', durationSeconds: resolvedMode === 'single' ? input.durationSeconds || shot.durationSeconds : shot.durationSeconds }
+      const previousWork = shot.lastWorkRecordId ? await getWorkRecord(context, shot.lastWorkRecordId) : null
+      const work = ownsTask(previousWork, identity) && ['failed', 'ready'].includes(previousWork.status) ? previousWork : await createWorkRecord(context, { moduleKey: 'video', moduleName: '短剧视频', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: `${project.title} · 镜头 ${shot.shotNumber}`, route: 'video', currentStep: 3, sourceProjectId: id, sourceScriptId: project.scriptId, sourceShotId: shot.shotId, inputAssetIds: referencedAssetIds, generationParams, clientSessionId: `drama-video-${id}-${shot.shotId}-${crypto.randomUUID()}`, initialData: { dramaProjectId: id, shotId: shot.shotId, prompt, referencedAssetIds, referenceBindings, generationParams } })
+      shot.lastWorkRecordId = work.taskId
+      await updateWorkRecord(context, work.taskId, { draftData: { dramaProjectId: id, shotId: shot.shotId, prompt, referencedAssetIds, referenceBindings, generationParams }, inputAssetIds: referencedAssetIds, generationParams, errorCode: '', errorMessage: '' })
+      const body = { workRecordId: work.taskId, projectId: id, shotId: shot.shotId, storyboardId: project.storyboardId, scriptId: project.scriptId, scriptVersionId: project.scriptVersionId, referencedAssetIds, referenceBindings, videoPrompt: prompt, shotPlan: prompt, ...generationParams, title: `${project.title} · 镜头 ${shot.shotNumber}` }
       const response = await postVideo({ ...context, request: new Request(context.request.url, { method: 'POST', headers: context.request.headers, body: JSON.stringify(body) }), params: { path: '' } })
       const data = await response.json()
       if (!response.ok) {
@@ -259,16 +271,22 @@ export async function onRequestPost(context) {
     if (!ownsTask(task, identity) || task.projectId !== id || !project.videoTaskIds.includes(target)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
     if (task.status !== 'completed' || !task.providerVideoUrl) return json(409, { error: 'VIDEO_RESULT_NOT_READY' })
     if (task.videoAssetId) return json(200, { project, assetId: task.videoAssetId, idempotent: true })
+    if (archiveLocks.has(id)) return json(409, { error: 'ARCHIVE_IN_PROGRESS' })
+    archiveLocks.add(id)
+    try {
     const shot = project.shots.find(item => item.shotId === task.shotId)
     if (!shot) return json(404, { error: 'SHOT_NOT_FOUND' })
-    const assetId = crypto.randomUUID(), now = stamp()
+    const assetId = task.archiveAssetId || crypto.randomUUID(), now = stamp()
+    await updateTask(context, task.id, { archiveAssetId: assetId, archiveStatus: 'pending' })
+    const existingAsset = await getJson(assetsBucket(context), assetMetadataKey(assetId))
+    if (existingAsset && existingAsset.videoTaskId !== task.id) return json(409, { error: 'ARCHIVE_ASSET_CONFLICT' })
     const wanted = normalizeAssetName(input.name || `${project.title}-第1集-镜头${String(shot.shotNumber).padStart(2, '0')}-视频-${now.replace(/[-:.TZ]/g, '')}`)
     const names = new Set((await listJson(assetsBucket(context), 'metadata/assets/', 1000)).filter(item => item.assetType === 'video' && item.workspaceId === identity.workspaceId).map(item => item.name))
     let base = wanted, index = 2
     while (names.has(base)) base = `${wanted}-v${index++}`
-    const asset = { id: assetId, visibility: 'private', ownerUserId: identity.user.id, workspaceId: identity.workspaceId, tenantId: identity.workspaceId, projectId: id, sourceProjectId: id, scriptId: project.scriptId, sourceScriptId: project.scriptId, storyboardId: project.storyboardId, sourceStoryboardId: project.storyboardId, shotId: shot.shotId, sourceShotId: shot.shotId, sourceAssetIds: projectAssets(project), videoTaskId: task.id, sourceTaskId: task.workRecordId, providerTaskId: task.providerTaskId, assetType: 'video', assetSpace: 'script', libraryKey: 'video', folderKey: 'result', name: base, displayName: base, downloadName: `${base}.mp4`, externalUrl: task.providerVideoUrl, mimeType: 'video/mp4', status: 'succeeded', createdBy: identity.user.id, createdAt: now, updatedAt: now, version: 1 }
+    const asset = existingAsset || { id: assetId, visibility: 'private', ownerUserId: identity.user.id, workspaceId: identity.workspaceId, tenantId: identity.workspaceId, projectId: id, sourceProjectId: id, scriptId: project.scriptId, sourceScriptId: project.scriptId, storyboardId: project.storyboardId, sourceStoryboardId: project.storyboardId, shotId: shot.shotId, sourceShotId: shot.shotId, sourceAssetIds: task.referencedAssetIds || task.sourceAssetIds || projectAssets(project), videoTaskId: task.id, sourceTaskId: task.workRecordId, providerTaskId: task.providerTaskId, assetType: 'video', assetSpace: 'script', libraryKey: 'video', folderKey: 'result', name: base, displayName: base, downloadName: `${base}.mp4`, externalUrl: task.providerVideoUrl, mimeType: 'video/mp4', status: 'succeeded', createdBy: identity.user.id, createdAt: now, updatedAt: now, version: 1 }
     await putJson(assetsBucket(context), assetMetadataKey(assetId), asset)
-    await updateTask(context, task.id, { videoAssetId: assetId, acceptedAt: now })
+
     if (task.workRecordId) {
       const record = await getWorkRecord(context, task.workRecordId)
       if (record) await updateWorkRecord(context, task.workRecordId, { resultAssetIds: [...(record.resultAssetIds || []), assetId], status: 'succeeded', progress: 100, operationSummary: '视频已接受并归档' })
@@ -279,7 +297,10 @@ export async function onRequestPost(context) {
       const record = await getWorkRecord(context, project.currentTaskId)
       if (record) await updateWorkRecord(context, project.currentTaskId, { resultAssetIds: [...(record.resultAssetIds || []), assetId], operationSummary: '短剧视频已接受并归档' })
     }
+    await updateTask(context, task.id, { videoAssetId: assetId, archiveStatus: 'archived', acceptedAt: now, error: '' })
     return json(200, { project, assetId })
+    } catch { await updateTask(context, task.id, { archiveStatus: 'archive_failed', error: '视频归档失败，生成文件仍保留，可重新归档。' }).catch(() => {}); return json(502, { error: 'VIDEO_ARCHIVE_FAILED', hint: '视频文件仍保留，请点击重新归档。' }) }
+    finally { archiveLocks.delete(id) }
   }
   if (action === 'archive') {
     project = await updateDramaProject(context, project, { status: 'archived', archivedAt: stamp() })
@@ -298,7 +319,8 @@ export async function onRequestPatch(context) {
   let patch
   if (!action) {
     patch = { title: input.title, brief: input.brief, sceneAssetIds: input.sceneAssetIds, characterAssetIds: input.characterAssetIds, propAssetIds: input.propAssetIds, selectedShotId: input.selectedShotId }
-    if (!(await sourceAssetsValid(context, identity, { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) }))) return json(422, { error: 'REFERENCE_ASSET_INVALID' })
+    if (input.generationParams) patch.generationParams = { aspectRatio: ['9:16', '16:9', '1:1'].includes(input.generationParams.aspectRatio) ? input.generationParams.aspectRatio : '9:16', resolution: ['480p', '720p', '1080p'].includes(input.generationParams.resolution) ? input.generationParams.resolution : '720p', durationSeconds: Math.max(4, Math.min(15, Number(input.generationParams.durationSeconds) || 8)) }
+    if (['sceneAssetIds', 'characterAssetIds', 'propAssetIds'].some(field => input[field] !== undefined) && !(await sourceAssetsValid(context, identity, { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) }))) return json(422, { error: 'REFERENCE_ASSET_INVALID' })
   }
   else if (action === 'script') {
     if (!current.scriptId) return json(409, { error: 'SCRIPT_REQUIRED' })
@@ -308,7 +330,8 @@ export async function onRequestPatch(context) {
   } else if (action === 'shots' && shotId) {
     const shot = current.shots.find(item => item.shotId === shotId)
     if (!shot) return json(404, { error: 'SHOT_NOT_FOUND' })
-    const nextShot = shotFrom({ ...shot, ...input }, shot.shotNumber - 1, shot)
+    let nextShot
+    try { nextShot = shotFrom({ ...shot, ...input }, shot.shotNumber - 1, shot) } catch (error) { return json(422, { error: 'INVALID_REFERENCE_BINDING', hint: error.message }) }
     const shots = current.shots.map(item => item.shotId === shotId ? nextShot : item)
     const storyboardVersionId = crypto.randomUUID()
     await putJson(assetsBucket(context), `metadata/drama-storyboards/${id}/${storyboardVersionId}.json`, { projectId: id, storyboardId: current.storyboardId, versionId: storyboardVersionId, shots, createdAt: stamp() })

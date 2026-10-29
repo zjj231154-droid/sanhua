@@ -40,7 +40,7 @@ export async function onRequestPost(context) {
     try {
       const archived = await archiveImageOutputs({ ...context, workRecordId: detail.record?.taskId }, task.pendingArchive)
       if (archived.error) return archived.error
-      await updateTask(context, task.id, { status: 'completed', progress: 100, pendingArchive: null, error: '', outputIds: archived.assets.map(asset => asset.id), stage: '结果已重新归档' })
+      await updateTask(context, task.id, { status: 'completed', progress: 100, archiveStatus: 'archived', pendingArchive: null, error: '', outputIds: archived.assets.map(asset => asset.id), stage: '结果已重新归档' })
       return json(200, { ...(await centerDetail(context, identity, id)), notice: '结果已重新归档' })
     } catch { return json(502, { error: 'RESULT_ARCHIVE_FAILED', hint: '结果仍保留，请重试归档。' }) }
     finally { archiveLocks.delete(id) }

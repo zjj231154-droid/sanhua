@@ -1,83 +1,25 @@
-import { ownsTask, taskScope, mayReadTaskResult } from '../../../_lib/task-ownership.js'
+import { preflightReferences } from '../../../_lib/reference-preflight.js'
+import { referenceIdsFrom, referenceBindingsFor, compileReferencePrompt } from '../../../_lib/reference-bindings.js'
+import { ownsTask, taskScope } from '../../../_lib/task-ownership.js'
 import { json, tokenSpaceRequest } from '../../../_lib/tokenspace.js'
 import { getScript } from '../../../_lib/script-store.js'
 import { getTask, saveTask, listTasks, updateTask } from '../../../_lib/task-store.js'
-import { assetMetadataKey, assetsBucket, getJson } from '../../../_lib/asset-store.js'
 import { createTextRecord } from '../../../_lib/text-record-store.js'
-import { hasPermission, requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
+import { requireIdentity, resolvedVideoProviderConnection } from '../../../_lib/collaboration.js'
 import { createWorkRecord, getWorkRecord, updateWorkRecord } from '../../../_lib/work-record-store.js'
 import { dramaProjectOwned, getDramaProject } from '../../../_lib/drama-project-store.js'
 
 const inputFrom = async request => { try { return await request.json() } catch { return null } }
-const MAX_REFERENCE_IMAGES = 9
-const MAX_REFERENCE_IMAGE_BYTES = 8 * 1024 * 1024
-const MAX_REFERENCE_TOTAL_BYTES = 30 * 1024 * 1024
 const assetRefsFrom = input => {
   const listed = value => Array.isArray(value) ? [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))].slice(0, 50) : []
+  if (Array.isArray(input?.referencedAssetIds)) return { scene: [], character: [], prop: [], other: listed(input.referencedAssetIds) }
   const refs = input?.assetRefs || {}
   return {
     scene: listed(refs.scene || input?.sceneAssetIds), character: listed(refs.character || input?.characterAssetIds),
     prop: listed(refs.prop || input?.propAssetIds), other: listed(refs.other || input?.otherAssetIds),
   }
 }
-const base64From = bytes => {
-  let binary = ''
-  const chunkSize = 0x8000
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
-  }
-  return btoa(binary)
-}
-const referenceIds = refs => [...refs.scene, ...refs.character, ...refs.prop, ...refs.other]
-const referenceImagesFor = async (context, identity, refs) => {
-  const ids = referenceIds(refs)
-  if (ids.length > MAX_REFERENCE_IMAGES) return { error: `Seedance 最多可引用 ${MAX_REFERENCE_IMAGES} 张图片，请减少当前选择。` }
-  const bucket = assetsBucket(context)
-  if (!bucket) return { error: '资产存储未配置，无法读取参考图片。' }
-  const images = []
-  let totalBytes = 0
-  for (const id of ids) {
-    const asset = await getJson(bucket, assetMetadataKey(id))
-    if (!asset || !mayReadTaskResult(asset, identity) || (!identity.compatibilityMode && asset.workspaceId !== identity.workspaceId && asset.tenantId !== identity.workspaceId)) return { error: `参考资产不存在或无权使用：${id}` }
-    if (asset.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return { error: `无权使用私有参考资产：${asset.name || id}` }
-    if (asset.assetType && asset.assetType !== 'image') return { error: `参考资产不是图片：${asset.name || id}` }
-    if (Array.isArray(asset.usableFor) && asset.usableFor.length && !asset.usableFor.includes('video')) return { error: `该资产不可用于视频生成：${asset.name || id}` }
-    const externalUrl = String(asset.externalUrl || '').trim()
-    if (/^https:\/\//i.test(externalUrl)) {
-      images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: externalUrl })
-      continue
-    }
-    // Legacy assets are served by this app from /cloud-assets.  They are
-    // valid visible assets, but a relative browser URL cannot be sent to the
-    // provider. Read only this known public path and attach its actual bytes.
-    if (/^\/cloud-assets\//i.test(externalUrl)) {
-      let response
-      try { response = await fetch(new URL(externalUrl, context.request.url), { signal: AbortSignal.timeout(30000) }) } catch { return { error: `读取参考图片失败：${asset.name || id}，请稍后重试。` } }
-      if (!response.ok) return { error: `无法读取参考图片：${asset.name || id}，请重新选择或重新上传后重试。` }
-      let bytes
-      try { bytes = new Uint8Array(await response.arrayBuffer()) } catch { return { error: `读取参考图片失败：${asset.name || id}，请重新上传后重试。` } }
-      if (!bytes.byteLength || bytes.byteLength > MAX_REFERENCE_IMAGE_BYTES) return { error: `参考图片 ${asset.name || id} 超过 8MB 或文件无效。` }
-      totalBytes += bytes.byteLength
-      if (totalBytes > MAX_REFERENCE_TOTAL_BYTES) return { error: '参考图片总大小超过 30MB，请减少图片数量或压缩后重试。' }
-      const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase()
-      const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(contentType) ? contentType : (asset.mimeType === 'image/webp' ? 'image/webp' : asset.mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png')
-      images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: `data:${mimeType};base64,${base64From(bytes)}` })
-      continue
-    }
-    if (!asset.storageKey) return { error: `参考资产缺少可读取的图片文件：${asset.name || id}，请重新上传后重试。` }
-    let object
-    try { object = await bucket.get(asset.storageKey) } catch { return { error: `读取参考图片失败：${asset.name || id}，请重新选择或重新上传后重试。` } }
-    if (!object) return { error: `无法读取参考图片：${asset.name || id}` }
-    let bytes
-    try { bytes = new Uint8Array(await (typeof object.arrayBuffer === 'function' ? object.arrayBuffer() : new Response(object.body).arrayBuffer())) } catch { return { error: `读取参考图片失败：${asset.name || id}，请重新上传后重试。` } }
-    if (!bytes.byteLength || bytes.byteLength > MAX_REFERENCE_IMAGE_BYTES) return { error: `参考图片 ${asset.name || id} 超过 8MB 或文件无效。` }
-    totalBytes += bytes.byteLength
-    if (totalBytes > MAX_REFERENCE_TOTAL_BYTES) return { error: '参考图片总大小超过 30MB，请减少图片数量或压缩后重试。' }
-    const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/png'
-    images.push({ id, name: String(asset.name || `参考图${images.length + 1}`).slice(0, 160), source: `data:${mimeType};base64,${base64From(bytes)}` })
-  }
-  return { images }
-}
+const referenceIds = refs => referenceIdsFrom([...refs.scene, ...refs.character, ...refs.prop, ...refs.other])
 const validate = async (context, input, identity) => {
   const missing = []
   const scriptId = String(input?.scriptId || '').trim()
@@ -99,13 +41,14 @@ const validate = async (context, input, identity) => {
   if (!Number.isFinite(durationSeconds) || durationSeconds < 4 || durationSeconds > 15) missing.push('4-15 秒的视频时长')
   const provider = await resolvedVideoProviderConnection(context, identity.user.id)
   const providerConfigured = Boolean(provider?.apiKey && provider?.model)
-  let references = { images: [] }
-  if (!missing.length) {
-    try { references = await referenceImagesFor(context, identity, assetRefs) }
-    catch { references = { images: [], error: '参考图片校验失败，请重新选择已上传的短剧图片后重试。' } }
-  }
-  if (references.error) missing.push(references.error)
-  return { missing, scriptId, scriptVersionId, sceneAssetIds, assetRefs, videoPrompt, shotPlan, durationSeconds, aspectRatio, resolution, provider, providerConfigured, referenceImages: references.images || [] }
+  let references = { images: [], ready: true, items: [], errors: [] }, bindings = [], compiledPrompt = videoPrompt || shotPlan
+  try {
+    bindings = referenceBindingsFor(referenceIds(assetRefs), input.referenceBindings || [])
+    compiledPrompt = compileReferencePrompt(compiledPrompt, referenceIds(assetRefs), bindings)
+    if (!missing.length) references = await preflightReferences(context, identity, referenceIds(assetRefs), { includeImages: true })
+  } catch (error) { missing.push(error.message || '素材引用绑定无效') }
+  if (!references.ready) missing.push(...references.errors.map(item => `${item.name || item.assetId || '参考图'}：${item.reason}`))
+  return { missing, scriptId, scriptVersionId, sceneAssetIds, assetRefs, videoPrompt, shotPlan, durationSeconds, aspectRatio, resolution, provider, providerConfigured, compiledPrompt, referenceBindings: bindings, referencePreflightStatus: references.ready ? 'available' : 'failed', referencePreflightErrors: references.errors, referenceImages: references.images || [] }
 }
 
 const route = context => (Array.isArray(context.params?.path) ? context.params.path.join('/') : String(context.params?.path || '')).replace(/^\//, '')
@@ -201,15 +144,15 @@ export async function onRequestPost(context) {
   try { checked = await validate(context, input, identity) }
   catch { return json(422, { error: 'VIDEO_TASK_INVALID', missing: ['视频校验暂时失败，请刷新页面后重新选择剧本和参考图片。'], hint: '视频校验暂时失败，请刷新页面后重新选择剧本和参考图片。' }) }
   if (route(context) === 'validate') return json(checked.missing.length ? 422 : 200, { ready: !checked.missing.length, missing: checked.missing, providerConfigured: checked.providerConfigured, normalizedAssetRefs: checked.assetRefs, notice: checked.providerConfigured ? `已检测到 ${checked.provider.model}，提交后将创建真实视频任务并按秒计费。` : '请先到管理设置验证并保存 TokenSpace 视频模型连接。' })
-  if (checked.missing.length) return json(422, { error: 'VIDEO_TASK_INVALID', missing: checked.missing })
+  if (checked.missing.length) return json(422, { error: 'VIDEO_TASK_INVALID', missing: checked.missing, referencePreflightStatus: checked.referencePreflightStatus, referencePreflightErrors: checked.referencePreflightErrors })
   if (!checked.providerConfigured) return json(409, { error: 'VIDEO_PROVIDER_NOT_CONFIGURED', hint: '请先到管理设置验证并保存 TokenSpace 视频模型连接。' })
   if (!workRecord) {
-    workRecord = await createWorkRecord(context, { moduleKey: 'video', moduleName: '视频生成', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: input.title || '视频生成', route: 'video', currentStep: 3, inputAssetIds: referenceIds(checked.assetRefs), generationParams: { aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds }, initialData: input })
+    workRecord = await createWorkRecord(context, { moduleKey: 'video', moduleName: '视频生成', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: input.title || '视频生成', route: 'video', currentStep: 3, inputAssetIds: referenceIds(checked.assetRefs), generationParams: { model: checked.provider?.model || '', aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds }, initialData: input })
     workRecordId = workRecord.taskId
   }
   context = { ...context, workRecordId }
   if (workRecord.status === 'cancelled') return json(409, { error: 'TASK_CANCELLED' })
-  await updateWorkRecord(context, workRecordId, { status: 'running', progress: null, inputAssetIds: referenceIds(checked.assetRefs), generationParams: { aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds }, operationSummary: '正在提交视频服务' })
+  await updateWorkRecord(context, workRecordId, { status: 'running', progress: null, inputAssetIds: referenceIds(checked.assetRefs), generationParams: { model: checked.provider?.model || '', aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds }, operationSummary: '正在提交视频服务' })
   const submitted = await tokenSpaceRequest(context, 'video/generations', {
     model: checked.provider.model,
     provider: 'tokenspace',
@@ -219,7 +162,7 @@ export async function onRequestPost(context) {
     // as a decorative UI-only attachment or an unauthorised remote URL.
     payload: {
       model: checked.provider.model,
-      prompt: `${checked.referenceImages.slice().sort((a, b) => b.name.length - a.name.length).reduce((text, item) => text.split(`@${item.name}`).join(`[Image${checked.referenceImages.findIndex(candidate => candidate.id === item.id) + 1}]`), checked.videoPrompt || checked.shotPlan)}\n\n已附加 ${checked.referenceImages.length} 张参考图：${checked.referenceImages.map((item, index) => `[Image${index + 1}] = @${item.name}`).join('；')}。请保持这些参考图中的角色、场景和道具一致性。`,
+      prompt: `${checked.referenceImages.slice().sort((a, b) => b.name.length - a.name.length).reduce((text, item) => text.split(`@${item.name}`).join(`[Image${checked.referenceImages.findIndex(candidate => candidate.id === item.id) + 1}]`), checked.compiledPrompt)}\n\n已附加 ${checked.referenceImages.length} 张参考图：${checked.referenceImages.map((item, index) => `[Image${index + 1}] = @${item.name}`).join('；')}。请保持这些参考图中的角色、场景和道具一致性。`,
       duration: checked.durationSeconds,
       ratio: checked.aspectRatio,
       size: checked.resolution,
@@ -238,10 +181,11 @@ export async function onRequestPost(context) {
   const task = await saveTask(context, {
     id: crypto.randomUUID(), workRecordId, workspace: 'video', workspaceId: identity.workspaceId, projectId: input.projectId || 'script', shotId: input.shotId || null, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'video-generation', status: providerVideoUrl ? 'completed' : 'running', progress: providerVideoUrl ? 100 : 15,
     stage: providerVideoUrl ? '视频已生成，等待查看' : '视频服务已受理，正在生成', heartbeatAt: createdAt,
-    requirements: checked.videoPrompt || checked.shotPlan, assets: referenceIds(checked.assetRefs), sourceAssetIds: referenceIds(checked.assetRefs), generationParams: { aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds },
+    requirements: checked.videoPrompt || checked.shotPlan, assets: referenceIds(checked.assetRefs), sourceAssetIds: referenceIds(checked.assetRefs), generationParams: { model: checked.provider?.model || '', aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds },
     scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId, durationSeconds: checked.durationSeconds,
     assetRefs: checked.assetRefs, characterAssetIds: checked.assetRefs.character, propAssetIds: checked.assetRefs.prop, otherAssetIds: checked.assetRefs.other,
-    videoPrompt: checked.videoPrompt, aspectRatio: checked.aspectRatio, resolution: checked.resolution, mode: 'provider', provider: checked.provider.name, model: checked.provider.model, providerTaskId, providerVideoUrl, referenceBindings: checked.referenceImages.map((item, index) => ({ assetId: item.id, alias: `Image${index + 1}`, name: item.name })), textRecordId: textRecord?.id || null, simulated: false, createdAt,
+    referencedAssetIds: referenceIds(checked.assetRefs), prompt: checked.videoPrompt || checked.shotPlan, referencePreflightStatus: checked.referencePreflightStatus, referencePreflightErrors: checked.referencePreflightErrors, archiveStatus: 'pending',
+    videoPrompt: checked.videoPrompt, aspectRatio: checked.aspectRatio, resolution: checked.resolution, mode: 'provider', provider: checked.provider.name, model: checked.provider.model, providerTaskId, providerVideoUrl, referenceBindings: checked.referenceImages.map((item, index) => ({ assetId: item.id, alias: `Image${index + 1}`, token: checked.referenceBindings.find(binding => binding.assetId === item.id)?.token, name: item.name })), textRecordId: textRecord?.id || null, simulated: false, createdAt,
   })
   if (workRecord) await updateWorkRecord(context, workRecordId, { status: providerVideoUrl ? 'succeeded' : 'queued', progress: providerVideoUrl ? 100 : 15, providerTaskId: providerTaskId || task.id, providerType: checked.provider.name, providerModel: checked.provider.model, resultTextRecordIds: textRecord?.id ? [...(workRecord.resultTextRecordIds || []), textRecord.id] : workRecord.resultTextRecordIds, operationSummary: providerVideoUrl ? '视频已生成，结果已同步' : '视频服务已受理，正在生成', errorCode: '', errorMessage: '' })
   return json(202, { workRecordId: workRecordId || null, task, textRecordId: textRecord?.id || null, notice: providerVideoUrl ? '视频已生成，结果已写入任务记录。' : `已提交至 ${checked.provider.model}，正在异步生成。` })

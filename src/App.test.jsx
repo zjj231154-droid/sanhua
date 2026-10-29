@@ -300,7 +300,7 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByText('将按右侧设置的时长、画幅和清晰度生成视频。')).toBeInTheDocument()
     expect(document.querySelector('.drama-prompt-details')).not.toBeInTheDocument()
     expect(within(document.querySelector('.drama-video-main')).queryByText('茶馆全景，掌柜上前解释。', { selector: 'p' })).not.toBeInTheDocument()
-    expect(screen.getByText(/尚未选择，将根据提示词生成视频/)).toBeInTheDocument()
+    expect(screen.getByText('本次将发送 0 张参考图')).toBeInTheDocument()
   })
 
   it('选中产品精修时会展开模块内的二级导航', () => {
@@ -445,7 +445,7 @@ describe('AI 创作工作台 Demo', () => {
     fireEvent.click(ring)
     expect(await screen.findByText('进行中的任务')).toBeInTheDocument()
     expect(screen.getByText('最近完成的任务')).toBeInTheDocument()
-    expect(screen.getByText('正在精修')).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: '正在精修' })).toBeInTheDocument()
     expect(screen.getByText('已完成的品牌图')).toBeInTheDocument()
   })
 

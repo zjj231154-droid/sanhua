@@ -99,4 +99,4 @@ if (volumeBucket) {
   catch (error) { authStatus = { status: 'failed', error: error.message }; console.error('[auth-bootstrap]', authStatus) }
 }
 console.info('[app-version]', { commit: appCommitSha, authStatus: authStatus.status || authStatus.error, backupPath: authStatus.backupPath || null })
-server.listen(port, '0.0.0.0', () => console.log(`Sanhua Railway service listening on ${port}`))
+server.listen(port, process.env.SANHUA_BIND_HOST || '0.0.0.0', () => console.log(`Sanhua Railway service listening on ${port}`))

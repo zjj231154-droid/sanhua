@@ -2255,3 +2255,38 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
   .drama-video-stage .drama-video-settings { max-height: none; }
   .drama-settings-scroll, .drama-shot-scroll { max-height: none; overflow: visible; }
 }
+/* v2.8: explicit reference bindings and per-file readiness. */
+.drama-reference-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.drama-reference-toolbar > span { color:#857469; font-size:12px; }
+.drama-reference-summary { margin-top:18px; border-top:1px solid #eee5df; padding-top:12px; }
+.drama-reference-summary h3 { font-size:14px; margin:0 0 10px; }
+.drama-reference-summary > p { line-height:1.6; }
+.drama-reference-card { display:grid; grid-template-columns:42px minmax(0,1fr); gap:9px; padding:10px 0; border-top:1px solid #f1eae5; }
+.drama-reference-preview { width:42px; height:48px; padding:0; border:0; background:#f4eee9; border-radius:8px; overflow:hidden; }
+.drama-reference-preview img { width:100%; height:100%; object-fit:cover; }
+.drama-reference-card strong,.drama-reference-card small { display:block; overflow-wrap:anywhere; font-size:12px; }
+.drama-reference-card small { color:#857469; margin-top:5px; line-height:1.5; }
+.drama-reference-card .drama-inline-actions { margin-top:6px; gap:8px; }
+.drama-reference-card .drama-inline-actions button { font-size:11px; }
+.drama-reference-picker { width:min(760px,100%); max-height:84dvh; overflow:auto; background:white; color:#44372f; border:1px solid #e3d6cd; border-radius:20px; padding:20px; box-shadow:0 22px 80px #20151244; }
+.drama-reference-picker header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.drama-reference-picker header h2 { font-size:18px; }
+.drama-reference-picker > input { width:100%; margin:10px 0 16px; padding:12px; border:1px solid #ded5cf; border-radius:10px; }
+.drama-reference-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; }
+.drama-reference-grid > button { border:1px solid #e5dcd6; border-radius:12px; padding:8px; background:#fffaf6; min-width:0; text-align:left; }
+.drama-reference-grid img { display:block; width:100%; height:100px; object-fit:cover; border-radius:8px; }
+.drama-reference-grid strong { display:block; margin-top:8px; overflow-wrap:anywhere; font-size:12px; }
+.drama-reference-picker > p { color:#81766f; font-size:12px; line-height:1.6; }
+.task-hub-dock { width:210px; display:flex; flex-direction:row-reverse; align-items:center; gap:10px; }
+.task-hub-dock .task-hub-ring { flex-shrink:0; }
+.task-hub-current-title { min-width:0; color:#857469; font-size:10px; text-align:right; }
+.task-hub-current-title strong { display:block; max-width:146px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#67483a; font-size:12px; margin-top:4px; }
+.app-shell .topbar { padding-right:252px; }
+@media(max-width:1100px) { .task-hub-dock { width:52px; }.task-hub-current-title { display:none; }.app-shell .topbar { padding-right:94px; } }
+@media(max-width:720px) { .task-hub-dock { width:44px; }.app-shell .topbar { padding-right:74px; } }
+/* Keep the settings footer in the actually available viewport height. */
+.drama-video-stage .drama-video-settings { max-height:var(--stage-visible-height,calc(100dvh - 220px)); }
+.drama-video-stage .drama-settings-scroll { min-height:80px; overflow:auto; flex:1; }
+.drama-video-stage .drama-video-submit { position:sticky; bottom:0; background:#fff; }
+@container(max-width:760px) { .drama-video-stage .drama-video-layout[data-active-panel="settings"] [data-video-panel="settings"] { display:flex; } }
+@media(max-width:1100px) { .drama-video-stage .drama-video-layout[data-active-panel="settings"] [data-video-panel="settings"] { display:flex; } }

@@ -61,7 +61,7 @@ describe('video task validation', () => {
     }) })
     const value = await response.json()
     expect(response.status).toBe(422)
-    expect(value.missing).toEqual(expect.arrayContaining(['读取参考图片失败：损坏场景，请重新选择或重新上传后重试。']))
+    expect(value.missing).toEqual(expect.arrayContaining([expect.stringContaining('损坏场景：读取图片失败')]))
   })
 
   it('accepts a visible legacy cloud asset as a real video reference image', async () => {
@@ -77,6 +77,41 @@ describe('video task validation', () => {
     expect(String(imageFetch.mock.calls[0][0])).toBe('https://example.test/cloud-assets/retouch/teahouse-scene/teahouse-07.jpg')
   })
 
+  it('backend_revalidates_reference_at_submit after successful preflight, preserving named failures', async () => {
+    const bucket = new MemoryBucket(), context = { env: { SANHUA_ASSETS: bucket }, params: { path: 'validate' } }
+    const script = await createScript(context, { title: '引用校验', outline: '茶馆里掌柜轻轻拿起桌上的茶杯。' })
+    const project = await createDramaProject(context, { workspaceId: 'default', user: { id: 'test-user' } })
+    await updateDramaProject(context, project, { scriptId: script.id, stage: 'video' })
+    await putJson(bucket, assetMetadataKey('scene-recheck'), { id: 'scene-recheck', name: '茶馆参考图', assetType: 'image', mimeType: 'image/png', storageKey: 'uploads/recheck.png' })
+    await bucket.put('uploads/recheck.png', new Uint8Array([1, 2, 3]))
+    const body = { projectId: project.projectId, scriptId: script.id, scriptVersionId: script.currentVersionId, referencedAssetIds: ['scene-recheck'], referenceBindings: [{ assetId: 'scene-recheck', token: '@图片8' }], videoPrompt: '@图片8中茶杯旁的纸条缓慢飘动，镜头保持稳定。', durationSeconds: 4 }
+    expect((await onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks/validate', body) })).status).toBe(200)
+    bucket.values.delete('uploads/recheck.png')
+    const upstream = vi.fn(); vi.stubGlobal('fetch', upstream)
+    const rejected = await onRequestPost({ ...context, params: { path: '' }, request: request('https://example.test/api/v1/video-tasks', body) })
+    expect(rejected.status).toBe(422)
+    expect((await rejected.json()).referencePreflightErrors[0]).toMatchObject({ name: '茶馆参考图', readable: false })
+    expect(upstream).not.toHaveBeenCalled()
+  })
+
+  it('submits bound reference tokens as actual image bytes with the same asset mapping', async () => {
+    const bucket = new MemoryBucket(), context = { env: { SANHUA_ASSETS: bucket }, params: { path: '' } }
+    const script = await createScript(context, { title: '图文引用', outline: '茶馆中掌柜拿起桌上的茶杯，镜头缓慢推进。' })
+    const project = await createDramaProject(context, { workspaceId: 'default', user: { id: 'test-user' } })
+    await updateDramaProject(context, project, { scriptId: script.id, stage: 'video' })
+    await saveVideoProviderConnection(context, 'test-user', { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', apiKey: 'fixture-video-key', model: 'doubao-seedance-2.0' })
+    await putJson(bucket, assetMetadataKey('bound-image'), { id: 'bound-image', name: '茶杯图', assetType: 'image', mimeType: 'image/png', storageKey: 'uploads/bound.png' })
+    await bucket.put('uploads/bound.png', new Uint8Array([1, 2, 3]))
+    const upstream = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'bound-job' }), { status: 200 })); vi.stubGlobal('fetch', upstream)
+    const body = { projectId: project.projectId, scriptId: script.id, scriptVersionId: script.currentVersionId, referencedAssetIds: ['bound-image'], referenceBindings: [{ assetId: 'bound-image', token: '@图片8' }], videoPrompt: '使用@图片8的茶杯，镜头轻轻向前推进，保留主体。', durationSeconds: 4 }
+    const response = await onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks', body) })
+    expect(response.status).toBe(202)
+    const task = (await response.json()).task, payload = JSON.parse(upstream.mock.calls[0][1].body)
+    expect(payload.prompt).toContain('使用[Image1]的茶杯')
+    expect(payload.metadata.content[0].image_url.url).toBe('data:image/png;base64,AQID')
+    expect(task).toMatchObject({ referencedAssetIds: ['bound-image'], referencePreflightStatus: 'available', generationParams: { model: 'doubao-seedance-2.0' }, referenceBindings: [{ assetId: 'bound-image', alias: 'Image1', token: '@图片8' }] })
+  })
+
   it('submits a Seedance video task through the encrypted personal video connection', async () => {
     const context = { env: { SANHUA_ASSETS: new MemoryBucket() }, params: { path: undefined } }
     const script = await createScript(context, { title: '茶馆视频', kind: '轻喜剧', summary: '摘要', outline: '镜头一：茶馆内景，掌柜招待顾客。' })
@@ -85,9 +120,8 @@ describe('video task validation', () => {
     await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('actor-1'), { id: 'actor-1', name: '掌柜角色', assetType: 'image', usableFor: ['script', 'video'], storageKey: 'uploads/actor-1.png', mimeType: 'image/png' })
     await context.env.SANHUA_ASSETS.put('uploads/actor-1.png', new Uint8Array([1, 2, 3]))
     await putJson(context.env.SANHUA_ASSETS, assetMetadataKey('teapot-1'), { id: 'teapot-1', name: '紫砂茶壶', assetType: 'image', usableFor: ['script', 'video'], externalUrl: 'https://cdn.example.test/teapot-1.png' })
-    const upstream = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'seedance-job-1' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded', progress: 100, url: 'https://cdn.example.test/videos/seedance-job-1.mp4' }), { status: 200 }))
+    const responses = [new Response(JSON.stringify({ id: 'seedance-job-1' }), { status: 200 }), new Response(JSON.stringify({ status: 'succeeded', progress: 100, url: 'https://cdn.example.test/videos/seedance-job-1.mp4' }), { status: 200 })]
+    const upstream = vi.fn(async url => String(url).endsWith('.png') ? new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/png' } }) : responses.shift())
     vi.stubGlobal('fetch', upstream)
     const body = { scriptId: script.id, scriptVersionId: script.currentVersionId, assetRefs: { scene: ['tea-house-1'], character: ['actor-1'], prop: ['teapot-1'], other: [] }, videoPrompt: '镜头从茶馆门口推进到掌柜与顾客的对峙。', shotPlan: script.outline, aspectRatio: '9:16', durationSeconds: 8, resolution: '720p' }
     const response = await onRequestPost({ ...context, request: request('https://example.test/api/v1/video-tasks', body) })
@@ -101,12 +135,12 @@ describe('video task validation', () => {
     expect(value.task.aspectRatio).toBe('9:16')
     expect(value.textRecordId).toBeTruthy()
     expect(upstream).toHaveBeenCalledWith('https://tokenspace.io/v1/video/generations', expect.objectContaining({ method: 'POST' }))
-    const upstreamBody = JSON.parse(upstream.mock.calls[0][1].body)
+    const upstreamBody = JSON.parse(upstream.mock.calls.find(([, options]) => options?.method === 'POST')[1].body)
     expect(upstreamBody).toMatchObject({ model: 'doubao-seedance-2.0', duration: 8, ratio: '9:16', size: '720p' })
     expect(upstreamBody.metadata.content).toEqual([
-      { type: 'image_url', role: 'reference_image', image_url: { url: 'https://cdn.example.test/tea-house-1.png' } },
       { type: 'image_url', role: 'reference_image', image_url: { url: 'data:image/png;base64,AQID' } },
-      { type: 'image_url', role: 'reference_image', image_url: { url: 'https://cdn.example.test/teapot-1.png' } },
+      { type: 'image_url', role: 'reference_image', image_url: { url: 'data:image/png;base64,AQID' } },
+      { type: 'image_url', role: 'reference_image', image_url: { url: 'data:image/png;base64,AQID' } },
     ])
     expect(upstreamBody.prompt).toContain('[Image1] = @茶馆场景')
     expect(upstreamBody).not.toHaveProperty('resolution')

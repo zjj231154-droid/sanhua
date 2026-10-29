@@ -39,7 +39,7 @@ export async function createDramaProject(context, identity, input = {}) {
     sceneAssetIds: ids(input.sceneAssetIds), characterAssetIds: ids(input.characterAssetIds), propAssetIds: ids(input.propAssetIds),
     scriptId: null, scriptVersionId: null, storyboardId: null, storyboardVersionId: null,
     script: null, shots: [], videoTaskIds: [], textRecordIds: [], currentTaskId: record?.taskId || null,
-    version: 1, createdAt, updatedAt: createdAt,
+    generationParams: {}, selectedShotId: '', version: 1, createdAt, updatedAt: createdAt,
   }
   await putJson(bucket, key(id), project)
   return project
@@ -49,7 +49,7 @@ export async function updateDramaProject(context, current, patch = {}) {
   const bucket = assetsBucket(context)
   if (!bucket || !current) return null
   if (patch.expectedVersion !== undefined && Number(patch.expectedVersion) !== Number(current.version)) return { conflict: current }
-  const allowed = ['stage', 'status', 'scriptId', 'scriptVersionId', 'storyboardId', 'storyboardVersionId', 'script', 'shots', 'videoTaskIds', 'textRecordIds', 'archivedAt']
+  const allowed = ['stage', 'status', 'scriptId', 'scriptVersionId', 'storyboardId', 'storyboardVersionId', 'script', 'shots', 'videoTaskIds', 'textRecordIds', 'archivedAt', 'generationParams', 'selectedShotId']
   const next = { ...current }
   if (patch.title !== undefined) next.title = clean(patch.title, 120) || current.title
   if (patch.brief !== undefined) next.brief = clean(patch.brief)
@@ -61,7 +61,7 @@ export async function updateDramaProject(context, current, patch = {}) {
   if (current.currentTaskId) await updateWorkRecord(context, current.currentTaskId, {
     title: next.title, currentStep: next.stage === 'requirements' ? 1 : next.stage === 'script_storyboard' ? 2 : 3,
     status: next.stage === 'completed' ? 'succeeded' : next.status === 'generating' ? 'running' : next.status === 'failed' ? 'failed' : next.status === 'needs_review' ? 'ready' : 'draft',
-    draftData: { dramaProjectId: next.projectId, stage: next.stage, selectedShotId: patch.selectedShotId || '', title: next.title },
+    draftData: { dramaProjectId: next.projectId, stage: next.stage, selectedShotId: next.selectedShotId || '', title: next.title, generationParams: next.generationParams }, generationParams: next.generationParams,
     inputAssetIds: projectAssets(next), resultTextRecordIds: next.textRecordIds,
     operationSummary: `短剧项目 · ${next.stage}`,
   })

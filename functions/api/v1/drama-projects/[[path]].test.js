@@ -31,6 +31,30 @@ const mockReasoning = () => vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new
 describe('v2.5 drama projects', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('video archive failure preserves its result and retry reuses the same asset ID', async () => {
+    const storage = env()
+    const project = (await (await post(storage, '', { title: '归档恢复测试', brief: '一杯茶在窗边的微短剧，镜头缓慢推进。' })).json()).project
+    mockReasoning()
+    const generated = (await (await post(storage, `${project.projectId}/generate-script-storyboard`, {})).json()).project
+    await post(storage, `${project.projectId}/confirm-script-storyboard`, {})
+    await saveVideoProviderConnection({ env: storage }, 'test-user', { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', apiKey: 'fixture-video-key', model: 'doubao-seedance-2.0' })
+    const upstream = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'archive-result', url: 'https://cdn.example.test/video.mp4' }), { status: 200 }))
+    vi.stubGlobal('fetch', upstream)
+    const submitted = await (await post(storage, `${project.projectId}/video-tasks`, { mode: 'single', shotIds: [generated.shots[0].shotId], durationSeconds: 4 })).json()
+    const task = submitted.tasks[0], originalPut = storage.SANHUA_ASSETS.put.bind(storage.SANHUA_ASSETS)
+    let failed = false
+    storage.SANHUA_ASSETS.put = async (key, value) => { if (!failed && key.startsWith('metadata/drama-projects/')) { failed = true; throw new Error('injected archive outage') }; return originalPut(key, value) }
+    const rejected = await post(storage, `${project.projectId}/video-assets/${task.id}/accept`, {})
+    expect(rejected.status).toBe(502)
+    const pending = await storage.SANHUA_ASSETS.get(`metadata/tasks/${task.id}.json`).then(item => item.json())
+    expect(pending).toMatchObject({ archiveStatus: 'archive_failed', providerVideoUrl: 'https://cdn.example.test/video.mp4' })
+    const accepted = await post(storage, `${project.projectId}/video-assets/${task.id}/accept`, {})
+    expect(accepted.status).toBe(200)
+    expect((await accepted.json()).assetId).toBe(pending.archiveAssetId)
+    expect((await storage.SANHUA_ASSETS.list({ prefix: 'metadata/assets/' })).objects).toHaveLength(1)
+    expect(upstream).toHaveBeenCalledTimes(1)
+  })
+
   it('creates a draft project and generates a script and storyboard together without mandatory assets', async () => {
     const storage = env()
     const created = (await (await post(storage, '', { title: '茶馆误会' })).json()).project

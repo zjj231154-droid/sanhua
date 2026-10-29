@@ -1,8 +1,9 @@
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DramaVideoStage from './DramaVideoStage'
 
 const shot = { shotId: 'shot-1', shotNumber: 1, prompt: '茶馆窗边的茶杯，缓慢推镜', durationSeconds: 8, status: 'ready', videoTaskIds: [] }
+afterEach(() => vi.unstubAllGlobals())
 const propsFor = patch => ({ project: { shots: [shot], sceneAssetIds: [], characterAssetIds: [], propAssetIds: [] }, selectedShot: shot, selectedShotId: shot.shotId, selectedShotIds: [], setSelectedShotIds: vi.fn(), selectShot: vi.fn(), shotDraft: shot, setShotDraft: vi.fn(), saveShot: vi.fn().mockResolvedValue(undefined), saveState: '已自动保存', busy: '', submitVideos: vi.fn(), videoTasks: [], shotTasks: [], selectedTask: null, setSelectedVideoTaskId: vi.fn(), setPlaying: vi.fn(), acceptVideo: vi.fn(), discardVideo: vi.fn(), videoModel: 'Seedance', aspectRatio: '9:16', setAspectRatio: vi.fn(), resolution: '720p', setResolution: vi.fn(), duration: 8, setDuration: vi.fn(), loadAssets: vi.fn(), onNavigate: vi.fn(), ...patch })
 
 it('short drama batch actions are separate from settings with a reason for disabled selection', () => {
@@ -57,4 +58,18 @@ it('completed video opens a player on demand and offers download, archive and li
   expect(screen.getByRole('link', { name: '下载' })).toHaveAttribute('href', '/api/v1/video-tasks/result-video/download')
   fireEvent.click(screen.getByRole('button', { name: '进入视频库' }))
   expect(props.onNavigate).toHaveBeenCalledWith('assets', 'video-library')
+})
+
+it('unreadable_reference_blocks_submission_and_names_asset, then a successful recheck enables generation', async () => {
+  let readable = false
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: readable, json: async () => ({ ready: readable, items: [{ assetId: 'broken', name: '失效茶馆图', readable, reason: readable ? undefined : '图片文件不存在' }], errors: [] }) })))
+  const props = propsFor({ shotDraft: { ...shot, referencedAssetIds: ['broken'] }, assets: [{ id: 'broken', name: '失效茶馆图' }] })
+  render(<DramaVideoStage {...props} />)
+  await screen.findByText(/图片文件不存在/)
+  expect(screen.getByRole('button', { name: '生成当前镜头视频' })).toBeDisabled()
+  expect(screen.getByRole('textbox', { name: '当前镜头视频提示词' })).toHaveValue(shot.prompt)
+  readable = true
+  fireEvent.click(screen.getByRole('button', { name: '重新检查素材' }))
+  expect(await screen.findByText('本次将发送 1 张参考图')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '生成当前镜头视频' })).toBeEnabled()
 })

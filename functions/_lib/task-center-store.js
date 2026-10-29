@@ -14,13 +14,14 @@ export function unifiedItem(record, tasks = []) {
   const item = record || latest
   if (!item) return null
   const moduleKey = record?.moduleKey || latest.workspace, cancelled = record?.status === 'cancelled'
-  const status = cancelled ? 'cancelled' : taskStatus(latest?.status || record.status)
-  const source = latest?.progressSource || record?.progressSource || 'unknown'
-  const value = activeStatuses.has(status) && source !== 'provider' ? null : progress(latest?.progress ?? record?.progress)
+  const state = record && (!latest || String(record.updatedAt || '') >= String(latest.updatedAt || '')) ? record : latest
+  const status = cancelled ? 'cancelled' : taskStatus(state.status)
+  const source = state.progressSource || 'unknown'
+  const value = activeStatuses.has(status) && source !== 'provider' ? null : progress(state.progress)
   const { pendingArchive, ...safeItem } = item
   return { ...safeItem, archiveRetryAvailable: Boolean(latest?.pendingArchive || pendingArchive), visibility: 'private', ownerUserId: item.ownerUserId || item.createdBy, id: record?.taskId || latest.id, taskId: record?.taskId || latest.id, workRecordId: record?.taskId || latest.workRecordId || '', moduleKey, moduleName: record?.moduleName || names[moduleKey] || '创作任务', status,
     progress: value, progressSource: value == null ? 'unknown' : source, progressUpdatedAt: latest?.updatedAt || record?.progressUpdatedAt || item.updatedAt,
-    stage: latest?.stage || record?.operationSummary || `第 ${record?.currentStep || 1} 步`, errorMessage: record?.errorMessage || latest?.error || '', error: record?.errorMessage || latest?.error || '',
+    archiveStatus: latest?.archiveStatus || record?.archiveStatus || 'pending', stage: state.stage || state.operationSummary || `第 ${record?.currentStep || 1} 步`, errorMessage: state.errorMessage || state.error || '', error: state.errorMessage || state.error || '',
     legacyTaskId: latest?.id || '', providerTaskId: latest?.providerTaskId || record?.providerTaskId || latest?.id || '', providerVideoUrl: latest?.providerVideoUrl || null, providerCancelSupported: record?.providerCancelSupported || false, taskSource: record ? 'work_record' : 'legacy_task',
     resultAssetIds: [...new Set([...(record?.resultAssetIds || []), ...tasks.flatMap(task => [...(task.outputIds || []), ...(task.videoAssetId ? [task.videoAssetId] : [])])])], resultTextRecordIds: [...new Set([...(record?.resultTextRecordIds || []), ...tasks.map(task => task.textRecordId).filter(Boolean)])],
     draftData: record?.draftData || { ...latest, requirements: latest?.requirements || '', selectedAssetIds: latest?.assets || [] },

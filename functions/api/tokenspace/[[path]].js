@@ -73,11 +73,11 @@ export async function onRequestPost(context) {
     if (['image', 'edit'].includes(type)) {
       const outputs = (result.data?.data || []).map(output => ({ ...output, archiveAssetId: crypto.randomUUID() }))
       const pendingArchive = { taskId: task.workRecordId || task.id, workspace, outputs, prompt, model, sourceAssetIds: input.sourceAssetIds || [] }
-      await updateTask(scoped, task.id, { pendingArchive })
+      await updateTask(scoped, task.id, { pendingArchive, archiveStatus: 'pending' })
       let archived
       try { archived = await archiveImageOutputs(scoped, pendingArchive) } catch { archived = {} }
-      if (!archived.assets?.length) { await updateTask(scoped, task.id, { status: 'failed', error: '结果归档失败，生成结果已保留，可重新归档。', stage: '结果归档失败' }); return result }
-      await updateTask(scoped, task.id, { pendingArchive: null, status: 'completed', progress: 100, stage: '图片已生成', outputIds: archived.assets.map(asset => asset.id) })
+      if (!archived.assets?.length) { await updateTask(scoped, task.id, { archiveStatus: 'archive_failed', status: 'failed', error: '结果归档失败，生成结果已保留，可重新归档。', stage: '结果归档失败' }); return result }
+      await updateTask(scoped, task.id, { archiveStatus: 'archived', pendingArchive: null, status: 'completed', progress: 100, stage: '图片已生成', outputIds: archived.assets.map(asset => asset.id) })
     } else if (type === 'video') {
       const providerTaskId = result.data?.id || result.data?.data?.id, providerVideoUrl = result.data?.url || result.data?.data?.url
       await updateTask(scoped, task.id, { status: providerVideoUrl ? 'completed' : providerTaskId ? 'running' : 'failed', progress: providerVideoUrl ? 100 : null, stage: providerVideoUrl ? '视频已生成' : '等待视频结果', providerTaskId, providerVideoUrl })

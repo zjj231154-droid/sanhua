@@ -1,4 +1,5 @@
 import { mayReadTaskResult } from '../../../_lib/task-ownership.js'
+import { preflightReferences } from '../../../_lib/reference-preflight.js'
 import { json } from '../../../_lib/tokenspace.js'
 import { addAssetLocation, assetAvailableInWorkspace, assetMetadataKey, assetUrl, assetsBucket, downloadFileName, getJson, normalizeAssetName, putJson, uniqueNameForLocation } from '../../../_lib/asset-store.js'
 import { folderFor } from '../../../_lib/library-config.js'
@@ -47,6 +48,12 @@ export async function onRequestPost(context) {
   if (identity.error) return identity.error
   const bucket = assetsBucket(context)
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
+  if (id === 'reference-preflight' && !action) {
+    let input; try { input = await context.request.json() } catch { return json(400, { error: 'INVALID_JSON' }) }
+    if (!Array.isArray(input.referencedAssetIds)) return json(400, { error: 'REFERENCED_ASSET_IDS_REQUIRED' })
+    const result = await preflightReferences(context, identity, input.referencedAssetIds)
+    return json(result.ready ? 200 : 422, result)
+  }
   if (id === 'upload' && !action) {
     let form
     try { form = await context.request.formData() } catch { return json(400, { error: 'INVALID_UPLOAD_FORM' }) }

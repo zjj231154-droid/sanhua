@@ -13,7 +13,7 @@ const request = async (url, options = {}) => {
   const response = await fetch(url, options)
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const failure = new Error(data.hint || data.missing?.join('、') || data.error || '请求失败')
+    const failure = new Error(data.hint || data.missing?.join('、') || data.errors?.map(item => `${item.name || item.assetId || '参考图'}：${item.reason || item.error || '读取失败'}`).join('；') || data.error || '请求失败')
     failure.project = data.project
     throw failure
   }
@@ -28,6 +28,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   const projectRef = useRef(null)
   const restoreParams = useRef(null)
   const saveQueue = useRef(Promise.resolve())
+  const submitting = useRef(false)
   const [stageView, setStageView] = useState('requirements')
   const [title, setTitle] = useState('')
   const [brief, setBrief] = useState('')
@@ -79,9 +80,9 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   const openProject = async (id, snapshot = null) => {
     setSaveState('正在恢复上次工作')
     const data = await request(`/api/v1/drama-projects/${encodeURIComponent(id)}`)
-    const params = snapshot?.generationParams || snapshot?.draftData?.generationParams
+    const params = snapshot?.generationParams || snapshot?.draftData?.generationParams || data.project.generationParams
     restoreParams.current = params || null
-    const shotId = snapshot?.sourceShotId || snapshot?.draftData?.shotId || snapshot?.draftData?.selectedShotId
+    const shotId = snapshot?.sourceShotId || snapshot?.draftData?.shotId || snapshot?.draftData?.selectedShotId || data.project.selectedShotId
     showProject(data.project, shotId)
     if (params?.aspectRatio) setAspectRatio(params.aspectRatio)
     if (params?.resolution) setResolution(params.resolution)
@@ -174,7 +175,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   useEffect(() => {
     if (!project?.projectId || !selectedShotId || !shotDraft || view !== 'project') return
     const current = project.shots?.find(item => item.shotId === selectedShotId)
-    if (!current || ['prompt', 'action', 'camera', 'dialogue', 'sound', 'negative', 'durationSeconds'].every(field => current[field] === shotDraft[field])) return
+    if (!current || ['prompt', 'action', 'camera', 'dialogue', 'sound', 'negative', 'durationSeconds', 'referencedAssetIds', 'referenceBindings'].every(field => JSON.stringify(current[field]) === JSON.stringify(shotDraft[field]))) return
     setSaveState('正在保存…')
     const timer = window.setTimeout(() => void saveShot().catch(reason => setError(reason.message)), 900)
     return () => window.clearTimeout(timer)
@@ -182,6 +183,14 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   useEffect(() => {
     request('/api/v1/me/video-provider-connection').then(data => setVideoModel(data.connection?.model || '尚未配置')).catch(() => setVideoModel('连接状态不可用'))
   }, [])
+  useEffect(() => {
+    if (!project?.projectId || stageView !== 'video' || !selectedShotId) return
+    const generationParams = { aspectRatio, resolution, durationSeconds: duration }
+    if (JSON.stringify(project.generationParams || {}) === JSON.stringify(generationParams) && project.selectedShotId === selectedShotId) return
+    setSaveState('待同步…')
+    const timer = setTimeout(() => { void save({ generationParams, selectedShotId }).catch(reason => setError(reason.message)) }, 700)
+    return () => clearTimeout(timer)
+  }, [project?.projectId, project?.generationParams, project?.selectedShotId, selectedShotId, aspectRatio, resolution, duration, stageView])
   useEffect(() => {
     if (!project?.scriptId || view !== 'project' || stageView !== 'script_storyboard') return
     request(`/api/v1/drama-projects/${project.projectId}/versions`).then(data => setVersions(data.versions || [])).catch(() => {})
@@ -210,6 +219,10 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
     const current = projectRef.current
     if (!current || (current.title === title && current.brief === brief)) return current
     try { return await save({ title, brief }) } catch (reason) { setError(reason.message); return null }
+  }
+  const retrySave = async () => {
+    try { await save({ title, brief, ...(stageView === 'video' ? { generationParams: { aspectRatio, resolution, durationSeconds: duration }, selectedShotId } : {}) }); await saveScript(); await saveShot(); setSaveState('已自动保存'); return true }
+    catch (reason) { setSaveState('保存失败，请重试'); setError(reason.message); return false }
   }
   const createProject = async () => {
     if (project && (title !== project.title || brief !== project.brief)) await saveFields()
@@ -257,8 +270,8 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   const saveShot = async () => {
     const current = projectRef.current?.shots?.find(item => item.shotId === selectedShotId)
     if (!current || !shotDraft) return
-    const fields = ['prompt', 'action', 'camera', 'dialogue', 'sound', 'negative', 'durationSeconds']
-    if (fields.every(field => current[field] === shotDraft[field])) return
+    const fields = ['prompt', 'action', 'camera', 'dialogue', 'sound', 'negative', 'durationSeconds', 'referencedAssetIds', 'referenceBindings']
+    if (fields.every(field => JSON.stringify(current[field]) === JSON.stringify(shotDraft[field]))) return
     setSaveState('正在保存…')
     try {
       const data = await request(`/api/v1/drama-projects/${projectRef.current.projectId}/shots/${selectedShotId}`, jsonOptions('PATCH', Object.fromEntries(fields.map(field => [field, shotDraft[field]]))))
@@ -314,14 +327,26 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
     } catch (reason) { setError(reason.message) } finally { setBusy('') }
   }
   const submitVideos = async (mode, shotIds = [], regenerate = false) => {
+    if (submitting.current) return
+    submitting.current = true
     setBusy('video'); setError('')
     try {
       await saveShot()
+      const shots = projectRef.current.shots.filter(shot => mode === 'all' || mode === 'failed' ? mode === 'all' || shot.status === 'failed' : shotIds.includes(shot.shotId))
+      for (const shot of shots) {
+        const result = await request('/api/v1/assets/reference-preflight', jsonOptions('POST', { referencedAssetIds: shot.referencedAssetIds ?? allAssetIds(projectRef.current) }))
+        if (!result.ready) throw new Error(`镜头 ${shot.shotNumber} 参考素材检查失败`)
+      }
       const data = await mutate('video-tasks', { mode, shotIds, aspectRatio, resolution, durationSeconds: duration, regenerate })
       setVideoTasks(current => [...data.tasks, ...current.filter(item => !data.tasks.some(next => next.id === item.id))])
       if (data.errors?.length) setError(data.errors.map(item => `镜头 ${projectRef.current.shots.find(shot => shot.shotId === item.shotId)?.shotNumber || ''}：${item.missing?.join('、') || item.error}`).join('；'))
       setNotice(`已提交 ${data.tasks.length} 个镜头，进度会在此处和任务中心更新。`)
-    } catch (reason) { setError(reason.message) } finally { setBusy('') }
+    } catch (reason) { setError(reason.message) } finally { submitting.current = false; setBusy('') }
+  }
+  const loadReferenceAssets = async () => {
+    const found = []; let cursor
+    do { const data = await request(`/api/v1/assets?workspace=script&assetType=image&limit=40${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`); found.push(...(data.assets || [])); cursor = data.nextCursor } while (cursor && found.length < 1000)
+    setAssets(current => [...found, ...current.filter(item => !found.some(next => next.id === item.id))])
   }
   const acceptVideo = async task => {
     setBusy(`accept-${task.id}`); setError('')
@@ -329,7 +354,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
       const data = await mutate(`video-assets/${task.id}/accept`, { name: window.prompt('视频保存名称（可留空使用默认名称）', '') || '' })
       setVideoTasks(current => current.map(item => item.id === task.id ? { ...item, videoAssetId: data.assetId } : item))
       setNotice('视频已接受并归档到视频库。')
-    } catch (reason) { setError(reason.message) } finally { setBusy('') }
+    } catch (reason) { setError(reason.message); try { const latest = await request(`/api/v1/drama-projects/${projectRef.current.projectId}/video-tasks`); setVideoTasks(latest.tasks || []) } catch {} } finally { setBusy('') }
   }
   const loadAssets = async (type, replace = false) => {
     setAssetPicker(type); setReplaceAsset(replace)
@@ -386,11 +411,11 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
     {view === 'records' && <section className="drama-library"><div className="drama-section-heading"><div><h2>项目资料</h2><p>剧本、分镜和视频提示词自动记录来源。</p></div><select value={recordFilter} onChange={event => setRecordFilter(event.target.value)} aria-label="筛选文本类型"><option value="all">全部类型</option><option value="script">剧本</option><option value="storyboard_prompt">分镜提示词</option><option value="video_prompt">视频提示词</option></select></div>{!project && <p className="drama-empty">先在剧本库打开一个项目。</p>}{project && <div className="drama-records">{records.filter(item => recordFilter === 'all' || item.recordType === recordFilter).map(item => <article key={item.id}><small>{item.recordType} · {project.title} · {item.shotId ? `镜头 ${project.shots?.find(shot => shot.shotId === item.shotId)?.shotNumber || ''}` : '全项目'}</small><h3>{item.title}</h3><details><summary>查看全文</summary><pre>{item.content}</pre></details><button className="secondary-button" onClick={() => { setView('project'); setStageView(item.shotId ? 'video' : 'script_storyboard'); if (item.shotId) setSelectedShotId(item.shotId) }}>返回项目</button><button className="secondary-button" onClick={() => { setBrief(item.content); setView('project'); setStageView('requirements') }}>复用到项目需求</button><button className="secondary-button" onClick={() => { if (!navigator.clipboard?.writeText) { setError('浏览器不支持复制'); return } void navigator.clipboard.writeText(item.content).then(() => setNotice('已复制文本记录。')).catch(() => setError('复制失败')) }}>复制</button></article>)}{!records.length && <p className="drama-empty">该项目暂无文本记录。</p>}</div>}</section>}
     {view === 'project' && !project && <div className="drama-empty"><h2>开始制作短剧</h2><p>新建项目后，可在同一工作台生成剧本、分镜与视频。</p><button className="primary-button" onClick={createProject}>新建短剧项目</button></div>}
     {view === 'project' && project && <>
-      <section className="drama-project-bar"><div><input aria-label="项目名称" value={title} onChange={event => setTitle(event.target.value)} onBlur={() => void saveFields()} maxLength={120} /><small>{project.status === 'generating' ? '生成中' : project.status === 'failed' ? '需要处理' : '编辑中'} · {saveState}</small></div><div className="drama-header-actions"><button className="secondary-button" onClick={() => window.dispatchEvent(new Event('sanhua:open-task-progress'))}>任务中心</button><button className="secondary-button" onClick={() => setView('library')}><ChevronLeft size={15} />返回项目列表</button></div></section>
+      <section className="drama-project-bar"><div><input aria-label="项目名称" value={title} onChange={event => setTitle(event.target.value)} onBlur={() => void saveFields()} maxLength={120} /><small>{project.status === 'generating' ? '生成中' : project.status === 'failed' ? '需要处理' : '编辑中'} · {saveState}</small></div><div className="drama-header-actions">{saveState.includes('失败') && <button className="secondary-button" onClick={() => void retrySave()}>重试保存</button>}<button className="secondary-button" onClick={() => window.dispatchEvent(new Event('sanhua:open-task-progress'))}>任务中心</button><button className="secondary-button" onClick={async () => { if (await retrySave()) setView('library') }}><ChevronLeft size={15} />返回项目列表</button></div></section>
       <nav className="drama-steps" aria-label="短剧制作阶段">{stageKeys.map((key, index) => { const reached = (project.stage === 'completed' ? 2 : stageKeys.indexOf(project.stage)) >= index; return <button key={key} className={`${stageView === key ? 'active' : ''} ${reached ? 'reached' : ''}`} disabled={!reached} onClick={() => setStageView(key)}><span>{reached && index < stageKeys.indexOf(project.stage) ? <Check size={15} /> : index + 1}</span>{stageNames[index]}</button> })}</nav>
       {stageView === 'requirements' && <section className="drama-requirements"><div className="drama-section-heading"><div><small>阶段一 · 项目需求</small><h2>告诉系统这部短剧要拍什么</h2><p>素材可以稍后补充，不影响生成剧本与分镜。</p></div><span>{brief.length} 字</span></div><textarea aria-label="短剧创作需求" value={brief} onChange={event => setBrief(event.target.value)} onBlur={() => void saveFields()} placeholder="描述人物、故事冲突、场景、时长和想要的情绪…" /><div className="drama-asset-strip">{assetGroups.map(([type, label]) => { const id = project[assetField[type]]?.[0]; const asset = assets.find(item => item.id === id); return <div key={type} className="drama-asset-pill"><b>{label}</b>{id ? <><span>{asset?.name || `已选素材 ${id.slice(0, 8)}`}{project[assetField[type]].length > 1 ? ` 等 ${project[assetField[type]].length} 张` : ''}</span><button onClick={() => void chooseAsset(type, null)}>移除</button></> : <span>可选</span>}<button onClick={() => void loadAssets(type, Boolean(id))}>{id ? '替换' : '选择'}</button></div> })}</div><div className="drama-inspiration">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button key={item} onClick={() => setBrief(current => `${current}${current.trim() ? '\n' : ''}${item}`)}>{item}</button>)}</div><div className="drama-main-actions"><input ref={importRef} hidden type="file" accept=".txt,.md,text/plain,text/markdown" onChange={importText} /><button className="secondary-button" onClick={() => importRef.current?.click()}><Upload size={15} />导入 TXT / Markdown</button><button className="secondary-button" onClick={() => onNavigate?.('assets', 'text')}>从文本库复用</button><button className="secondary-button" onClick={() => { setClearedBrief(brief); setBrief('') }}>清空需求</button>{clearedBrief && <button className="secondary-button" onClick={() => { setBrief(clearedBrief); setClearedBrief('') }}>恢复清空前内容</button>}<button className="primary-button" disabled={Boolean(busy) || !brief.trim()} onClick={generate}>{busy === 'generate' && <LoaderCircle size={15} className="spin-icon" />}一键生成剧本与分镜</button></div></section>}
       {stageView === 'script_storyboard' && <section className="drama-edit-layout"><aside className="drama-shot-nav"><h2>剧本结构</h2><button className={!selectedShotId ? 'selected' : ''} onClick={() => void selectShot('')}>剧情摘要与正文</button><p>{project.script?.summary}</p><h3>镜头 · {project.shots?.length || 0}</h3>{project.shots?.map(shot => <button key={shot.shotId} className={selectedShotId === shot.shotId ? 'selected' : ''} onClick={() => void selectShot(shot.shotId)}><strong>镜头 {shot.shotNumber}</strong><small>{shot.scene || '未指定场景'} · {shot.durationSeconds} 秒</small></button>)}</aside><div className="drama-editor"><div className="drama-section-heading"><div><small>阶段二 · 剧本与分镜</small><h2>同页查看和局部修改</h2></div><span>版本 {project.script?.version || 1}</span></div><label>剧情摘要<p>{project.script?.summary}</p></label><label>剧本正文<textarea ref={scriptAreaRef} aria-label="剧本正文" value={scriptDraft} onChange={event => setScriptDraft(event.target.value)} /></label><div className="drama-inline-actions"><button className="secondary-button" onClick={() => void saveScript()}>立即保存</button><label>历史版本<select aria-label="恢复剧本版本" value="" onChange={event => { if (event.target.value) void restoreScript(event.target.value) }}><option value="">选择版本恢复</option>{versions.map(item => <option key={item.id || item.versionId} value={item.id || item.versionId}>版本 {item.versionNo || item.version} · {new Date(item.savedAt || item.createdAt).toLocaleString('zh-CN')}</option>)}</select></label><button className="secondary-button" disabled={Boolean(busy)} onClick={() => void regenerate('script')}>重新生成当前段落</button></div>{selectedShot && shotDraft && <div className="drama-shot-editor"><h3>镜头 {selectedShot.shotNumber} · {selectedShot.scene || '场景待定'}</h3>{[['prompt', '画面提示词'], ['action', '人物动作'], ['camera', '摄影与运镜'], ['dialogue', '台词'], ['sound', '声音'], ['negative', '负向约束']].map(([field, label]) => <label key={field}>{label}<textarea value={shotDraft[field] || ''} onChange={event => setShotDraft(current => ({ ...current, [field]: event.target.value }))} /></label>)}<div className="drama-inline-actions"><button className="secondary-button" onClick={() => void saveShot()}>保存当前镜头</button><button className="secondary-button" disabled={Boolean(busy)} onClick={() => void regenerate('shot')}>重新生成当前镜头</button></div></div>}<div className="drama-main-actions"><button className="primary-button" disabled={Boolean(busy)} onClick={confirm}>确认剧本与分镜，进入视频生成</button></div></div></section>}
-      {stageView === 'video' && <DramaVideoStage project={project} selectedShot={selectedShot} selectedShotId={selectedShotId} selectedShotIds={selectedShotIds} setSelectedShotIds={setSelectedShotIds} selectShot={selectShot} shotDraft={shotDraft} setShotDraft={setShotDraft} saveShot={saveShot} saveState={saveState} busy={busy} submitVideos={submitVideos} videoTasks={videoTasks} shotTasks={shotTasks} selectedTask={selectedTask} setSelectedVideoTaskId={setSelectedVideoTaskId} setPlaying={setPlaying} acceptVideo={acceptVideo} discardVideo={discardVideo} videoModel={videoModel} aspectRatio={aspectRatio} setAspectRatio={setAspectRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} loadAssets={loadAssets} onNavigate={onNavigate} />}
+      {stageView === 'video' && <DramaVideoStage project={project} selectedShot={selectedShot} selectedShotId={selectedShotId} selectedShotIds={selectedShotIds} setSelectedShotIds={setSelectedShotIds} selectShot={selectShot} shotDraft={shotDraft} setShotDraft={setShotDraft} saveShot={saveShot} saveState={saveState} busy={busy} submitVideos={submitVideos} videoTasks={videoTasks} shotTasks={shotTasks} selectedTask={selectedTask} setSelectedVideoTaskId={setSelectedVideoTaskId} setPlaying={setPlaying} acceptVideo={acceptVideo} discardVideo={discardVideo} videoModel={videoModel} aspectRatio={aspectRatio} setAspectRatio={setAspectRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} loadAssets={loadAssets} onNavigate={onNavigate} assets={assets} onLoadReferenceAssets={loadReferenceAssets} onPreview={setViewer} />}
     </>}
     {assetPicker && <div className="drama-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setAssetPicker('') }}><section className="drama-drawer" role="dialog" aria-modal="true" aria-label="选择短剧素材"><header><div><h2>选择{assetGroups.find(item => item[0] === assetPicker)?.[1]}素材</h2><small>从云端短剧库选择，或本地上传图片</small></div><button onClick={() => setAssetPicker('')} aria-label="关闭"><X size={18} /></button></header><label className="secondary-button"><ImagePlus size={15} />{uploading ? '正在上传…' : '从本地上传'}<input hidden type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={uploading} onChange={event => { const files = [...(event.target.files || [])]; event.target.value = ''; if (files.length) void uploadAssets(assetPicker, files) }} /></label><div className="drama-asset-grid">{assets.filter(asset => (asset.videoAssetType || asset.folderKey) === assetPicker).map(asset => <article key={asset.id}><img src={asset.thumbnailUrl || asset.url} alt={asset.name} /><strong>{asset.name}</strong><small>{asset.folderKey || '短剧库'} · {asset.sourceModule || '云端资产'}</small><div><button onClick={() => setViewer(asset)}>查看</button><button className="primary-button" onClick={() => void chooseAsset(assetPicker, asset)}>选择</button></div></article>)}</div>{!assets.some(asset => (asset.videoAssetType || asset.folderKey) === assetPicker) && <p>当前类别没有素材，可以从本地上传。</p>}</section></div>}
     {viewer && <ImageViewer src={viewer.previewUrl || viewer.url} alt={viewer.name} onClose={() => setViewer(null)} />}
