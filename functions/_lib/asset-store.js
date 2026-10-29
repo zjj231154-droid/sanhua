@@ -98,7 +98,13 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
     if (context.workRecordId && (await getJson(bucket, `metadata/work-records/${context.workRecordId}.json`))?.status === 'cancelled') return { error: json(409, { error: 'TASK_CANCELLED' }) }
     const converted = outputBytes(outputs[index])
     if (!converted) return { error: json(502, { error: 'MODEL_OUTPUT_NOT_ARCHIVABLE', index: index + 1 }) }
-    const id = crypto.randomUUID()
+    const id = /^[0-9a-f-]{36}$/i.test(outputs[index].archiveAssetId || '') ? outputs[index].archiveAssetId : crypto.randomUUID()
+    const existing = await getJson(bucket, assetMetadataKey(id))
+    if (existing && existing.sourceTaskId === taskId && existing.createdBy === identity.user.id) {
+      await putJson(bucket, `metadata/master-assets/${id}.json`, { assetId: id, tenantId: existing.tenantId, workspaceId: existing.workspaceId, projectId: existing.projectId, createdBy: existing.createdBy, storeId: existing.storeId, assetSpace: existing.assetSpace, sourceTaskId: taskId, syncStatus: 'synced', createdAt: existing.createdAt })
+      assets.push(existing); continue
+    }
+    if (existing) return { error: json(409, { error: 'ARCHIVE_ASSET_CONFLICT' }) }
     const storageKey = `generated/default/day-coffee-night-bar/${allowedWorkspace}/ai-temp/${year}/${month}/${day}/${taskId}/outputs/${id}.${converted.extension}`
     const defaultTitle = title || (allowedWorkspace === 'brand' ? '品牌创作' : '产品精修')
     const datedDefault = `${defaultTitle}-${year}${month}${day}`
@@ -110,7 +116,7 @@ export async function archiveImageOutputs(context, { taskId, workspace, outputs,
       id, tenantId: identity.workspaceId, workspaceId: identity.workspaceId, projectId: allowedWorkspace, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1,
       storeId: 'day-coffee-night-bar', assetSpace: allowedWorkspace,
       libraryKey: recommendedLocation.libraryKey, folderKey: 'pending-save', recommendedLibraryKey: recommendedLocation.libraryKey, recommendedFolderKey: recommendedLocation.folderKey,
-      folderType: 'ai-temp', category: 'generated', assetType: 'image', sourceModule: allowedWorkspace, sourceTaskId: taskId, status: 'pending', name: baseName, displayName: baseName,
+      visibility: 'private', ownerUserId: identity.user.id, folderType: 'ai-temp', category: 'generated', assetType: 'image', sourceModule: allowedWorkspace, sourceTaskId: taskId, status: 'pending', name: baseName, displayName: baseName,
       originalName: `${defaultTitle}-${index + 1}.${converted.extension}`,
       downloadName: downloadFileName(baseName, converted.extension),
       storageKey, thumbnailKey: storageKey, mimeType: converted.mimeType, size: converted.bytes.byteLength,

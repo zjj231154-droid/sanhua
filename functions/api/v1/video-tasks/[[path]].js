@@ -1,3 +1,4 @@
+import { ownsTask, taskScope, mayReadTaskResult } from '../../../_lib/task-ownership.js'
 import { json, tokenSpaceRequest } from '../../../_lib/tokenspace.js'
 import { getScript } from '../../../_lib/script-store.js'
 import { getTask, saveTask, listTasks, updateTask } from '../../../_lib/task-store.js'
@@ -37,7 +38,7 @@ const referenceImagesFor = async (context, identity, refs) => {
   let totalBytes = 0
   for (const id of ids) {
     const asset = await getJson(bucket, assetMetadataKey(id))
-    if (!asset || (!identity.compatibilityMode && asset.workspaceId !== identity.workspaceId && asset.tenantId !== identity.workspaceId)) return { error: `参考资产不存在或无权使用：${id}` }
+    if (!asset || !mayReadTaskResult(asset, identity) || (!identity.compatibilityMode && asset.workspaceId !== identity.workspaceId && asset.tenantId !== identity.workspaceId)) return { error: `参考资产不存在或无权使用：${id}` }
     if (asset.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return { error: `无权使用私有参考资产：${asset.name || id}` }
     if (asset.assetType && asset.assetType !== 'image') return { error: `参考资产不是图片：${asset.name || id}` }
     if (Array.isArray(asset.usableFor) && asset.usableFor.length && !asset.usableFor.includes('video')) return { error: `该资产不可用于视频生成：${asset.name || id}` }
@@ -91,7 +92,7 @@ const validate = async (context, input, identity) => {
   const script = scriptId ? await getScript(context, scriptId) : null
   const project = input?.projectId ? await getDramaProject(context, String(input.projectId)) : null
   const optionalProjectReferences = dramaProjectOwned(project, identity) && project.scriptId === scriptId && ['video', 'completed'].includes(project.stage)
-  if (!script || script.deletedAt || (!identity.compatibilityMode && script.workspaceId !== identity.workspaceId)) missing.push('已保存剧本')
+  if (!script || script.deletedAt || !ownsTask(script, identity)) missing.push('已保存剧本')
   if (!scriptVersionId || script?.currentVersionId !== scriptVersionId) missing.push('当前已保存剧本版本')
   if (!sceneAssetIds.length && !optionalProjectReferences) missing.push('至少一个场景资产')
   if (Math.max(videoPrompt.length, shotPlan.length) < 12) missing.push('分镜或分场说明')
@@ -152,17 +153,17 @@ export const syncVideoTask = async (context, task) => {
       return next
     }
     const next = await updateTask(context, task.id, {
-      status: 'running', progress: result.progress === null ? Math.max(15, Number(task.progress || 0)) : Math.max(15, Math.min(95, result.progress)),
+      status: 'running', progress: result.progress, progressSource: result.progress == null ? 'unknown' : 'provider',
       stage: '视频服务已受理，正在生成', providerStatus: result.status || 'processing', lastProviderSyncAt: checkedAt, heartbeatAt: checkedAt,
     }) || task
-    if (task.workRecordId) await updateWorkRecord(context, task.workRecordId, { status: 'running', progress: next.progress, operationSummary: next.stage, providerTaskId: task.providerTaskId })
+    if (task.workRecordId) await updateWorkRecord(context, task.workRecordId, { status: 'running', progress: next.progress, progressSource: next.progressSource, operationSummary: next.stage, providerTaskId: task.providerTaskId })
     return next
   } catch { return task }
 }
 
 const videoDownload = async (context, identity, id) => {
   const task = await getTask(context, id)
-  if (!task || task.workspace !== 'video' || (!identity.compatibilityMode && task.workspaceId !== identity.workspaceId)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
+  if (!task || task.workspace !== 'video' || !ownsTask(task, identity)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
   const source = String(task.providerVideoUrl || '').trim()
   if (!/^https:\/\//i.test(source)) return json(409, { error: 'VIDEO_RESULT_NOT_READY', hint: '视频结果尚未就绪，暂时无法下载。' })
   try {
@@ -182,7 +183,9 @@ export async function onRequestGet(context) {
   const identity = await requireIdentity(context, 'view'); if (identity.error) return identity.error
   const downloadMatch = /^([^/]+)\/download$/.exec(route(context))
   if (downloadMatch) return videoDownload(context, identity, downloadMatch[1])
-  const stored = (await listTasks(context, { workspace: 'video', workspaceId: identity.workspaceId, compatibilityMode: identity.compatibilityMode })).slice(0, 100)
+  const id = route(context)
+  if (id) { const task = await getTask(context, id); return ownsTask(task, identity) && task.workspace === 'video' ? json(200, { task: await syncVideoTask(context, task) }) : json(404, { error: 'VIDEO_TASK_NOT_FOUND' }) }
+  const stored = (await listTasks(context, { workspace: 'video', ...taskScope(identity) })).slice(0, 100)
   const tasks = await Promise.all(stored.map(task => syncVideoTask(context, task)))
   return json(200, { tasks })
 }
@@ -201,12 +204,12 @@ export async function onRequestPost(context) {
   if (checked.missing.length) return json(422, { error: 'VIDEO_TASK_INVALID', missing: checked.missing })
   if (!checked.providerConfigured) return json(409, { error: 'VIDEO_PROVIDER_NOT_CONFIGURED', hint: '请先到管理设置验证并保存 TokenSpace 视频模型连接。' })
   if (!workRecord) {
-    workRecord = await createWorkRecord(context, { moduleKey: 'video', moduleName: '视频生成', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: input.title || '视频生成', route: 'video', initialData: input })
+    workRecord = await createWorkRecord(context, { moduleKey: 'video', moduleName: '视频生成', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: input.title || '视频生成', route: 'video', currentStep: 3, inputAssetIds: referenceIds(checked.assetRefs), generationParams: { aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds }, initialData: input })
     workRecordId = workRecord.taskId
   }
   context = { ...context, workRecordId }
   if (workRecord.status === 'cancelled') return json(409, { error: 'TASK_CANCELLED' })
-  await updateWorkRecord(context, workRecordId, { status: 'running', progress: null, operationSummary: '正在提交视频服务' })
+  await updateWorkRecord(context, workRecordId, { status: 'running', progress: null, inputAssetIds: referenceIds(checked.assetRefs), generationParams: { aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds }, operationSummary: '正在提交视频服务' })
   const submitted = await tokenSpaceRequest(context, 'video/generations', {
     model: checked.provider.model,
     provider: 'tokenspace',
@@ -235,7 +238,7 @@ export async function onRequestPost(context) {
   const task = await saveTask(context, {
     id: crypto.randomUUID(), workRecordId, workspace: 'video', workspaceId: identity.workspaceId, projectId: input.projectId || 'script', shotId: input.shotId || null, createdBy: identity.user.id, updatedBy: identity.user.id, version: 1, type: 'video-generation', status: providerVideoUrl ? 'completed' : 'running', progress: providerVideoUrl ? 100 : 15,
     stage: providerVideoUrl ? '视频已生成，等待查看' : '视频服务已受理，正在生成', heartbeatAt: createdAt,
-    requirements: checked.videoPrompt || checked.shotPlan, assets: checked.sceneAssetIds, sourceAssetIds: checked.sceneAssetIds,
+    requirements: checked.videoPrompt || checked.shotPlan, assets: referenceIds(checked.assetRefs), sourceAssetIds: referenceIds(checked.assetRefs), generationParams: { aspectRatio: checked.aspectRatio, resolution: checked.resolution, durationSeconds: checked.durationSeconds },
     scriptId: checked.scriptId, scriptVersionId: checked.scriptVersionId, durationSeconds: checked.durationSeconds,
     assetRefs: checked.assetRefs, characterAssetIds: checked.assetRefs.character, propAssetIds: checked.assetRefs.prop, otherAssetIds: checked.assetRefs.other,
     videoPrompt: checked.videoPrompt, aspectRatio: checked.aspectRatio, resolution: checked.resolution, mode: 'provider', provider: checked.provider.name, model: checked.provider.model, providerTaskId, providerVideoUrl, referenceBindings: checked.referenceImages.map((item, index) => ({ assetId: item.id, alias: `Image${index + 1}`, name: item.name })), textRecordId: textRecord?.id || null, simulated: false, createdAt,

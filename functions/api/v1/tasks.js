@@ -1,15 +1,18 @@
 import { json } from '../../_lib/tokenspace.js'
 import { getTask, listTasks, saveTask, updateTask } from '../../_lib/task-store.js'
 import { requireIdentity } from '../../_lib/collaboration.js'
+import { ownsTask, taskScope } from '../../_lib/task-ownership.js'
+import { cancelCenterTask, centerDetail } from '../../_lib/task-center-store.js'
 
 export async function onRequestGet(context) {
   const identity = await requireIdentity(context, 'view'); if (identity.error) return identity.error
   const id = context.request.url ? new URL(context.request.url).searchParams.get('id') : null
   if (id) {
     const task = await getTask(context, id)
-    return task && (identity.compatibilityMode || task.workspaceId === identity.workspaceId) ? json(200, task) : json(404, { error: 'TASK_NOT_FOUND' })
+    return ownsTask(task, identity) ? json(200, task) : json(404, { error: 'TASK_NOT_FOUND' })
   }
-  return json(200, { tasks: await listTasks(context, { ...Object.fromEntries(new URL(context.request.url).searchParams), workspaceId: identity.workspaceId, compatibilityMode: identity.compatibilityMode }) })
+  const query = new URL(context.request.url).searchParams
+  return json(200, { tasks: await listTasks(context, { workspace: query.get('workspace'), status: query.get('status'), includeHidden: query.get('includeHidden'), ...taskScope(identity) }) })
 }
 
 export async function onRequestPost(context) {
@@ -36,9 +39,14 @@ export async function onRequestPatch(context) {
   const allowed = ['queued', 'running', 'waiting_user', 'completed', 'failed', 'cancelled']
   if (input.status && !allowed.includes(input.status)) return json(400, { error: 'INVALID_STATUS' })
   const current = await getTask(context, id)
-  if (!current || (!identity.compatibilityMode && current.workspaceId !== identity.workspaceId)) return json(404, { error: 'TASK_NOT_FOUND' })
+  if (!ownsTask(current, identity)) return json(404, { error: 'TASK_NOT_FOUND' })
   if (!Number.isInteger(input.expectedVersion) && !identity.compatibilityMode) return json(400, { error: 'EXPECTED_VERSION_REQUIRED' })
   if (!identity.compatibilityMode && input.expectedVersion !== current.version) return json(409, { error: 'VERSION_CONFLICT', currentVersion: current.version, updatedBy: current.updatedBy, updatedAt: current.updatedAt })
+  if (input.status === 'cancelled') {
+    const detail = await centerDetail(context, identity, id)
+    const result = await cancelCenterTask(context, identity, id, { ...input, expectedVersion: detail?.record?.version ?? current.version })
+    return json(result.status, result.data)
+  }
   const task = await updateTask(context, id, { status: input.status, progress: Math.max(0, Math.min(100, Number(input.progress ?? 0))), stage: String(input.stage || '').slice(0, 200), error: input.error ? String(input.error).slice(0, 1000) : undefined, updatedBy: identity.user.id, version: Number(current.version || 0) + 1 })
   return task ? json(200, task) : json(404, { error: 'TASK_NOT_FOUND' })
 }
@@ -48,7 +56,7 @@ export async function onRequestDelete(context) {
   const id = new URL(context.request.url).searchParams.get('id')
   if (!id) return json(400, { error: 'TASK_ID_REQUIRED' })
   const task = await getTask(context, id)
-  if (!task || (!identity.compatibilityMode && task.workspaceId !== identity.workspaceId)) return json(404, { error: 'TASK_NOT_FOUND' })
+  if (!ownsTask(task, identity)) return json(404, { error: 'TASK_NOT_FOUND' })
   if (!['completed', 'failed', 'cancelled'].includes(task.status)) return json(409, { error: 'TASK_STILL_ACTIVE' })
   const hiddenAt = new Date().toISOString()
   await updateTask(context, id, { hiddenAt, hiddenBy: identity.user.id, hiddenReason: 'user_dismissed', updatedBy: identity.user.id, version: Number(task.version || 0) + 1 })

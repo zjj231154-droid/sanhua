@@ -103,12 +103,15 @@ export async function onRequestPost(context) {
     return json(502, { error: 'MODEL_RETURNED_NO_IMAGES', taskId: task.id })
   }
   await updateTask(context, task.id, { progress: 90, stage: `归档图片（${outputs.length}/${count}）`, heartbeatAt: new Date().toISOString() })
-  const archived = await archiveImageOutputs(context, { taskId: workRecordId || task.id, workspace, outputs, model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, limit) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, limit) : [], originalPlan: input.metadata?.originalPlan, finalPrompt: input.metadata?.finalPrompt || prompt, brandPhase })
+  const pendingArchive = { taskId: workRecordId || task.id, workspace, outputs: outputs.map(output => ({ ...output, archiveAssetId: crypto.randomUUID() })), model, prompt, sourceAssetIds: Array.isArray(input.sourceAssetIds) ? input.sourceAssetIds.slice(0, limit) : [], title: input.title, requestedName, namePrefix, promptSummary: input.promptSummary, referenceAssetIds: Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.slice(0, limit) : [], originalPlan: input.metadata?.originalPlan, finalPrompt: input.metadata?.finalPrompt || prompt, brandPhase }
+  await updateTask(context, task.id, { pendingArchive })
+  let archived
+  try { archived = await archiveImageOutputs(context, pendingArchive) } catch { archived = { error: json(502, { error: 'ASSET_ARCHIVE_FAILED', hint: '生成结果已保留，可在任务中心重新归档。' }) } }
   if (archived.error) {
     await updateTask(context, task.id, { status: 'failed', progress: 90, stage: '资产归档失败', error: 'ASSET_ARCHIVE_FAILED' }); if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'failed', progress: 90, errorCode: 'ASSET_ARCHIVE_FAILED', errorMessage: '资产归档失败', operationSummary: '资产归档失败' })
     return archived.error
   }
-  const completed = await updateTask(context, task.id, { status: 'completed', progress: 100, stage: '数据库完成并可访问', heartbeatAt: new Date().toISOString(), completedAt: new Date().toISOString(), outputIds: archived.assets.map(asset => asset.id), outputs: archived.assets.map(asset => ({ id: asset.id, url: `/api/assets/${asset.storageKey}`, name: asset.name })) })
+  const completed = await updateTask(context, task.id, { pendingArchive: null, status: 'completed', progress: 100, stage: '数据库完成并可访问', heartbeatAt: new Date().toISOString(), completedAt: new Date().toISOString(), outputIds: archived.assets.map(asset => asset.id), outputs: archived.assets.map(asset => ({ id: asset.id, url: `/api/assets/${asset.storageKey}`, name: asset.name })) })
   if (workRecord) await updateWorkRecord(context, workRecordId, { status: 'succeeded', progress: 100, resultAssetIds: archived.assets.map(asset => asset.id), resultTextRecordIds: textRecord?.id ? [...(workRecord.resultTextRecordIds || []), textRecord.id] : workRecord.resultTextRecordIds, operationSummary: '数据库完成并可访问', errorCode: '', errorMessage: '' })
   return json(201, { workRecordId: workRecordId || null, task: completed, textRecordId: textRecord?.id || null, assets: archived.assets.map(asset => ({ ...asset, url: `/api/assets/${asset.storageKey}` })) })
 }

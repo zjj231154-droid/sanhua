@@ -50,6 +50,7 @@ export async function onRequestPost(context) {
       return unavailable(record) || json(200, { item: record, record })
     }
     if (action === 'archive') {
+      if (['draft', 'ready', 'queued', 'running', 'retrying', 'cancelling'].includes(current.status)) return json(409, { error: 'TASK_STILL_ACTIVE' })
       const record = await updateWorkRecord(context, id, { ...input, status: 'archived', updatedBy: identity.user.id, expectedVersion: input.expectedVersion ?? current.version })
       if (record?.conflict) return json(409, { error: 'VERSION_CONFLICT', currentVersion: record.conflict.version, updatedAt: record.conflict.updatedAt })
       return unavailable(record) || json(200, { item: record, record })

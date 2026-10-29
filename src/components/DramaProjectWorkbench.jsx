@@ -1,3 +1,4 @@
+import DramaVideoStage from './DramaVideoStage'
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, Download, Film, ImagePlus, LoaderCircle, Plus, RefreshCw, Upload, X } from 'lucide-react'
 import ImageViewer from './ImageViewer'
@@ -25,6 +26,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   const [projects, setProjects] = useState([])
   const [project, setProject] = useState(null)
   const projectRef = useRef(null)
+  const restoreParams = useRef(null)
   const saveQueue = useRef(Promise.resolve())
   const [stageView, setStageView] = useState('requirements')
   const [title, setTitle] = useState('')
@@ -56,7 +58,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   const importRef = useRef(null)
   const scriptAreaRef = useRef(null)
 
-  const showProject = next => {
+  const showProject = (next, preferredShotId = '') => {
     projectRef.current = next
     setProject(next)
     setTitle(next.title || '')
@@ -64,8 +66,8 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
     setStageView(next.stage === 'completed' ? 'video' : next.stage || 'requirements')
     setScriptDraft(next.script?.content || '')
     const first = next.shots?.[0]
-    setSelectedShotId(current => next.shots?.some(shot => shot.shotId === current) ? current : first?.shotId || '')
-    setShotDraft(next.shots?.find(shot => shot.shotId === selectedShotId) || first || null)
+    setSelectedShotId(current => next.shots?.some(shot => shot.shotId === preferredShotId) ? preferredShotId : next.shots?.some(shot => shot.shotId === current) ? current : first?.shotId || '')
+    setShotDraft(next.shots?.find(shot => shot.shotId === (preferredShotId || selectedShotId)) || first || null)
     setProjects(current => [next, ...current.filter(item => item.projectId !== next.projectId)])
     setView('project')
   }
@@ -74,10 +76,16 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
     setProjects(data.projects || [])
     return data.projects || []
   }
-  const openProject = async id => {
+  const openProject = async (id, snapshot = null) => {
     setSaveState('正在恢复上次工作')
     const data = await request(`/api/v1/drama-projects/${encodeURIComponent(id)}`)
-    showProject(data.project)
+    const params = snapshot?.generationParams || snapshot?.draftData?.generationParams
+    restoreParams.current = params || null
+    const shotId = snapshot?.sourceShotId || snapshot?.draftData?.shotId || snapshot?.draftData?.selectedShotId
+    showProject(data.project, shotId)
+    if (params?.aspectRatio) setAspectRatio(params.aspectRatio)
+    if (params?.resolution) setResolution(params.resolution)
+    if (params?.durationSeconds) setDuration(params.durationSeconds)
     setSaveState('已自动保存')
   }
   useEffect(() => {
@@ -85,7 +93,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
     loadProjects().then(async items => {
       if (!active) return
       const resumeId = incomingContext?.draftRecord?.draftData?.dramaProjectId || incomingContext?.dramaProjectId
-      if (resumeId) await openProject(resumeId)
+      if (resumeId) await openProject(resumeId, incomingContext?.draftRecord)
       else if (incomingContext?.asset?.id || incomingContext?.record?.content) {
         const base = items[0] || (await request('/api/v1/drama-projects', jsonOptions('POST', { title: '未命名短剧项目' }))).project
         if (base) {
@@ -107,7 +115,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   }, [])
   useEffect(() => {
     if (!incomingContext?.draftRecord?.draftData?.dramaProjectId) return
-    void openProject(incomingContext.draftRecord.draftData.dramaProjectId).then(() => onIncomingContextConsumed?.()).catch(reason => setError(reason.message))
+    void openProject(incomingContext.draftRecord.draftData.dramaProjectId, incomingContext.draftRecord).then(() => onIncomingContextConsumed?.()).catch(reason => setError(reason.message))
   }, [incomingContext?.createdAt])
   useEffect(() => {
     if (initialRoute === 'library') setView('library')
@@ -154,7 +162,7 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
   useEffect(() => {
     const shot = project?.shots?.find(item => item.shotId === selectedShotId)
     setShotDraft(shot ? { ...shot } : null)
-    if (shot) setDuration(shot.durationSeconds || 8)
+    if (shot) { setDuration(restoreParams.current?.durationSeconds || shot.durationSeconds || 8); restoreParams.current = null }
   }, [selectedShotId, project?.projectId])
   useEffect(() => {
     if (!project?.projectId || !project.scriptId || view !== 'project' || stageView !== 'script_storyboard') return
@@ -251,12 +259,16 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
     if (!current || !shotDraft) return
     const fields = ['prompt', 'action', 'camera', 'dialogue', 'sound', 'negative', 'durationSeconds']
     if (fields.every(field => current[field] === shotDraft[field])) return
-    const data = await request(`/api/v1/drama-projects/${projectRef.current.projectId}/shots/${selectedShotId}`, jsonOptions('PATCH', Object.fromEntries(fields.map(field => [field, shotDraft[field]]))))
-    projectRef.current = data.project; setProject(data.project); setSaveState('已自动保存')
+    setSaveState('正在保存…')
+    try {
+      const data = await request(`/api/v1/drama-projects/${projectRef.current.projectId}/shots/${selectedShotId}`, jsonOptions('PATCH', Object.fromEntries(fields.map(field => [field, shotDraft[field]]))))
+      projectRef.current = data.project; setProject(data.project); setSaveState('已自动保存')
+    } catch (reason) { setSaveState('保存失败，请重试'); throw reason }
   }
   const selectShot = async shotId => {
     try {
       await saveShot()
+      restoreParams.current = null
       setSelectedShotId(shotId)
     } catch (reason) { setError(reason.message) }
   }
@@ -378,12 +390,10 @@ export default function DramaProjectWorkbench({ initialRoute = 'create', incomin
       <nav className="drama-steps" aria-label="短剧制作阶段">{stageKeys.map((key, index) => { const reached = (project.stage === 'completed' ? 2 : stageKeys.indexOf(project.stage)) >= index; return <button key={key} className={`${stageView === key ? 'active' : ''} ${reached ? 'reached' : ''}`} disabled={!reached} onClick={() => setStageView(key)}><span>{reached && index < stageKeys.indexOf(project.stage) ? <Check size={15} /> : index + 1}</span>{stageNames[index]}</button> })}</nav>
       {stageView === 'requirements' && <section className="drama-requirements"><div className="drama-section-heading"><div><small>阶段一 · 项目需求</small><h2>告诉系统这部短剧要拍什么</h2><p>素材可以稍后补充，不影响生成剧本与分镜。</p></div><span>{brief.length} 字</span></div><textarea aria-label="短剧创作需求" value={brief} onChange={event => setBrief(event.target.value)} onBlur={() => void saveFields()} placeholder="描述人物、故事冲突、场景、时长和想要的情绪…" /><div className="drama-asset-strip">{assetGroups.map(([type, label]) => { const id = project[assetField[type]]?.[0]; const asset = assets.find(item => item.id === id); return <div key={type} className="drama-asset-pill"><b>{label}</b>{id ? <><span>{asset?.name || `已选素材 ${id.slice(0, 8)}`}{project[assetField[type]].length > 1 ? ` 等 ${project[assetField[type]].length} 张` : ''}</span><button onClick={() => void chooseAsset(type, null)}>移除</button></> : <span>可选</span>}<button onClick={() => void loadAssets(type, Boolean(id))}>{id ? '替换' : '选择'}</button></div> })}</div><div className="drama-inspiration">{['加入人物冲突', '加入反转', '绑定真实茶馆空间', '强化开场钩子', '控制在 3 分钟内'].map(item => <button key={item} onClick={() => setBrief(current => `${current}${current.trim() ? '\n' : ''}${item}`)}>{item}</button>)}</div><div className="drama-main-actions"><input ref={importRef} hidden type="file" accept=".txt,.md,text/plain,text/markdown" onChange={importText} /><button className="secondary-button" onClick={() => importRef.current?.click()}><Upload size={15} />导入 TXT / Markdown</button><button className="secondary-button" onClick={() => onNavigate?.('assets', 'text')}>从文本库复用</button><button className="secondary-button" onClick={() => { setClearedBrief(brief); setBrief('') }}>清空需求</button>{clearedBrief && <button className="secondary-button" onClick={() => { setBrief(clearedBrief); setClearedBrief('') }}>恢复清空前内容</button>}<button className="primary-button" disabled={Boolean(busy) || !brief.trim()} onClick={generate}>{busy === 'generate' && <LoaderCircle size={15} className="spin-icon" />}一键生成剧本与分镜</button></div></section>}
       {stageView === 'script_storyboard' && <section className="drama-edit-layout"><aside className="drama-shot-nav"><h2>剧本结构</h2><button className={!selectedShotId ? 'selected' : ''} onClick={() => void selectShot('')}>剧情摘要与正文</button><p>{project.script?.summary}</p><h3>镜头 · {project.shots?.length || 0}</h3>{project.shots?.map(shot => <button key={shot.shotId} className={selectedShotId === shot.shotId ? 'selected' : ''} onClick={() => void selectShot(shot.shotId)}><strong>镜头 {shot.shotNumber}</strong><small>{shot.scene || '未指定场景'} · {shot.durationSeconds} 秒</small></button>)}</aside><div className="drama-editor"><div className="drama-section-heading"><div><small>阶段二 · 剧本与分镜</small><h2>同页查看和局部修改</h2></div><span>版本 {project.script?.version || 1}</span></div><label>剧情摘要<p>{project.script?.summary}</p></label><label>剧本正文<textarea ref={scriptAreaRef} aria-label="剧本正文" value={scriptDraft} onChange={event => setScriptDraft(event.target.value)} /></label><div className="drama-inline-actions"><button className="secondary-button" onClick={() => void saveScript()}>立即保存</button><label>历史版本<select aria-label="恢复剧本版本" value="" onChange={event => { if (event.target.value) void restoreScript(event.target.value) }}><option value="">选择版本恢复</option>{versions.map(item => <option key={item.id || item.versionId} value={item.id || item.versionId}>版本 {item.versionNo || item.version} · {new Date(item.savedAt || item.createdAt).toLocaleString('zh-CN')}</option>)}</select></label><button className="secondary-button" disabled={Boolean(busy)} onClick={() => void regenerate('script')}>重新生成当前段落</button></div>{selectedShot && shotDraft && <div className="drama-shot-editor"><h3>镜头 {selectedShot.shotNumber} · {selectedShot.scene || '场景待定'}</h3>{[['prompt', '画面提示词'], ['action', '人物动作'], ['camera', '摄影与运镜'], ['dialogue', '台词'], ['sound', '声音'], ['negative', '负向约束']].map(([field, label]) => <label key={field}>{label}<textarea value={shotDraft[field] || ''} onChange={event => setShotDraft(current => ({ ...current, [field]: event.target.value }))} /></label>)}<div className="drama-inline-actions"><button className="secondary-button" onClick={() => void saveShot()}>保存当前镜头</button><button className="secondary-button" disabled={Boolean(busy)} onClick={() => void regenerate('shot')}>重新生成当前镜头</button></div></div>}<div className="drama-main-actions"><button className="primary-button" disabled={Boolean(busy)} onClick={confirm}>确认剧本与分镜，进入视频生成</button></div></div></section>}
-      {stageView === 'video' && <section className="drama-video-layout"><aside className="drama-shot-nav"><h2>镜头列表</h2><div className="drama-inline-actions"><button onClick={() => setSelectedShotIds(project.shots.map(shot => shot.shotId))}>全选</button><button onClick={() => setSelectedShotIds(project.shots.filter(shot => shot.status === 'failed').map(shot => shot.shotId))}>只选失败</button><button onClick={() => setSelectedShotIds([])}>清空</button></div>{project.shots.map(shot => { const task = [...(shot.videoTaskIds || [])].reverse().map(id => videoTasks.find(item => item.id === id)).find(Boolean); return <div key={shot.shotId} className={`drama-shot-row ${selectedShotId === shot.shotId ? 'selected' : ''}`}><input type="checkbox" checked={selectedShotIds.includes(shot.shotId)} onChange={event => setSelectedShotIds(current => event.target.checked ? [...current, shot.shotId] : current.filter(id => id !== shot.shotId))} aria-label={`选择镜头 ${shot.shotNumber}`} /><button onClick={() => void selectShot(shot.shotId)}><strong>镜头 {shot.shotNumber}</strong><small>{shot.scene || '场景待定'} · {shot.durationSeconds} 秒</small><small>{shot.submissionError || shot.status === 'failed' ? '生成失败' : taskLabel(task)}</small></button></div> })}</aside><div className="drama-video-main"><div className="drama-section-heading"><div><small>阶段三 · 视频生成</small><h2>镜头 {selectedShot?.shotNumber || '—'}</h2></div></div>{selectedShot && <><label>当前镜头视频提示词<textarea aria-label="当前镜头视频提示词" value={shotDraft?.prompt || ''} onChange={event => setShotDraft(current => ({ ...current, prompt: event.target.value }))} /></label><p>将按右侧设置的时长、画幅和清晰度生成视频。</p><div className="drama-inline-actions"><button className="secondary-button" onClick={() => void saveShot()}>保存提示词修改</button><button className="primary-button" disabled={Boolean(busy)} onClick={() => void submitVideos('single', [selectedShotId])}>生成当前镜头视频</button></div></>}{shotTasks.length > 0 && <div className="drama-result-versions"><strong>结果版本</strong>{shotTasks.map((task, index) => <button key={task.id} className={selectedTask?.id === task.id ? 'active' : ''} onClick={() => setSelectedVideoTaskId(task.id)}>第 {shotTasks.length - index} 次 · {taskLabel(task)}{task.videoAssetId ? ' · 已归档' : ''}</button>)}</div>}{selectedTask && <div className="drama-video-result"><h3>当前镜头结果 · {taskLabel(selectedTask)}</h3>{selectedTask.providerVideoUrl && <><button className="secondary-button" onClick={() => setPlaying(selectedTask)}><Film size={15} />打开视频</button><a className="secondary-button" href={`/api/v1/video-tasks/${selectedTask.id}/download`} download><Download size={15} />下载</a><button className="primary-button" disabled={Boolean(selectedTask.videoAssetId) || Boolean(busy)} onClick={() => void acceptVideo(selectedTask)}>{selectedTask.videoAssetId ? '已归档' : '设为当前版本并归档'}</button><button className="secondary-button" disabled={Boolean(busy)} onClick={() => void submitVideos('single', [selectedShotId], true)}>重新生成视频</button>{!selectedTask.videoAssetId && <button className="secondary-button" disabled={Boolean(busy)} onClick={() => void discardVideo(selectedTask)}>删除待选结果</button>}</>}{selectedTask.status === 'failed' && <button className="secondary-button" onClick={() => void submitVideos('single', [selectedShotId], true)}>重试当前镜头视频</button>}</div>}</div><aside className="drama-video-settings"><h2>生成设置</h2><p>视频模型：{videoModel}</p><label>画幅<select value={aspectRatio} onChange={event => setAspectRatio(event.target.value)}><option>9:16</option><option>16:9</option><option>1:1</option></select></label><label>清晰度<select value={resolution} onChange={event => setResolution(event.target.value)}><option>720p</option><option>1080p</option><option>480p</option></select></label><label>时长（秒）<input type="number" min="4" max="15" value={duration} onChange={event => setDuration(Number(event.target.value))} /></label><p>参考素材：{projectAssetsText(project)}</p><button className="secondary-button" onClick={() => void loadAssets('scene')}>补充场景素材</button><div className="drama-video-submit"><button className="primary-button" disabled={Boolean(busy) || !selectedShotIds.length} onClick={() => void submitVideos('selected', selectedShotIds)}>生成选中镜头视频 ({selectedShotIds.length})</button><button className="secondary-button" disabled={Boolean(busy)} onClick={() => void submitVideos('all')}>生成全部镜头视频</button><button className="secondary-button" disabled={Boolean(busy)} onClick={() => void submitVideos('failed', [], true)}>只重试失败镜头视频</button></div></aside></section>}
+      {stageView === 'video' && <DramaVideoStage project={project} selectedShot={selectedShot} selectedShotId={selectedShotId} selectedShotIds={selectedShotIds} setSelectedShotIds={setSelectedShotIds} selectShot={selectShot} shotDraft={shotDraft} setShotDraft={setShotDraft} saveShot={saveShot} saveState={saveState} busy={busy} submitVideos={submitVideos} videoTasks={videoTasks} shotTasks={shotTasks} selectedTask={selectedTask} setSelectedVideoTaskId={setSelectedVideoTaskId} setPlaying={setPlaying} acceptVideo={acceptVideo} discardVideo={discardVideo} videoModel={videoModel} aspectRatio={aspectRatio} setAspectRatio={setAspectRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} loadAssets={loadAssets} onNavigate={onNavigate} />}
     </>}
     {assetPicker && <div className="drama-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setAssetPicker('') }}><section className="drama-drawer" role="dialog" aria-modal="true" aria-label="选择短剧素材"><header><div><h2>选择{assetGroups.find(item => item[0] === assetPicker)?.[1]}素材</h2><small>从云端短剧库选择，或本地上传图片</small></div><button onClick={() => setAssetPicker('')} aria-label="关闭"><X size={18} /></button></header><label className="secondary-button"><ImagePlus size={15} />{uploading ? '正在上传…' : '从本地上传'}<input hidden type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={uploading} onChange={event => { const files = [...(event.target.files || [])]; event.target.value = ''; if (files.length) void uploadAssets(assetPicker, files) }} /></label><div className="drama-asset-grid">{assets.filter(asset => (asset.videoAssetType || asset.folderKey) === assetPicker).map(asset => <article key={asset.id}><img src={asset.thumbnailUrl || asset.url} alt={asset.name} /><strong>{asset.name}</strong><small>{asset.folderKey || '短剧库'} · {asset.sourceModule || '云端资产'}</small><div><button onClick={() => setViewer(asset)}>查看</button><button className="primary-button" onClick={() => void chooseAsset(assetPicker, asset)}>选择</button></div></article>)}</div>{!assets.some(asset => (asset.videoAssetType || asset.folderKey) === assetPicker) && <p>当前类别没有素材，可以从本地上传。</p>}</section></div>}
     {viewer && <ImageViewer src={viewer.previewUrl || viewer.url} alt={viewer.name} onClose={() => setViewer(null)} />}
     {playing && <div className="drama-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setPlaying(null) }}><section className="drama-player" role="dialog" aria-modal="true" aria-label="播放短剧视频"><header><h2>镜头视频</h2><button onClick={() => setPlaying(null)} aria-label="关闭播放器"><X size={18} /></button></header><video controls playsInline src={playing.providerVideoUrl} /><a className="secondary-button" href={`/api/v1/video-tasks/${playing.id}/download`} download><Download size={15} />下载视频</a></section></div>}
   </div>
 }
-
-function projectAssetsText(project) { const count = (project.sceneAssetIds?.length || 0) + (project.characterAssetIds?.length || 0) + (project.propAssetIds?.length || 0); return count ? `已选 ${count} 项` : '尚未选择，将根据提示词生成视频；可添加参考图保持场景和人物一致' }

@@ -1,3 +1,4 @@
+import { ownsTask, mayReadTaskResult } from '../../../_lib/task-ownership.js'
 import { json, tokenSpaceRequest, DEFAULT_REASONING_MODEL } from '../../../_lib/tokenspace.js'
 import { hasPermission, requireIdentity, resolvedProviderConnection } from '../../../_lib/collaboration.js'
 import { createDramaProject, dramaProjectOwned, getDramaProject, listDramaProjects, projectAssets, updateDramaProject } from '../../../_lib/drama-project-store.js'
@@ -50,7 +51,7 @@ const sourceAssetsValid = async (context, identity, project) => {
   if (projectAssets(project).length > 9) return false
   for (const id of projectAssets(project)) {
     const asset = await getJson(bucket, assetMetadataKey(id))
-    if (!asset || (!identity.compatibilityMode && !assetAvailableInWorkspace(asset, identity.workspaceId))) return false
+    if (!asset || !mayReadTaskResult(asset, identity) || (!identity.compatibilityMode && !assetAvailableInWorkspace(asset, identity.workspaceId))) return false
     if (asset.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return false
   }
   return true
@@ -82,7 +83,7 @@ export async function onRequestGet(context) {
   if (action === 'video-tasks') {
     const tasks = (await Promise.all(project.videoTaskIds.map(async taskId => {
       const task = await getTask(context, taskId)
-      return task && task.projectId === id && (identity.compatibilityMode || task.workspaceId === identity.workspaceId) ? syncVideoTask(context, task) : null
+      return task && task.projectId === id && ownsTask(task, identity) ? syncVideoTask(context, task) : null
     }))).filter(Boolean).filter(task => !task.discardedAt)
     if (target) {
       const task = tasks.find(item => item.id === target)
@@ -90,7 +91,7 @@ export async function onRequestGet(context) {
     }
     const shots = project.shots.map(shot => {
       const latest = [...(shot.videoTaskIds || [])].reverse().map(taskId => tasks.find(task => task.id === taskId)).find(Boolean)
-      const status = shot.submissionError ? 'failed' : latest?.status === 'failed' ? 'failed' : latest?.status === 'completed' ? 'succeeded' : latest ? 'generating' : shot.status
+      const status = shot.submissionError ? 'failed' : latest?.status === 'failed' ? 'failed' : latest?.status === 'cancelled' ? 'cancelled' : latest?.status === 'completed' ? 'succeeded' : latest ? 'generating' : shot.status
       return status === shot.status ? shot : { ...shot, status }
     })
     if (shots.some((shot, index) => shot !== project.shots[index])) project = await updateDramaProject(context, project, { shots, status: tasks.some(task => ['queued', 'running'].includes(task.status)) ? 'generating' : shots.some(shot => shot.status === 'failed') ? 'failed' : 'ready' })
@@ -206,7 +207,7 @@ export async function onRequestPost(context) {
     const mode = ['single', 'selected', 'all', 'failed'].includes(input.mode) ? input.mode : 'selected'
     if (target) {
       const task = await getTask(context, target)
-      if (!task || !project.videoTaskIds.includes(target)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
+      if (!ownsTask(task, identity) || !project.videoTaskIds.includes(target)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
       if (tail === 'discard') {
         if (task.videoAssetId) return json(409, { error: 'ARCHIVED_VIDEO_CANNOT_DISCARD' })
         if (['queued', 'running'].includes(task.status)) return json(409, { error: 'VIDEO_TASK_STILL_RUNNING' })
@@ -229,7 +230,8 @@ export async function onRequestPost(context) {
       const existing = await Promise.all((shot.videoTaskIds || []).map(taskId => getTask(context, taskId)))
       const active = [...existing].reverse().find(task => task && (['queued', 'running'].includes(task.status) || (!input.regenerate && task.status === 'completed')))
       if (active) { created.push(active); continue }
-      const work = await createWorkRecord(context, { moduleKey: 'video', moduleName: '短剧视频', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: `${project.title} · 镜头 ${shot.shotNumber}`, route: 'video', currentStep: 3, clientSessionId: `drama-video-${id}-${shot.shotId}-${crypto.randomUUID()}`, initialData: { dramaProjectId: id, shotId: shot.shotId } })
+      const generationParams = { aspectRatio: input.aspectRatio || '9:16', resolution: input.resolution || '720p', durationSeconds: resolvedMode === 'single' ? input.durationSeconds || shot.durationSeconds : shot.durationSeconds }
+      const work = await createWorkRecord(context, { moduleKey: 'video', moduleName: '短剧视频', workspaceId: identity.workspaceId, ownerUserId: identity.user.id, title: `${project.title} · 镜头 ${shot.shotNumber}`, route: 'video', currentStep: 3, sourceProjectId: id, sourceScriptId: project.scriptId, sourceShotId: shot.shotId, inputAssetIds: projectAssets(project), generationParams, clientSessionId: `drama-video-${id}-${shot.shotId}-${crypto.randomUUID()}`, initialData: { dramaProjectId: id, shotId: shot.shotId, prompt: promptFor(shot), generationParams } })
       const body = { workRecordId: work.taskId, projectId: id, shotId: shot.shotId, storyboardId: project.storyboardId, scriptId: project.scriptId, scriptVersionId: project.scriptVersionId, assetRefs: { scene: project.sceneAssetIds, character: project.characterAssetIds, prop: project.propAssetIds }, videoPrompt: promptFor(shot), shotPlan: promptFor(shot), aspectRatio: input.aspectRatio || '9:16', resolution: input.resolution || '720p', durationSeconds: resolvedMode === 'single' ? input.durationSeconds || shot.durationSeconds : shot.durationSeconds, title: `${project.title} · 镜头 ${shot.shotNumber}` }
       const response = await postVideo({ ...context, request: new Request(context.request.url, { method: 'POST', headers: context.request.headers, body: JSON.stringify(body) }), params: { path: '' } })
       const data = await response.json()
@@ -254,7 +256,7 @@ export async function onRequestPost(context) {
   }
   if (action === 'video-assets' && tail === 'accept') {
     const task = await getTask(context, target)
-    if (!task || task.projectId !== id || !project.videoTaskIds.includes(target)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
+    if (!ownsTask(task, identity) || task.projectId !== id || !project.videoTaskIds.includes(target)) return json(404, { error: 'VIDEO_TASK_NOT_FOUND' })
     if (task.status !== 'completed' || !task.providerVideoUrl) return json(409, { error: 'VIDEO_RESULT_NOT_READY' })
     if (task.videoAssetId) return json(200, { project, assetId: task.videoAssetId, idempotent: true })
     const shot = project.shots.find(item => item.shotId === task.shotId)
@@ -264,7 +266,7 @@ export async function onRequestPost(context) {
     const names = new Set((await listJson(assetsBucket(context), 'metadata/assets/', 1000)).filter(item => item.assetType === 'video' && item.workspaceId === identity.workspaceId).map(item => item.name))
     let base = wanted, index = 2
     while (names.has(base)) base = `${wanted}-v${index++}`
-    const asset = { id: assetId, workspaceId: identity.workspaceId, tenantId: identity.workspaceId, projectId: id, sourceProjectId: id, scriptId: project.scriptId, sourceScriptId: project.scriptId, storyboardId: project.storyboardId, sourceStoryboardId: project.storyboardId, shotId: shot.shotId, sourceShotId: shot.shotId, sourceAssetIds: projectAssets(project), videoTaskId: task.id, sourceTaskId: task.workRecordId, providerTaskId: task.providerTaskId, assetType: 'video', assetSpace: 'script', libraryKey: 'video', folderKey: 'result', name: base, displayName: base, downloadName: `${base}.mp4`, externalUrl: task.providerVideoUrl, mimeType: 'video/mp4', status: 'succeeded', createdBy: identity.user.id, createdAt: now, updatedAt: now, version: 1 }
+    const asset = { id: assetId, visibility: 'private', ownerUserId: identity.user.id, workspaceId: identity.workspaceId, tenantId: identity.workspaceId, projectId: id, sourceProjectId: id, scriptId: project.scriptId, sourceScriptId: project.scriptId, storyboardId: project.storyboardId, sourceStoryboardId: project.storyboardId, shotId: shot.shotId, sourceShotId: shot.shotId, sourceAssetIds: projectAssets(project), videoTaskId: task.id, sourceTaskId: task.workRecordId, providerTaskId: task.providerTaskId, assetType: 'video', assetSpace: 'script', libraryKey: 'video', folderKey: 'result', name: base, displayName: base, downloadName: `${base}.mp4`, externalUrl: task.providerVideoUrl, mimeType: 'video/mp4', status: 'succeeded', createdBy: identity.user.id, createdAt: now, updatedAt: now, version: 1 }
     await putJson(assetsBucket(context), assetMetadataKey(assetId), asset)
     await updateTask(context, task.id, { videoAssetId: assetId, acceptedAt: now })
     if (task.workRecordId) {

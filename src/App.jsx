@@ -1660,6 +1660,13 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   const draftLatestPatches = useRef(new Map())
   const [draftSync, setDraftSync] = useState(null)
   const [draftRecordState, setDraftRecordState] = useState({})
+  const accountScope = `${session?.user?.id || 'demo'}:${session?.workspace?.id || 'default'}`
+  const accountScopeRef = useRef(accountScope)
+  accountScopeRef.current = accountScope
+  useEffect(() => {
+    draftSessionIds.current.clear(); draftRecords.current.clear(); draftPromises.current.clear(); draftLatestPatches.current.clear()
+    setDraftRecordState({}); setDraftSync(null); setRetouchContext(null); setCreationContext(null); setAssetContext(null)
+  }, [accountScope])
 
   useEffect(() => {
     if (initialAuthenticated || demoRetouch) return
@@ -1684,17 +1691,21 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
   const startDraft = async (moduleKey, route = DEFAULT_SUB_ROUTE[moduleKey] || '', title = '') => {
     const pending = draftPromises.current.get(moduleKey)
     if (pending) return pending
+    const requestScope = accountScopeRef.current
     const clientSessionId = draftSessionIds.current.get(moduleKey) || `${moduleKey}-${crypto.randomUUID()}`
     draftSessionIds.current.set(moduleKey, clientSessionId)
     const promise = (async () => {
       try {
       const response = await fetch('/api/v1/work-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ moduleKey, moduleName: NAV_ITEMS.find(item => item.id === moduleKey)?.label || moduleKey, route, title, clientSessionId, initialData: {} }) })
        const value = await response.json().catch(() => ({}))
+       if (requestScope !== accountScopeRef.current) return null
        if (!response.ok) throw new Error(value.error || '工作记录保存失败，请重试；当前内容仍保留在本页面。')
+       if (requestScope !== accountScopeRef.current) return null
        const record = value.item || value.record
        if (record) { draftRecords.current.set(moduleKey, record); setDraftRecordState(current => ({ ...current, [moduleKey]: record })) }
       return record
       } catch (error) {
+        if (requestScope !== accountScopeRef.current) return null
         setDraftSync({ moduleKey, route, status: 'failed', message: error.message || '工作记录保存失败，请重试；当前内容仍保留在本页面。', patch: null })
         return null
       }
@@ -1704,10 +1715,12 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
     return promise
   }
   const saveDraftChange = async (moduleKey, route, patch) => {
+    const requestScope = accountScopeRef.current
     draftLatestPatches.current.set(moduleKey, { route, patch })
     setDraftSync({ moduleKey, route, status: 'saving', message: '正在保存工作记录…', patch })
     let record = draftRecords.current.get(moduleKey)
     if (!record) record = await startDraft(moduleKey, route, `${NAV_ITEMS.find(item => item.id === moduleKey)?.label || moduleKey}工作记录`)
+    if (requestScope !== accountScopeRef.current) return null
     if (!record) {
       setDraftSync({ moduleKey, route, status: 'failed', message: '工作记录保存失败，请重试；当前内容仍保留在本页面。', patch })
       return null
@@ -1715,16 +1728,19 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
     try {
       const response = await fetch(`/api/v1/work-records/${encodeURIComponent(record.taskId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...patch, expectedVersion: record.version }) })
       const value = await response.json().catch(() => ({}))
+      if (requestScope !== accountScopeRef.current) return null
       if (!response.ok) {
         const conflict = response.status === 409
         setDraftSync({ moduleKey, route, status: conflict ? 'conflict' : 'failed', message: conflict ? '工作记录版本冲突，请重试以合并最新内容。' : (value.error || '工作记录保存失败，请重试；当前内容仍保留在本页面。'), patch })
         return null
       }
+      if (requestScope !== accountScopeRef.current) return null
       const next = value.item || value.record
        if (next) { draftRecords.current.set(moduleKey, next); setDraftRecordState(current => ({ ...current, [moduleKey]: next })) }
       setDraftSync({ moduleKey, route, status: 'synced', message: '工作记录已保存', patch })
       return next
     } catch (error) {
+      if (requestScope !== accountScopeRef.current) return null
       setDraftSync({ moduleKey, route, status: 'failed', message: error.message || '工作记录保存失败，请重试；当前内容仍保留在本页面。', patch })
       return null
     }
@@ -1751,7 +1767,7 @@ export default function App({ initialAuthenticated = false, initialPage = 'home'
       <Sidebar page={page} subRoute={subRoute} onNavigate={navigate} session={session} />
       <div className="app-main">
         <Topbar timeMode={timeMode} session={session} onOpenProfile={() => navigate('profile')} onSwitchWorkspace={async workspaceId => { const response = await fetch(`/api/v1/workspaces/${workspaceId}/switch`, { method: 'POST' }); if (response.ok) { const refreshed = await fetch('/api/v1/session'); if (refreshed.ok) setSession(await refreshed.json()) } }} onToggleTimeMode={() => setTimeMode(mode => mode === 'day' ? 'night' : 'day')} onLogout={() => { fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {}); setSession(null); setAuthenticated(false); navigate('home') }} />
-        <div className="page-transition" key={page}>
+        <div className="page-transition" key={`${accountScope}:${page}`}>
           {page === 'home' && <HomePage onNavigate={(nextPage, nextRoute, context) => { if (context?.startDraft) { const draftPromise = startDraft(nextPage, nextRoute, context.title); navigate(nextPage, nextRoute, { ...context, draftPromise }) } else navigate(nextPage, nextRoute, context) }} />}
           {page === 'retouch' && (subRoute === 'tasks' ? <PromptRecordPage workspace="retouch" title="产品精修记录" description="精修计划、最终提示词与关联生成结果会自动存入云端。" filters={[["retouch_prompt", "精修提示词"]]} /> : demoRetouch ? <RetouchPage /> : <LiveRetouch initialTab={subRoute === 'gallery' ? 'gallery' : 'one-click'} focusAssistant={subRoute === 'assistant' || Boolean(retouchContext?.focusAssistant)} incomingAsset={retouchContext?.asset} draftRecord={retouchContext?.draftRecord || draftRecordState.retouch} draftPromise={retouchContext?.draftPromise} onDraftChange={patch => saveDraftChange('retouch', 'one-click', patch)} onIncomingAssetConsumed={() => setRetouchContext(null)} />)}
           {page === 'brand' && <CreativeCasesPage type="brand" initialRoute={subRoute} incomingContext={creationContext} onIncomingContextConsumed={() => setCreationContext(null)} onDraftChange={patch => saveDraftChange('brand', subRoute || 'create', patch)} />}

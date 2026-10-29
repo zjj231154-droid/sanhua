@@ -1,3 +1,4 @@
+import { mayReadTaskResult } from '../../../_lib/task-ownership.js'
 import { json } from '../../../_lib/tokenspace.js'
 import { addAssetLocation, assetAvailableInWorkspace, assetMetadataKey, assetUrl, assetsBucket, downloadFileName, getJson, normalizeAssetName, putJson, uniqueNameForLocation } from '../../../_lib/asset-store.js'
 import { folderFor } from '../../../_lib/library-config.js'
@@ -15,7 +16,7 @@ async function assetFor(context, id) {
   const bucket = assetsBucket(context)
   if (!bucket) return { error: json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' }) }
   const asset = await getJson(bucket, assetMetadataKey(id))
-  if (!asset) return { error: json(404, { error: 'ASSET_NOT_FOUND' }) }
+  if (!asset || !mayReadTaskResult(asset, identity)) return { error: json(404, { error: 'ASSET_NOT_FOUND' }) }
   if (!identity.compatibilityMode && !assetAvailableInWorkspace(asset, identity.workspaceId)) return { error: json(404, { error: 'ASSET_NOT_FOUND' }) }
   if (asset.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return { error: json(403, { error: 'INSUFFICIENT_PERMISSION' }) }
   return { bucket, asset, identity }
@@ -86,7 +87,7 @@ export async function onRequestPost(context) {
   let input
   try { input = await context.request.json() } catch { input = {} }
   const asset = await getJson(bucket, assetMetadataKey(id))
-  if (!asset || (!identity.compatibilityMode && !assetAvailableInWorkspace(asset, identity.workspaceId))) return json(404, { error: 'ASSET_NOT_FOUND' })
+  if (!asset || !mayReadTaskResult(asset, identity) || (!identity.compatibilityMode && !assetAvailableInWorkspace(asset, identity.workspaceId))) return json(404, { error: 'ASSET_NOT_FOUND' })
   if (asset.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return json(403, { error: 'INSUFFICIENT_PERMISSION' })
   const placed = await addAssetLocation(bucket, asset, { libraryKey: 'retouch', folderKey: 'template', projectId: input.projectId || asset.projectId, createdBy: identity.user.id })
   if (placed.invalid) return json(400, { error: 'INVALID_TEMPLATE_LOCATION' })

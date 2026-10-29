@@ -6,12 +6,14 @@ const text = (value, limit) => String(value || '').trim().slice(0, limit)
 const strings = value => Array.isArray(value) ? [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))].slice(0, 50) : []
 const summaryFor = value => text(value, 300).replace(/\s+/g, ' ')
 
-export async function listTextRecords(context, { workspace, recordType, q, includeDeleted = false, limit = 40, cursor } = {}) {
+export async function listTextRecords(context, { workspaceId, ownerUserId, workspace, recordType, q, includeDeleted = false, limit = 40, cursor } = {}) {
   const bucket = assetsBucket(context)
   if (!bucket) return null
   const types = String(recordType || '').split(',').map(item => item.trim()).filter(Boolean)
   const needle = String(q || '').trim().toLowerCase()
   const rows = (await listJson(bucket, 'metadata/text-records/'))
+    .filter(record => !workspaceId || record.workspaceId === workspaceId)
+    .filter(record => !ownerUserId || (record.ownerUserId || record.createdBy) === ownerUserId)
     .filter(record => includeDeleted || record.status !== 'deleted')
     .filter(record => !workspace || record.workspace === workspace)
     .filter(record => !types.length || types.includes(record.recordType))
@@ -35,7 +37,7 @@ export async function createTextRecord(context, input = {}) {
   if (!content) return { invalid: 'TEXT_RECORD_CONTENT_REQUIRED' }
   const createdAt = now()
   const record = {
-    id: crypto.randomUUID(), tenantId: input.workspaceId || 'default', workspaceId: input.workspaceId || 'default', projectId: input.projectId || input.workspace || 'script', storeId: 'day-coffee-night-bar',
+    id: crypto.randomUUID(), ownerUserId: input.createdBy || input.ownerUserId || 'demo-designer', visibility: 'private', tenantId: input.workspaceId || 'default', workspaceId: input.workspaceId || 'default', projectId: input.projectId || input.workspace || 'script', storeId: 'day-coffee-night-bar',
     workspace: ['retouch', 'brand', 'script', 'video'].includes(input.workspace) ? input.workspace : 'script',
     sourceModule: text(input.sourceModule, 100) || 'assets.text', recordType: text(input.recordType, 100) || 'note',
     title: text(input.title, 160) || '未命名文本记录', summary: text(input.summary, 300) || summaryFor(content), content,

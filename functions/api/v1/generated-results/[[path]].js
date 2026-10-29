@@ -1,3 +1,4 @@
+import { mayReadTaskResult } from '../../../_lib/task-ownership.js'
 import { json } from '../../../_lib/tokenspace.js'
 import { addAssetLocation, assetMetadataKey, assetUrl, assetsBucket, downloadFileName, getJson, listJson, putJson, uniqueNameForLocation } from '../../../_lib/asset-store.js'
 import { folderFor } from '../../../_lib/library-config.js'
@@ -19,7 +20,7 @@ export async function onRequestGet(context) {
   if (!bucket) return json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' })
   const [id] = parts(context)
   const allowed = asset => (identity.compatibilityMode || asset.workspaceId === identity.workspaceId || asset.tenantId === identity.workspaceId)
-    && (asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
+    && mayReadTaskResult(asset, identity) && (asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
   const all = (await listJson(bucket, 'metadata/assets/')).filter(allowed).filter(asset => asset.category === 'generated' || asset.sourceTaskId || asset.isTemporary)
   if (id) {
     const asset = all.find(item => item.id === id)
@@ -46,8 +47,8 @@ export async function onRequestPost(context) {
   let input
   try { input = await context.request.json() } catch { return json(400, { error: '请求格式必须是 JSON' }) }
   const asset = await getJson(bucket, assetMetadataKey(id))
-  if (!asset || (!identity.compatibilityMode && asset.workspaceId !== identity.workspaceId)) return json(404, { error: 'GENERATED_RESULT_NOT_FOUND' })
-  if (asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return json(403, { error: 'INSUFFICIENT_PERMISSION' })
+  if (!asset || !mayReadTaskResult(asset, identity) || (!identity.compatibilityMode && asset.workspaceId !== identity.workspaceId)) return json(404, { error: 'GENERATED_RESULT_NOT_FOUND' })
+  if (!identity.compatibilityMode && (asset.ownerUserId || asset.createdBy) !== identity.user.id) return json(404, { error: 'GENERATED_RESULT_NOT_FOUND' })
   if (asset.category !== 'generated' && !asset.isTemporary) return json(409, { error: 'RESULT_NOT_ARCHIVABLE' })
   const libraryKey = String(input.libraryKey || asset.recommendedLibraryKey || '').trim()
   const folderKey = String(input.folderKey || asset.recommendedFolderKey || '').trim()

@@ -1,3 +1,4 @@
+import { mayReadTaskResult } from '../../../_lib/task-ownership.js'
 import { json } from '../../../_lib/tokenspace.js'
 import { assetAvailableInWorkspace, assetsBucket, listJson } from '../../../_lib/asset-store.js'
 import { ASSET_LIBRARIES, hasLocation, libraryFor } from '../../../_lib/library-config.js'
@@ -16,6 +17,7 @@ export async function onRequestGet(context) {
   const [libraryKey, action] = parts(context)
   const assets = (await listJson(bucket, 'metadata/assets/', 1000))
     .filter(asset => identity.compatibilityMode || assetAvailableInWorkspace(asset, identity.workspaceId))
+    .filter(asset => mayReadTaskResult(asset, identity))
     .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
   const withCounts = library => ({ ...library, folders: library.folders.map(folder => ({ ...folder, assetType: 'image', downloadEnabled: true, saveAsTemplateEnabled: Boolean(folder.saveAsTemplateEnabled), count: assets.filter(asset => hasLocation(asset, library.key, folder.key)).length })) })
   if (!libraryKey) return json(200, { libraries: ASSET_LIBRARIES.map(withCounts) })

@@ -8,9 +8,9 @@ const setup = (data = summary(), actions = {}) => {
  const fetcher = vi.fn(async (url, options) => actions[url]?.(options) || response(data)); vi.stubGlobal('fetch', fetcher); return fetcher
 }
 const open = async () => { const button = screen.getByRole('button', { name: /打开.*任务列表|打开近期任务列表/ }); fireEvent.click(button); await screen.findByRole('region', { name: '后台任务进度' }); return button }
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear() })
-it('progress_ring_shows_real_single_task_progress', async () => { setup(summary([{ ...draft, status: 'running', progress: 37, progressSource: 'provider' }], [], { averageProgress: 37, runningCount: 1 })); render(<TaskProgress />); expect(await screen.findByRole('button', { name: /整体进度 37%/ })).toHaveTextContent('37%') })
-it('unknown_progress_does_not_inflate_average', async () => { setup(summary([draft, { ...draft, id: 'known', progress: 42, progressSource: 'provider' }], [], { averageProgress: 42, hasUnknownProgress: true })); render(<TaskProgress />); const button = await screen.findByRole('button', { name: /当前 2 个任务，整体进度 42%/ }); fireEvent.click(button); expect(await screen.findByText('处理中 · 等待服务响应')).toBeInTheDocument() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear() })
+it('progress_ring_shows_real_single_task_progress', async () => { setup(summary([{ ...draft, status: 'running', progress: 37, progressSource: 'provider' }], [], { averageProgress: 37, runningCount: 1 })); render(<TaskProgress />); expect(await screen.findByRole('button', { name: /进度 37%/ })).toHaveTextContent('37%') })
+it('unknown_progress_does_not_inflate_average', async () => { setup(summary([draft, { ...draft, id: 'known', status: 'running', progress: 42, progressSource: 'provider' }], [], { averageProgress: 42, hasUnknownProgress: true })); render(<TaskProgress />); const button = await screen.findByRole('button', { name: /进度 42%.*当前 2 个任务/ }); fireEvent.click(button); expect(await screen.findByText('处理中 · 等待服务响应')).toBeInTheDocument() })
 it('empty_ring_does_not_show_fake_100_percent', async () => { setup(); render(<TaskProgress />); await waitFor(() => expect(screen.getByRole('button', { name: /当前空闲/ })).toHaveTextContent('空闲')); expect(screen.queryByText('100%')).not.toBeInTheDocument() })
 it('failed_task_shows_failure_indicator', async () => { setup(summary([], [{ ...draft, status: 'failed' }], { hasFailed: true })); render(<TaskProgress />); expect(await screen.findByLabelText('有失败任务')).toBeInTheDocument() })
 it('progress_ring_opens_and_closes_task_panel_accessibly with Escape and outside pointer', async () => { setup(summary([draft])); render(<TaskProgress />); const button = await open(); fireEvent.keyDown(document, { key: 'Escape' }); expect(button).toHaveFocus(); expect(screen.queryByRole('region')).not.toBeInTheDocument(); fireEvent.click(button); fireEvent.pointerDown(document.body); expect(screen.queryByRole('region')).not.toBeInTheDocument(); fireEvent.click(button); fireEvent.click(button); expect(screen.queryByRole('region')).not.toBeInTheDocument() })
@@ -23,23 +23,69 @@ it('cancel_failure_keeps_task_active', async () => { setup(summary([draft]), { '
 it('task_creation_updates_panel_immediately and task_completion_moves_item_to_recent_completed', async () => { let data = summary(); const fetcher = setup(); fetcher.mockImplementation(async () => response(data)); render(<TaskProgress />); await open(); data = summary([draft]); fireEvent(window, new Event('sanhua:tasks-updated')); expect(await screen.findByText('精修草稿')).toBeInTheDocument(); data = summary([], [{ ...draft, status: 'succeeded' }]); fireEvent(window, new Event('sanhua:tasks-updated')); expect(await screen.findByRole('button', { name: '查看结果' })).toBeInTheDocument(); expect(screen.queryByRole('button', { name: '取消', exact: true })).not.toBeInTheDocument() })
 it('workspace_switch_clears_previous_task_cache and ignores late requests', async () => { let data = summary([draft]); const fetcher = setup(); fetcher.mockImplementation(async () => response(data)); const rendered = render(<TaskProgress scopeKey="user-a:workspace-a" />); await open(); expect(await screen.findByText('精修草稿')).toBeInTheDocument(); data = summary(); rendered.rerender(<TaskProgress scopeKey="user-a:workspace-b" />); await waitFor(() => expect(screen.queryByText('精修草稿')).not.toBeInTheDocument()); await open(); expect(screen.queryByText('精修草稿')).not.toBeInTheDocument() })
 it('logout_clears_previous_session_task_state', async () => { setup(summary([draft])); const rendered = render(<TaskProgress />); await open(); expect(await screen.findByText('精修草稿')).toBeInTheDocument(); rendered.unmount(); expect(screen.queryByRole('region')).not.toBeInTheDocument() })
-it('saved position outside the current viewport is clamped and the ring escapes app clipping', async () => {
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
-  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
-  localStorage.setItem('sanhua-task-progress-position', JSON.stringify({ right: 2000, bottom: 1200 }))
+it('task entry lives in a dedicated topbar dock instead of the batch action area', async () => {
   setup(); const host = document.createElement('div'); host.style.overflow = 'hidden'; document.body.append(host)
   const rendered = render(<TaskProgress />, { container: host })
   const ring = screen.getByRole('button', { name: /当前空闲/ })
-  expect(ring.parentElement).toBe(document.body)
-  expect(ring).toHaveStyle({ right: '28px', bottom: '28px' })
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 })
-  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 300 })
-  fireEvent(window, new Event('resize'))
-  expect(ring).toHaveStyle({ right: '28px', bottom: '28px' })
+  expect(ring.closest('.task-hub-dock').parentElement).toBe(document.body)
+  expect(ring).not.toHaveAttribute('style')
   rendered.unmount(); host.remove()
 })
-it('invalid stored widget position uses the visible default', async () => {
-  localStorage.setItem('sanhua-task-progress-position', JSON.stringify({ right: 'far-away', bottom: -99 }))
-  setup(); render(<TaskProgress />)
-  expect(screen.getByRole('button', { name: /当前空闲/ })).toHaveStyle({ right: '28px', bottom: '28px' })
+
+it('progress_ring_tracks_only_one_task and never averages multiple tasks', async () => {
+  const first = { ...draft, id: 'one', title: '第一项', status: 'running', progress: 20, progressSource: 'provider', updatedAt: '2026-10-01T01:00:00Z' }
+  const second = { ...first, id: 'two', title: '第二项', progress: 80, updatedAt: '2026-10-01T02:00:00Z' }
+  setup(summary([first, second], [], { averageProgress: 50 }))
+  render(<TaskProgress scopeKey="owner-a:main" />)
+  expect(await screen.findByRole('button', { name: /正在跟踪 第二项，进度 80%/ })).toHaveTextContent('80%')
+  await open()
+  const firstCard = screen.getByRole('article', { name: '第一项' })
+  fireEvent.click(within(firstCard).getByRole('button', { name: '圆环跟踪此任务' }))
+  expect(screen.getByRole('button', { name: /正在跟踪 第一项，进度 20%/ })).toHaveTextContent('20%')
+  expect(within(firstCard).getByText('20%')).toBeInTheDocument()
+  expect(within(screen.getByRole('article', { name: '第二项' })).getByText('80%')).toBeInTheDocument()
+  expect(sessionStorage.getItem('sanhua-task-tracking:owner-a:main')).toBe('one')
+})
+
+it('tracked_task_finishing_selects_next_active_task; unknown progress does not become an estimate', async () => {
+  const running = { ...draft, id: 'running', title: '视频', status: 'running', progress: 60, progressSource: 'provider' }
+  const queued = { ...draft, id: 'queued', title: '图片', status: 'queued', progress: 25, progressSource: 'platform_estimate' }
+  let data = summary([queued, running]); const fetcher = setup(); fetcher.mockImplementation(async () => response(data))
+  render(<TaskProgress />)
+  expect(await screen.findByRole('button', { name: /正在跟踪 视频，进度 60%/ })).toBeInTheDocument()
+  data = summary([queued], [{ ...running, status: 'succeeded' }])
+  fireEvent(window, new Event('sanhua:tasks-updated'))
+  const ring = await screen.findByRole('button', { name: /正在跟踪 图片，排队中/ })
+  expect(ring).not.toHaveTextContent('25%')
+  expect(within(ring).getByLabelText('处理中，进度未知')).toBeInTheDocument()
+})
+
+it('switch_account_clears_task_cache and ignores the old session preference and delayed response', async () => {
+  sessionStorage.setItem('sanhua-task-tracking:owner-a:main', 'private-a')
+  let resolveOld
+  const fetcher = setup(); fetcher.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+  const rendered = render(<TaskProgress scopeKey="owner-a:main" />)
+  fetcher.mockImplementation(async () => response(summary([{ ...draft, id: 'private-b', title: 'B 的草稿' }])))
+  rendered.rerender(<TaskProgress scopeKey="owner-b:main" />)
+  await waitFor(() => expect(screen.getByRole('button', { name: /正在跟踪 B 的草稿/ })).toBeInTheDocument())
+  resolveOld(response(summary([{ ...draft, id: 'private-a', title: 'A 的私有任务' }])))
+  await open()
+  expect(screen.queryByText('A 的私有任务')).not.toBeInTheDocument()
+  expect(screen.getByText('B 的草稿')).toBeInTheDocument()
+})
+
+it('a saved tracking preference restores only the current account active task', async () => {
+  const tasks = [{ ...draft, id: 'chosen', title: '本人选中的草稿' }, { ...draft, id: 'running', title: '运行任务', status: 'running', progress: 80, progressSource: 'provider' }]
+  sessionStorage.setItem('sanhua-task-tracking:a:main', 'chosen')
+  setup(summary(tasks)); render(<TaskProgress scopeKey="a:main" />)
+  expect(await screen.findByRole('button', { name: /正在跟踪 本人选中的草稿，编辑中/ })).toBeInTheDocument()
+})
+
+it('archive failure keeps results visible and exposes a retry without clearing the task panel', async () => {
+  const task = { ...draft, status: 'failed', archiveRetryAvailable: true }
+  setup(summary([], [task]), { '/api/v1/task-center/draft-1/archive-results': () => response({ hint: '存储暂不可用' }, false) })
+  render(<TaskProgress />); await open()
+  fireEvent.click(screen.getByRole('button', { name: '重新归档结果' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('生成结果已保留')
+  expect(screen.getByRole('button', { name: '重新归档结果' })).toBeEnabled()
 })

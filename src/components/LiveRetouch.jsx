@@ -298,7 +298,7 @@ export default function LiveRetouch({ initialTab = 'one-click', focusAssistant =
     try {
       const imageSource = await toImageDataUrl(source, '无法读取所选素材')
       const result = await cloudRequest({
-        type: 'analyze', image: imageSource,
+        type: 'analyze', image: imageSource, sourceAssetIds: assetId ? [assetId] : [],
         prompt: '你是商品修图视觉分析师。分析图片后，只返回 JSON 对象，必须有 size、scene、decor、product、preserve、requirements 六个中文字符串字段。size 写原图比例和输出建议；scene 写真实场景；decor 写可保留或可调整的装饰；product 写产品类型；preserve 写不可改变的产品、文字、标签和品牌元素；requirements 写可直接执行的精修要求。不要使用 Markdown，不要编造不可见元素。',
       })
       applyAnalysis(readAnalysis(result), requestId)

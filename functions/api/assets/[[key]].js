@@ -1,3 +1,4 @@
+import { mayReadTaskResult } from '../../_lib/task-ownership.js'
 import { json } from '../../_lib/tokenspace.js'
 import { assetAvailableInWorkspace, assetMetadataKey, assetUrl, assetsBucket, getJson, listJson, putJson } from '../../_lib/asset-store.js'
 import { hasPermission, requireIdentity } from '../../_lib/collaboration.js'
@@ -44,11 +45,12 @@ export async function onRequestGet(context) {
     ? directAsset
     : bucket.list ? (await listJson(bucket, 'metadata/assets/', 1000)).find(item => item.storageKey === key || item.thumbnailKey === key || item.previewKey === key) : null
   if (!identity.compatibilityMode && (!asset || !assetAvailableInWorkspace(asset, identity.workspaceId))) return json(404, { error: '素材不存在' })
+  if (asset && !mayReadTaskResult(asset, identity)) return json(404, { error: 'ASSET_NOT_FOUND' })
   if (asset?.visibility === 'private' && asset.createdBy !== identity.user.id && !hasPermission(identity.membership, 'manage')) return json(403, { error: 'INSUFFICIENT_PERMISSION' })
   const object = await bucket.get(key)
   if (!object) return json(404, { error: '素材不存在' })
   const etag = `"${encodeURIComponent(key)}"`
-  const headers = { 'content-type': object.httpMetadata?.contentType || 'application/octet-stream', 'cache-control': 'private, max-age=604800, immutable', etag, vary: 'Authorization' }
+  const headers = { 'content-type': object.httpMetadata?.contentType || 'application/octet-stream', 'cache-control': asset?.sourceTaskId || asset?.visibility === 'private' ? 'private, no-store' : 'private, max-age=604800, immutable', etag, vary: 'Cookie, Authorization' }
   if (context.request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers })
   return new Response(object.body, { headers })
 }

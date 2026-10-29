@@ -3,6 +3,8 @@ import { requireIdentity } from '../../../_lib/collaboration.js'
 import { activeStatuses, cancelCenterTask, centerDetail, centerItems, centerSummary, retryCenterTask } from '../../../_lib/task-center-store.js'
 import { updateWorkRecord } from '../../../_lib/work-record-store.js'
 import { updateTask } from '../../../_lib/task-store.js'
+import { archiveImageOutputs } from '../../../_lib/asset-store.js'
+const archiveLocks = new Set()
 const parts = context => (Array.isArray(context.params?.path) ? context.params.path : String(context.params?.path || '').split('/')).filter(Boolean)
 export async function onRequestGet(context) {
   const identity = await requireIdentity(context, 'view'); if (identity.error) return identity.error
@@ -27,6 +29,22 @@ export async function onRequestPost(context) {
     return json(result.status, result.data)
   }
   if (action === 'refresh') { const detail = await centerDetail(context, identity, id); return detail ? json(200, detail) : json(404, { error: 'TASK_NOT_FOUND' }) }
+  if (action === 'archive-results') {
+    const detail = await centerDetail(context, identity, id)
+    if (!detail) return json(404, { error: 'TASK_NOT_FOUND' })
+    if (['cancelled', 'archived'].includes(detail.item.status)) return json(409, { error: 'TASK_ENDED' })
+    const task = detail.tasks.find(item => item.pendingArchive)
+    if (!task) return json(409, { error: 'NO_PENDING_RESULTS' })
+    if (archiveLocks.has(id)) return json(409, { error: 'ARCHIVE_IN_PROGRESS' })
+    archiveLocks.add(id)
+    try {
+      const archived = await archiveImageOutputs({ ...context, workRecordId: detail.record?.taskId }, task.pendingArchive)
+      if (archived.error) return archived.error
+      await updateTask(context, task.id, { status: 'completed', progress: 100, pendingArchive: null, error: '', outputIds: archived.assets.map(asset => asset.id), stage: '结果已重新归档' })
+      return json(200, { ...(await centerDetail(context, identity, id)), notice: '结果已重新归档' })
+    } catch { return json(502, { error: 'RESULT_ARCHIVE_FAILED', hint: '结果仍保留，请重试归档。' }) }
+    finally { archiveLocks.delete(id) }
+  }
   if (action === 'archive') {
     const detail = await centerDetail(context, identity, id)
     if (!detail) return json(404, { error: 'TASK_NOT_FOUND' })

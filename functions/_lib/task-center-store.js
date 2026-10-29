@@ -2,10 +2,11 @@ import { getWorkRecord, listWorkRecords, updateWorkRecord } from './work-record-
 import { getTask, listTasks, updateTask } from './task-store.js'
 import { resolvedVideoProviderConnection } from './collaboration.js'
 import { resetExecution, stopExecution } from './task-execution.js'
+import { ownsTask, taskScope } from './task-ownership.js'
 export const activeStatuses = new Set(['draft', 'ready', 'queued', 'running', 'retrying', 'cancelling'])
 export const taskStatus = status => ({ completed: 'succeeded', waiting_user: 'ready' }[status] || status || 'draft')
-export const ownedRecord = (item, identity) => item && (identity.compatibilityMode || (item.workspaceId === identity.workspaceId && item.ownerUserId === identity.user.id))
-export const ownedTask = (item, identity) => item && (identity.compatibilityMode || (item.workspaceId === identity.workspaceId && (item.ownerUserId || item.createdBy) === identity.user.id))
+export const ownedRecord = ownsTask
+export const ownedTask = ownsTask
 const names = { retouch: '产品精修', brand: '品牌创作', script: '短剧脚本', video: '视频生成', assets: '资产库' }
 const progress = value => value != null && Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : null
 export function unifiedItem(record, tasks = []) {
@@ -14,9 +15,11 @@ export function unifiedItem(record, tasks = []) {
   if (!item) return null
   const moduleKey = record?.moduleKey || latest.workspace, cancelled = record?.status === 'cancelled'
   const status = cancelled ? 'cancelled' : taskStatus(latest?.status || record.status)
-  const value = progress(latest?.progress ?? record?.progress)
-  return { ...item, id: record?.taskId || latest.id, taskId: record?.taskId || latest.id, workRecordId: record?.taskId || latest.workRecordId || '', moduleKey, moduleName: record?.moduleName || names[moduleKey] || '创作任务', status,
-    progress: value, progressSource: latest?.progressSource || record?.progressSource || (value == null ? 'unknown' : 'platform_estimate'), progressUpdatedAt: latest?.updatedAt || record?.progressUpdatedAt || item.updatedAt,
+  const source = latest?.progressSource || record?.progressSource || 'unknown'
+  const value = activeStatuses.has(status) && source !== 'provider' ? null : progress(latest?.progress ?? record?.progress)
+  const { pendingArchive, ...safeItem } = item
+  return { ...safeItem, archiveRetryAvailable: Boolean(latest?.pendingArchive || pendingArchive), visibility: 'private', ownerUserId: item.ownerUserId || item.createdBy, id: record?.taskId || latest.id, taskId: record?.taskId || latest.id, workRecordId: record?.taskId || latest.workRecordId || '', moduleKey, moduleName: record?.moduleName || names[moduleKey] || '创作任务', status,
+    progress: value, progressSource: value == null ? 'unknown' : source, progressUpdatedAt: latest?.updatedAt || record?.progressUpdatedAt || item.updatedAt,
     stage: latest?.stage || record?.operationSummary || `第 ${record?.currentStep || 1} 步`, errorMessage: record?.errorMessage || latest?.error || '', error: record?.errorMessage || latest?.error || '',
     legacyTaskId: latest?.id || '', providerTaskId: latest?.providerTaskId || record?.providerTaskId || latest?.id || '', providerVideoUrl: latest?.providerVideoUrl || null, providerCancelSupported: record?.providerCancelSupported || false, taskSource: record ? 'work_record' : 'legacy_task',
     resultAssetIds: [...new Set([...(record?.resultAssetIds || []), ...tasks.flatMap(task => [...(task.outputIds || []), ...(task.videoAssetId ? [task.videoAssetId] : [])])])], resultTextRecordIds: [...new Set([...(record?.resultTextRecordIds || []), ...tasks.map(task => task.textRecordId).filter(Boolean)])],
@@ -31,18 +34,18 @@ export async function centerItems(context, identity, { sync = true, includeArchi
     records.push(...result.items)
     if (records.length >= result.total) break
   }
-  let tasks = (await listTasks(context, { workspaceId: identity.workspaceId, compatibilityMode: identity.compatibilityMode })).filter(task => ownedTask(task, identity))
+  let tasks = (await listTasks(context, taskScope(identity))).filter(task => ownedTask(task, identity))
   if (sync) {
     const { syncVideoTask } = await import('../api/v1/video-tasks/[[path]].js')
     tasks = await Promise.all(tasks.map(task => task.workspace === 'video' && ['queued', 'running'].includes(task.status) && !records.some(record => record.taskId === task.workRecordId && record.status === 'cancelled') ? syncVideoTask(context, task) : task))
   }
   const currentRecords = await Promise.all(records.map(record => getWorkRecord(context, record.taskId)))
-  const items = currentRecords.map(record => unifiedItem(record, tasks.filter(task => task.workRecordId === record.taskId))), ids = new Set(records.map(record => record.taskId))
+  const items = currentRecords.filter(record => ownedRecord(record, identity)).map(record => unifiedItem(record, tasks.filter(task => task.workRecordId === record.taskId))), ids = new Set(records.map(record => record.taskId))
   for (const task of tasks) if (!ids.has(task.workRecordId)) {
     const linked = task.workRecordId ? await getWorkRecord(context, task.workRecordId) : null
     if (!linked || ownedRecord(linked, identity)) items.push(unifiedItem(linked, [task]))
   }
-  return items.filter(item => includeArchived || item.status !== 'archived').sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+  return items.filter(item => includeArchived || item.status !== 'archived').sort(sortActiveTasks)
 }
 export async function centerDetail(context, identity, id) {
   let record = await getWorkRecord(context, id)
@@ -54,13 +57,17 @@ export async function centerDetail(context, identity, id) {
   return { item: unifiedItem(record, tasks), record, tasks }
 }
 export function centerSummary(active, recent) {
-  const known = active.filter(item => item.progress != null && item.progressSource !== 'unknown')
-  return { activeCount: active.length, runningCount: active.filter(item => ['queued', 'running', 'retrying', 'cancelling'].includes(item.status)).length, averageProgress: known.length ? Math.round(known.reduce((sum, item) => sum + item.progress, 0) / known.length) : null, hasUnknownProgress: known.length < active.length, hasFailed: recent.some(item => item.status === 'failed') }
+  return { activeCount: active.length, runningCount: active.filter(item => ['queued', 'running', 'retrying', 'cancelling'].includes(item.status)).length, trackedTaskId: [...active].sort(sortActiveTasks)[0]?.taskId || null, hasUnknownProgress: active.some(item => item.progress == null), hasFailed: recent.some(item => item.status === 'failed') }
 }
+const priority = { running: 0, retrying: 0, cancelling: 0, queued: 1, ready: 2, draft: 3 }
+export function sortActiveTasks(a, b) { return (priority[a.status] ?? 4) - (priority[b.status] ?? 4) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')) }
 const cancelLocks = new Set()
 export async function cancelCenterTask(context, identity, id, input = {}) {
-  if (cancelLocks.has(id)) return { status: 409, data: { error: 'CANCELLATION_IN_PROGRESS' } }
-  cancelLocks.add(id)
+  const initial = await centerDetail(context, identity, id)
+  if (!initial) return { status: 404, data: { error: 'TASK_NOT_FOUND' } }
+  const lockId = initial.record?.taskId || initial.item.id
+  if (cancelLocks.has(lockId)) return { status: 409, data: { error: 'CANCELLATION_IN_PROGRESS' } }
+  cancelLocks.add(lockId)
   try {
     const detail = await centerDetail(context, identity, id)
     if (!detail) return { status: 404, data: { error: 'TASK_NOT_FOUND' } }
@@ -90,7 +97,7 @@ export async function cancelCenterTask(context, identity, id, input = {}) {
     stopExecution(record?.taskId || item.id)
     for (const task of tasks) if (activeStatuses.has(taskStatus(task.status))) await updateTask(context, task.id, audit)
     return { status: 200, data: { ...(await centerDetail(context, identity, id)), notice, providerCancelSupported } }
-  } finally { cancelLocks.delete(id) }
+  } finally { cancelLocks.delete(lockId) }
 }
 export async function retryCenterTask(context, identity, id, input) {
   const detail = await centerDetail(context, identity, id)

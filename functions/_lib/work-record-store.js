@@ -10,7 +10,8 @@ const allowedStatuses = new Set(['draft', 'ready', 'queued', 'running', 'retryin
 const draftEnvelope = (value, { moduleKey = '', route = '', subRoute = '', currentStep = 1 } = {}) => ({ ...(value && typeof value === 'object' && !Array.isArray(value) ? value : {}), moduleKey, currentRoute: route, currentSubRoute: subRoute, currentStep })
 
 function sanitize(value, depth = 0) {
-  if (depth > 8 || value === null || value === undefined) return value
+  if (depth > 8) return null
+  if (value === null || value === undefined) return value
   if (typeof value === 'string') return value.slice(0, 20000)
   if (typeof value !== 'object') return value
   if (Array.isArray(value)) return value.slice(0, 100).map(item => sanitize(item, depth + 1))
@@ -49,7 +50,8 @@ export async function createWorkRecord(context, input = {}) {
   if (!validModule(moduleKey)) return { invalid: 'MODULE_KEY_REQUIRED' }
   const createdAt = now()
   const record = {
-    taskId: crypto.randomUUID(), recordType: 'draft_task', workspaceId: text(input.workspaceId, 160), ownerUserId: text(input.ownerUserId, 160),
+    taskId: crypto.randomUUID(), recordType: 'draft_task', visibility: 'private', workspaceId: text(input.workspaceId, 160), ownerUserId: text(input.ownerUserId, 160),
+    sourceProjectId: text(input.sourceProjectId, 160), sourceScriptId: text(input.sourceScriptId, 160), sourceShotId: text(input.sourceShotId, 160), generationParams: sanitize(input.generationParams || {}),
     moduleKey, moduleName: text(input.moduleName, 120) || moduleKey, route: text(input.route, 160), subRoute: text(input.subRoute, 160), title: text(input.title, 180) || `${text(input.moduleName, 120) || moduleKey}工作记录`,
     currentStep: Math.max(1, Number(input.currentStep) || 1), status: 'draft', draftData: draftEnvelope(sanitize(input.initialData || {}), { moduleKey, route: text(input.route, 160), subRoute: text(input.subRoute, 160), currentStep: Math.max(1, Number(input.currentStep) || 1) }), stepSnapshots: [], operationSummary: text(input.operationSummary, 400),
     inputAssetIds: strings(input.inputAssetIds), sourceTextRecordIds: strings(input.sourceTextRecordIds), resultAssetIds: strings(input.resultAssetIds), resultTextRecordIds: strings(input.resultTextRecordIds),
@@ -64,6 +66,7 @@ export async function updateWorkRecord(context, id, patch = {}) {
   const bucket = assetsBucket(context)
   const current = bucket ? await getJson(bucket, keyFor(id)) : null
   if (!current) return null
+  if (current.status === 'archived' && patch.status !== 'archived') return current
   if (current.status === 'cancelled' && patch.status !== 'archived') {
     if (!patch.lateResultAt) return current
     const late = { ...current, lateResultAt: patch.lateResultAt, lateResultNotice: text(patch.lateResultNotice, 400) }
@@ -101,7 +104,7 @@ export async function updateWorkRecord(context, id, patch = {}) {
     updatedBy: text(patch.updatedBy, 160) || current.updatedBy,
     version: Number(current.version || 0) + 1, updatedAt: now(),
   }
-  for (const field of ['cancelledAt', 'cancelledBy', 'cancelReason', 'providerCancelResult', 'providerCancelSupported', 'cancelRequestedAt', 'sourceTaskId']) if (patch[field] !== undefined) next[field] = sanitize(patch[field])
+  for (const field of ['cancelledAt', 'cancelledBy', 'cancelReason', 'providerCancelResult', 'providerCancelSupported', 'cancelRequestedAt', 'sourceTaskId', 'generationParams', 'sourceProjectId', 'sourceScriptId', 'sourceShotId']) if (patch[field] !== undefined) next[field] = sanitize(patch[field])
   if (patch.captureSnapshot !== false && (patch.draftData !== undefined || patch.currentStep !== undefined || patch.route !== undefined || patch.subRoute !== undefined)) {
     const snapshot = { route: next.route, subRoute: next.subRoute || '', currentStep: next.currentStep, draftData: sanitize(next.draftData), capturedAt: next.updatedAt }
     next.stepSnapshots = [...(Array.isArray(current.stepSnapshots) ? current.stepSnapshots : []), snapshot].slice(-30)
@@ -113,4 +116,4 @@ export async function updateWorkRecord(context, id, patch = {}) {
   return next
 }
 
-export { allowedStatuses }
+export { allowedStatuses, sanitize as sanitizeTaskData }

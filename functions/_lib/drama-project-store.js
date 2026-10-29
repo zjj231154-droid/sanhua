@@ -1,3 +1,4 @@
+import { ownsTask } from './task-ownership.js'
 import { assetsBucket, getJson, listJson, putJson } from './asset-store.js'
 import { createWorkRecord, updateWorkRecord } from './work-record-store.js'
 
@@ -17,7 +18,7 @@ export async function listDramaProjects(context, identity) {
   const bucket = assetsBucket(context)
   if (!bucket) return null
   return (await listJson(bucket, prefix, 500))
-    .filter(project => identity.compatibilityMode || project.workspaceId === identity.workspaceId)
+    .filter(project => ownsTask(project, identity))
     .filter(project => !project.archivedAt)
     .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
 }
@@ -59,7 +60,7 @@ export async function updateDramaProject(context, current, patch = {}) {
   await putJson(bucket, key(current.projectId), next)
   if (current.currentTaskId) await updateWorkRecord(context, current.currentTaskId, {
     title: next.title, currentStep: next.stage === 'requirements' ? 1 : next.stage === 'script_storyboard' ? 2 : 3,
-    status: ['generating'].includes(next.status) ? 'running' : next.status === 'failed' ? 'failed' : 'draft',
+    status: next.stage === 'completed' ? 'succeeded' : next.status === 'generating' ? 'running' : next.status === 'failed' ? 'failed' : next.status === 'needs_review' ? 'ready' : 'draft',
     draftData: { dramaProjectId: next.projectId, stage: next.stage, selectedShotId: patch.selectedShotId || '', title: next.title },
     inputAssetIds: projectAssets(next), resultTextRecordIds: next.textRecordIds,
     operationSummary: `短剧项目 · ${next.stage}`,
@@ -67,4 +68,4 @@ export async function updateDramaProject(context, current, patch = {}) {
   return next
 }
 
-export const dramaProjectOwned = (project, identity) => project && (identity.compatibilityMode || project.workspaceId === identity.workspaceId)
+export const dramaProjectOwned = (project, identity) => ownsTask(project, identity)

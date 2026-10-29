@@ -1,5 +1,5 @@
 import { assetsBucket, getJson, listAllJson, putJson, taskMetadataKey } from './asset-store.js'
-import { createWorkRecord, getWorkRecord, updateWorkRecord } from './work-record-store.js'
+import { createWorkRecord, getWorkRecord, updateWorkRecord, sanitizeTaskData } from './work-record-store.js'
 
 const memory = globalThis.__sanhuaTasks || (globalThis.__sanhuaTasks = new Map())
 
@@ -15,13 +15,14 @@ export async function saveTask(context, task) {
   }
   const record = task.workRecordId ? await getWorkRecord(context, task.workRecordId) : null
   if (record?.status === 'cancelled') task = { ...task, status: 'cancelled', cancelledAt: record.cancelledAt, providerCancelResult: record.providerCancelResult }
-  const value = { ...task, version: Number(prior?.version || task.version || 0) + 1, updatedAt: new Date().toISOString() }
+  const value = { ...task, ...(task.draftData ? { draftData: sanitizeTaskData(task.draftData) } : {}), ownerUserId: prior?.ownerUserId || prior?.createdBy || task.createdBy || task.ownerUserId, visibility: 'private', version: Number(prior?.version || task.version || 0) + 1, updatedAt: new Date().toISOString() }
   memory.set(task.id, value)
   const kv = binding(context)
   if (kv?.put) await kv.put(keyFor(task.id), JSON.stringify(value), { expirationTtl: 60 * 60 * 24 * 30 })
   const bucket = assetsBucket(context)
   if (bucket) await putJson(bucket, taskMetadataKey(task.id), value)
   if (record && record.status !== 'cancelled') await updateWorkRecord(context, record.taskId, {
+    sourceProjectId: value.sourceProjectId, sourceScriptId: value.sourceScriptId, sourceShotId: value.sourceShotId, generationParams: value.generationParams,
     status: ({ completed: 'succeeded', waiting_user: 'ready' })[value.status] || value.status,
     progress: value.progress ?? null, progressSource: value.progressSource || (value.progress == null ? 'unknown' : 'platform_estimate'),
     providerTaskId: value.providerTaskId || '', providerType: value.provider || '', providerModel: value.model || '',
@@ -51,8 +52,8 @@ export async function listTasks(context, filters = {}) {
   const bucket = assetsBucket(context)
   const values = bucket ? await listAllJson(bucket, 'metadata/tasks/') : [...memory.values()]
   return values.filter(task => filters.includeHidden === 'true' || !task.hiddenAt)
-    .filter(task => !filters.compatibilityMode || true)
     .filter(task => filters.compatibilityMode || !filters.workspaceId || task.workspaceId === filters.workspaceId)
+    .filter(task => !filters.ownerUserId || (task.ownerUserId || task.createdBy) === filters.ownerUserId)
     .filter(task => !filters.workspace || task.workspace === filters.workspace)
     .filter(task => !filters.status || task.status === filters.status)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))

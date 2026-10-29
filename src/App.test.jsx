@@ -299,7 +299,7 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByRole('button', { name: '生成全部镜头视频' })).toBeInTheDocument()
     expect(screen.getByText('将按右侧设置的时长、画幅和清晰度生成视频。')).toBeInTheDocument()
     expect(document.querySelector('.drama-prompt-details')).not.toBeInTheDocument()
-    expect(screen.queryByText('茶馆全景，掌柜上前解释。', { selector: 'p' })).not.toBeInTheDocument()
+    expect(within(document.querySelector('.drama-video-main')).queryByText('茶馆全景，掌柜上前解释。', { selector: 'p' })).not.toBeInTheDocument()
     expect(screen.getByText(/尚未选择，将根据提示词生成视频/)).toBeInTheDocument()
   })
 
@@ -441,7 +441,7 @@ describe('AI 创作工作台 Demo', () => {
   it('任务圆环显示统一接口的进度和分组', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ summary: { activeCount: 1, averageProgress: 50 }, active: [{ id: 'live', title: '正在精修', status: 'running', moduleName: '产品精修', progress: 50, progressSource: 'provider' }], recentCompleted: [{ id: 'done', title: '已完成的品牌图', status: 'succeeded', moduleName: '品牌创作' }] }) })))
     render(<TaskProgress />)
-    const ring = await screen.findByRole('button', { name: /当前 1 个任务，整体进度 50%/ })
+    const ring = await screen.findByRole('button', { name: /进度 50%.*当前 1 个任务/ })
     fireEvent.click(ring)
     expect(await screen.findByText('进行中的任务')).toBeInTheDocument()
     expect(screen.getByText('最近完成的任务')).toBeInTheDocument()
@@ -449,18 +449,13 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByText('已完成的品牌图')).toBeInTheDocument()
   })
 
-  it('任务圆环支持拖拽定位，拖拽结束不会误打开面板', async () => {
+  it('任务圆环固定在顶栏安全区，不再允许拖到生成操作区', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ summary: {}, active: [], recentCompleted: [] }) })))
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
     render(<TaskProgress />)
     const trigger = screen.getByRole('button', { name: /当前空闲/ })
-    trigger.getBoundingClientRect = () => ({ right: 760, bottom: 570, width: 68, height: 68 })
-    fireEvent.mouseDown(trigger, { button: 0, clientX: 700, clientY: 548 })
-    fireEvent.mouseMove(trigger, { clientX: 600, clientY: 448 })
-    fireEvent.mouseUp(trigger)
+    expect(trigger.closest('.task-hub-dock')).toHaveAttribute('aria-label', '任务安全停靠区')
+    expect(trigger).not.toHaveAttribute('style')
     fireEvent.click(trigger)
-    expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(trigger).toHaveStyle({ right: '140px', bottom: '130px' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
   })
 })

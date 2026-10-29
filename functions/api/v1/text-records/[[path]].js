@@ -1,3 +1,4 @@
+import { ownsTask, taskScope } from '../../../_lib/task-ownership.js'
 import { json } from '../../../_lib/tokenspace.js'
 import { createTextRecord, getTextRecord, listTextRecords, setTextRecordDeleted, updateTextRecord } from '../../../_lib/text-record-store.js'
 import { listTasks } from '../../../_lib/task-store.js'
@@ -7,18 +8,19 @@ const read = async request => { try { return await request.json() } catch { retu
 const parts = context => (Array.isArray(context.params?.path) ? context.params.path : String(context.params?.path || '').split('/')).filter(Boolean)
 const unavailable = value => value === null ? json(503, { error: 'SANHUA_ASSETS_NOT_CONFIGURED' }) : null
 
-async function backfillTaskPromptRecords(context) {
-  const existing = await listTextRecords(context, { includeDeleted: true, limit: 80 })
+async function backfillTaskPromptRecords(context, identity) {
+  const existing = await listTextRecords(context, { ...taskScope(identity), includeDeleted: true, limit: 80 })
   if (existing === null) return null
-  const tasks = await listTasks(context, {})
+  const tasks = await listTasks(context, taskScope(identity))
   const candidates = tasks.flatMap(task => {
+    const owner = { workspaceId: task.workspaceId, ownerUserId: task.ownerUserId || task.createdBy, createdBy: task.ownerUserId || task.createdBy }
     const sourceAssetIds = Array.isArray(task.sourceAssetIds) ? task.sourceAssetIds : Array.isArray(task.assets) ? task.assets : []
     if (task.type === 'agent-plan' && task.plan && ['brand', 'script', 'retouch'].includes(task.workspace)) return [{
-      workspace: task.workspace, sourceModule: `${task.workspace}.prompts`, recordType: task.workspace === 'brand' ? 'brand_prompt' : task.workspace === 'script' ? 'script' : 'retouch_prompt',
+      ...owner, workspace: task.workspace, sourceModule: `${task.workspace}.prompts`, recordType: task.workspace === 'brand' ? 'brand_prompt' : task.workspace === 'script' ? 'script' : 'retouch_prompt',
       title: task.workspace === 'brand' ? '品牌设计计划' : task.workspace === 'script' ? '待确认短剧脚本大纲' : '产品精修计划', content: task.plan, contentFormat: 'prompt', model: task.model, provider: 'usegoodai-reasoning', sourceTaskId: task.workRecordId || task.id, sourceAssetIds,
     }]
     if (task.type === 'image-batch' && task.finalPrompt && ['brand', 'retouch'].includes(task.workspace)) return [{
-      workspace: task.workspace, sourceModule: `${task.workspace}.prompts`, recordType: task.workspace === 'brand' ? 'brand_prompt' : 'retouch_prompt',
+      ...owner, workspace: task.workspace, sourceModule: `${task.workspace}.prompts`, recordType: task.workspace === 'brand' ? 'brand_prompt' : 'retouch_prompt',
       title: task.requestedName || (task.workspace === 'brand' ? '品牌创作最终提示词' : '产品精修最终提示词'), content: task.finalPrompt, contentFormat: 'prompt', model: task.model, provider: 'usegoodai', sourceTaskId: task.workRecordId || task.id, sourceAssetIds,
     }]
     return []
@@ -35,10 +37,9 @@ async function backfillTaskPromptRecords(context) {
 export async function onRequestGet(context) {
   const identity = await requireIdentity(context, 'view'); if (identity.error) return identity.error
   const [id] = parts(context)
-  if (id) { const record = await getTextRecord(context, id); return record && (identity.compatibilityMode || record.workspaceId === identity.workspaceId) ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' }) }
+  if (id) { const record = await getTextRecord(context, id); return ownsTask(record, identity) ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' }) }
   const url = new URL(context.request.url)
-  const result = await listTextRecords(context, { workspace: url.searchParams.get('workspace') || undefined, recordType: url.searchParams.get('recordType') || undefined, q: url.searchParams.get('q') || undefined, includeDeleted: url.searchParams.get('includeDeleted') === 'true', limit: url.searchParams.get('limit'), cursor: url.searchParams.get('cursor') || undefined })
-  if (result && !identity.compatibilityMode) result.records = result.records.filter(record => record.workspaceId === identity.workspaceId)
+  const result = await listTextRecords(context, { ...taskScope(identity), workspace: url.searchParams.get('workspace') || undefined, recordType: url.searchParams.get('recordType') || undefined, q: url.searchParams.get('q') || undefined, includeDeleted: url.searchParams.get('includeDeleted') === 'true', limit: url.searchParams.get('limit'), cursor: url.searchParams.get('cursor') || undefined })
   return unavailable(result) || json(200, result)
 }
 
@@ -46,10 +47,10 @@ export async function onRequestPost(context) {
   const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const [id, action] = parts(context)
   if (id === 'backfill' && !action) {
-    const result = await backfillTaskPromptRecords(context)
+    const result = await backfillTaskPromptRecords(context, identity)
     return unavailable(result) || json(200, { created: result.created, scanned: result.scanned })
   }
-  if (id && action === 'restore') { const record = await setTextRecordDeleted(context, id, false); return record ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' }) }
+  if (id && action === 'restore') { if (!ownsTask(await getTextRecord(context, id), identity)) return json(404, { error: 'TEXT_RECORD_NOT_FOUND' }); const record = await setTextRecordDeleted(context, id, false); return record ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' }) }
   if (id) return json(404, { error: 'TEXT_RECORD_ROUTE_NOT_FOUND' })
   const input = await read(context.request)
   if (!input) return json(400, { error: '请求格式必须是 JSON' })
@@ -62,7 +63,7 @@ export async function onRequestPatch(context) {
   const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const [id] = parts(context); const input = await read(context.request)
   if (!id || !input) return json(400, { error: !id ? 'TEXT_RECORD_ID_REQUIRED' : '请求格式必须是 JSON' })
-  const existing = await getTextRecord(context, id); if (!existing || (!identity.compatibilityMode && existing.workspaceId !== identity.workspaceId)) return json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
+  const existing = await getTextRecord(context, id); if (!existing || !ownsTask(existing, identity)) return json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
   if (!identity.compatibilityMode && !Number.isInteger(input.expectedVersion)) return json(400, { error: 'EXPECTED_VERSION_REQUIRED' })
   const record = await updateTextRecord(context, id, { ...input, updatedBy: identity.user.id })
   if (record?.conflict) return json(409, { error: 'VERSION_CONFLICT', currentVersion: record.conflict.version, updatedBy: record.conflict.updatedBy, updatedAt: record.conflict.updatedAt })
@@ -74,7 +75,7 @@ export async function onRequestDelete(context) {
   const identity = await requireIdentity(context, 'edit'); if (identity.error) return identity.error
   const [id] = parts(context)
   if (!id) return json(400, { error: 'TEXT_RECORD_ID_REQUIRED' })
-  const existing = await getTextRecord(context, id); if (!existing || (!identity.compatibilityMode && existing.workspaceId !== identity.workspaceId)) return json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
+  const existing = await getTextRecord(context, id); if (!existing || !ownsTask(existing, identity)) return json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
   const record = await setTextRecordDeleted(context, id, true, identity.user.id)
   return record ? json(200, { record }) : json(404, { error: 'TEXT_RECORD_NOT_FOUND' })
 }

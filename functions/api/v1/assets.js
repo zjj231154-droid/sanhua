@@ -1,3 +1,4 @@
+import { mayReadTaskResult } from '../../_lib/task-ownership.js'
 import { json } from '../../_lib/tokenspace.js'
 import { assetAvailableInWorkspace, assetsBucket, assetUrl, listJson } from '../../_lib/asset-store.js'
 import { hasLocation, locationsForAsset, validAssetFolder } from '../../_lib/library-config.js'
@@ -34,6 +35,7 @@ export async function onRequestGet(context) {
   }
   const allAssets = (await listJson(bucket, 'metadata/assets/', 1000)).map(normalize)
     .filter(asset => identity.compatibilityMode || assetAvailableInWorkspace(asset, identity.workspaceId))
+    .filter(asset => mayReadTaskResult(asset, identity))
     .filter(asset => asset.visibility !== 'private' || asset.createdBy === identity.user.id || hasPermission(identity.membership, 'manage'))
     .filter(asset => !workspace || asset.assetSpace === workspace)
     .filter(asset => !libraryKey || hasLocation(asset, libraryKey, folderKey))
