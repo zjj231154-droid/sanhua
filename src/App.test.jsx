@@ -295,8 +295,12 @@ describe('AI 创作工作台 Demo', () => {
     expect(api.getProject().shots).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: '确认剧本与分镜，进入视频生成' }))
     expect(await screen.findByRole('textbox', { name: '当前镜头视频提示词' })).toHaveValue('茶馆全景，掌柜上前解释。')
-    expect(screen.getByRole('button', { name: '生成当前镜头' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '生成全部镜头' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '生成当前镜头视频' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '生成全部镜头视频' })).toBeInTheDocument()
+    expect(screen.getByText('将按右侧设置的时长、画幅和清晰度生成视频。')).toBeInTheDocument()
+    expect(document.querySelector('.drama-prompt-details')).not.toBeInTheDocument()
+    expect(screen.queryByText('茶馆全景，掌柜上前解释。', { selector: 'p' })).not.toBeInTheDocument()
+    expect(screen.getByText(/尚未选择，将根据提示词生成视频/)).toBeInTheDocument()
   })
 
   it('选中产品精修时会展开模块内的二级导航', () => {
