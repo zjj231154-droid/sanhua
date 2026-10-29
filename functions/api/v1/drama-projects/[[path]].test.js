@@ -5,6 +5,7 @@ import { listTextRecords } from '../../../_lib/text-record-store.js'
 import { saveVideoProviderConnection } from '../../../_lib/collaboration.js'
 import { assetMetadataKey } from '../../../_lib/asset-store.js'
 import { updateTask } from '../../../_lib/task-store.js'
+import { listWorkRecords } from '../../../_lib/work-record-store.js'
 
 class Bucket {
   constructor() { this.values = new Map() }
@@ -119,5 +120,36 @@ describe('v2.5 drama projects', () => {
     expect(accepted.project.shots[0].acceptedVideoTaskId).toBe(first.id)
     const listed = await onRequestGet(context(storage, created.projectId))
     expect((await listed.json()).project.videoTaskIds).toContain(first.id)
+  })
+
+  it('records rejected submissions as failed shots and work records, then retries only failed shots', async () => {
+    const storage = env()
+    const created = (await (await post(storage, '', { title: '失败重试', brief: '茶杯旁的纸条被微风轻轻吹动。' })).json()).project
+    mockReasoning()
+    const generated = (await (await post(storage, `${created.projectId}/generate-script-storyboard`, {})).json()).project
+    await post(storage, `${created.projectId}/confirm-script-storyboard`, {})
+    await saveVideoProviderConnection({ env: storage }, 'test-user', { provider: 'tokenspace', baseUrl: 'https://tokenspace.io/v1', apiKey: 'sk-test', model: 'doubao-seedance-2.0' })
+    const upstream = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'new_api_error', message: 'This token has no access to model doubao-seedance-2.0' } }), { status: 403 }))
+    vi.stubGlobal('fetch', upstream)
+    const rejected = await post(storage, `${created.projectId}/video-tasks`, { mode: 'single', shotIds: [generated.shots[0].shotId] })
+    expect(rejected.status).toBe(422)
+    const failure = await rejected.json()
+    expect(failure.hint).toContain('no access to model')
+    expect(failure.project.status).toBe('failed')
+    expect(failure.project.shots[0].status).toBe('failed')
+    expect(failure.project.shots[1].status).toBe('ready')
+    const works = await listWorkRecords({ env: storage }, { moduleKey: 'video', status: 'failed' })
+    expect(works.items).toHaveLength(1)
+    expect(works.items[0].errorMessage).toContain('no access to model')
+    const refreshed = await onRequestGet(context(storage, `${created.projectId}/video-tasks`))
+    expect((await refreshed.json()).project.shots[0].status).toBe('failed')
+    upstream.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'retry-provider-1', url: 'https://cdn.example.test/retry-video.mp4' }), { status: 200 }))
+    const retried = await post(storage, `${created.projectId}/video-tasks`, { mode: 'failed', regenerate: true })
+    expect(retried.status).toBe(202)
+    const result = await retried.json()
+    expect(result.tasks).toHaveLength(1)
+    expect(result.tasks[0].shotId).toBe(generated.shots[0].shotId)
+    expect(result.project.shots[0].submissionError).toBe('')
+    expect(upstream).toHaveBeenCalledTimes(2)
   })
 })

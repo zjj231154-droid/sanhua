@@ -90,10 +90,10 @@ export async function onRequestGet(context) {
     }
     const shots = project.shots.map(shot => {
       const latest = [...(shot.videoTaskIds || [])].reverse().map(taskId => tasks.find(task => task.id === taskId)).find(Boolean)
-      const status = latest?.status === 'failed' ? 'failed' : latest?.status === 'completed' ? 'succeeded' : latest ? 'generating' : shot.status
+      const status = shot.submissionError ? 'failed' : latest?.status === 'failed' ? 'failed' : latest?.status === 'completed' ? 'succeeded' : latest ? 'generating' : shot.status
       return status === shot.status ? shot : { ...shot, status }
     })
-    if (shots.some((shot, index) => shot !== project.shots[index])) project = await updateDramaProject(context, project, { shots, status: tasks.some(task => ['queued', 'running'].includes(task.status)) ? 'generating' : 'ready' })
+    if (shots.some((shot, index) => shot !== project.shots[index])) project = await updateDramaProject(context, project, { shots, status: tasks.some(task => ['queued', 'running'].includes(task.status)) ? 'generating' : shots.some(shot => shot.status === 'failed') ? 'failed' : 'ready' })
     return json(200, { tasks, project })
   }
   if (action === 'text-records') {
@@ -231,15 +231,23 @@ export async function onRequestPost(context) {
       const body = { workRecordId: work.taskId, projectId: id, shotId: shot.shotId, storyboardId: project.storyboardId, scriptId: project.scriptId, scriptVersionId: project.scriptVersionId, assetRefs: { scene: project.sceneAssetIds, character: project.characterAssetIds, prop: project.propAssetIds }, videoPrompt: promptFor(shot), shotPlan: promptFor(shot), aspectRatio: input.aspectRatio || '9:16', resolution: input.resolution || '720p', durationSeconds: resolvedMode === 'single' ? input.durationSeconds || shot.durationSeconds : shot.durationSeconds, title: `${project.title} · 镜头 ${shot.shotNumber}` }
       const response = await postVideo({ ...context, request: new Request(context.request.url, { method: 'POST', headers: context.request.headers, body: JSON.stringify(body) }), params: { path: '' } })
       const data = await response.json()
-      if (!response.ok) { errors.push({ shotId: shot.shotId, error: data.hint || data.error, missing: data.missing }); continue }
+      if (!response.ok) {
+        const message = data.hint || data.missing?.join('、') || data.error || '视频提交失败'
+        errors.push({ shotId: shot.shotId, error: message, missing: data.missing })
+        shot.status = 'failed'
+        shot.submissionError = message
+        await updateWorkRecord(context, work.taskId, { status: 'failed', errorCode: data.error || 'VIDEO_SUBMISSION_FAILED', errorMessage: message, operationSummary: '视频提交失败，可返回项目重试' })
+        continue
+      }
       const task = await updateTask(context, data.task.id, { projectId: id, sourceProjectId: id, shotId: shot.shotId, sourceShotId: shot.shotId, storyboardId: project.storyboardId, sourceStoryboardId: project.storyboardId, scriptId: project.scriptId, sourceScriptId: project.scriptId, sourceAssetIds: projectAssets(project) })
       if (data.textRecordId) textRecordIds.push(data.textRecordId)
       shot.videoTaskIds = [...(shot.videoTaskIds || []), task.id]
       shot.status = task.status === 'completed' ? 'succeeded' : 'generating'
+      shot.submissionError = ''
       created.push(task)
     }
-    project = await updateDramaProject(context, project, { shots: project.shots, videoTaskIds: [...new Set([...project.videoTaskIds, ...created.map(task => task.id)])], textRecordIds: [...new Set(textRecordIds)], status: created.length ? 'generating' : project.status })
-    return json(created.length ? 202 : 422, { project, tasks: created, errors })
+    project = await updateDramaProject(context, project, { shots: project.shots, videoTaskIds: [...new Set([...project.videoTaskIds, ...created.map(task => task.id)])], textRecordIds: [...new Set(textRecordIds)], status: created.length ? 'generating' : errors.length ? 'failed' : project.status })
+    return json(created.length ? 202 : 422, { project, tasks: created, errors, ...(created.length ? {} : { error: 'VIDEO_SUBMISSION_FAILED', hint: errors.map(item => item.error).join('；') }) })
     } finally { videoLocks.delete(id) }
   }
   if (action === 'video-assets' && tail === 'accept') {
