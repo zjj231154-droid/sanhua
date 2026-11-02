@@ -2284,6 +2284,31 @@ body { background-color: #f3eee4; background-image: linear-gradient(rgba(250,246
 .app-shell .topbar { padding-right:252px; }
 @media(max-width:1100px) { .task-hub-dock { width:52px; }.task-hub-current-title { display:none; }.app-shell .topbar { padding-right:94px; } }
 @media(max-width:720px) { .task-hub-dock { width:44px; }.app-shell .topbar { padding-right:74px; } }
+
+/* The task menu and the read-only progress indicator have separate locations. */
+.app-shell .topbar { padding-right:24px; }
+.task-hub-anchor { display:flex; flex-shrink:0; }
+.task-hub-list-trigger { position:relative; display:flex; align-items:center; gap:7px; min-height:36px; padding:6px 10px; border:1px solid #dfd4c9; border-radius:14px; background:#fffdf9; color:#67483a; cursor:pointer; }
+.task-hub-list-trigger b { border-radius:12px; padding:1px 6px; background:#873a39; color:white; font-size:11px; }
+.task-hub-list-trigger .failure-dot { position:absolute; top:1px; right:1px; width:7px; height:7px; border-radius:50%; background:#ba3030; }
+.task-hub-list-trigger:focus-visible { outline:2px solid #873a39; outline-offset:3px; }
+.task-hub-list-fallback { position:fixed; top:26px; right:28px; z-index:1001; }
+.task-hub-dock { top:auto; bottom:max(20px,env(safe-area-inset-bottom)); right:24px; width:68px; height:auto; display:flex; flex-direction:column; gap:5px; pointer-events:none; }
+.task-hub-dock .task-hub-ring { width:64px; height:64px; cursor:default; box-shadow:0 6px 20px #3b211c24; }
+.task-hub-dock .task-hub-ring > span { font-size:14px; }
+.task-hub-current-title { display:block; width:68px; text-align:center; font-size:9px; }
+.task-hub-current-title strong { max-width:68px; font-size:10px; }
+/* Keep primary actions out of the fixed indicator's right-hand rail. */
+.app-shell .page-transition { padding-right:88px; }
+@media(max-width:720px) {
+  .app-shell .topbar { padding-right:12px; }
+  .task-hub-list-trigger { gap:4px; padding:5px 7px; }
+  .task-hub-list-trigger > span { display:none; }
+  .task-hub-dock { right:12px; width:52px; }
+  .task-hub-dock .task-hub-ring { width:48px; height:48px; }
+  .task-hub-current-title,.task-hub-current-title strong { width:52px; max-width:52px; }
+  .app-shell .page-transition { padding-right:58px; }
+}
 /* Keep the settings footer in the actually available viewport height. */
 .drama-video-stage .drama-video-settings { max-height:var(--stage-visible-height,calc(100dvh - 220px)); }
 .drama-video-stage .drama-settings-scroll { min-height:80px; overflow:auto; flex:1; }

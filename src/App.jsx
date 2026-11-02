@@ -255,6 +255,7 @@ function Topbar({ timeMode, onToggleTimeMode, onLogout, session, onSwitchWorkspa
         <ChevronDown size={16} />
       </button>
       <div className="top-actions">
+        <div id="global-task-list-anchor" className="task-hub-anchor" />
         <button className="icon-button" aria-label="帮助"><CircleHelp size={19} /></button>
         <button className="icon-button notification-button" aria-label="消息"><MessageSquareText size={19} /><i /></button>
         <button className="top-profile" aria-label="当前设计师" onClick={onOpenProfile} title="账户设置">

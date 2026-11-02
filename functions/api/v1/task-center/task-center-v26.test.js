@@ -19,6 +19,25 @@ const query = async env => (await onRequestGet(context(env, '?active=true&recent
 const cancel = (env, record, extra = {}, who) => onRequestPost(context(env, `${record.taskId}/cancel`, { expectedVersion: record.version, ...extra }, who))
 afterEach(() => vi.unstubAllGlobals())
 describe('v2.6 unified task progress and cancellation', () => {
+  it('slow upstream polling does not block snapshots or create duplicate polls, and later results synchronize', async () => {
+    const env = environment()
+    await saveVideoProviderConnection({ env }, 'test-user', { baseUrl: 'https://video.test/v1', apiKey: 'test-key', model: 'model' })
+    const task = await saveTask({ env }, { id: crypto.randomUUID(), workspace: 'video', createdBy: 'test-user', providerTaskId: 'slow-job', status: 'running' })
+    let release
+    const upstream = vi.fn(() => new Promise(resolve => { release = resolve }))
+    vi.stubGlobal('fetch', upstream)
+    const background = []
+    const read = () => onRequestGet({ ...context(env), waitUntil: pending => background.push(pending) })
+    const first = await (await read()).json()
+    expect(first.active[0].status).toBe('running')
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    await read()
+    expect(upstream).toHaveBeenCalledTimes(1)
+    release(new Response(JSON.stringify({ status: 'completed', video_url: 'https://video.test/output.mp4' })))
+    await Promise.all(background)
+    const next = await (await read()).json()
+    expect(next.recentCompleted[0]).toMatchObject({ legacyTaskId: task.id, status: 'succeeded', progress: 100, providerVideoUrl: 'https://video.test/output.mp4' })
+  })
   it('progress_ring_shows_real_single_task_progress', async () => { const env = environment(), record = await draft(env); await updateWorkRecord({ env }, record.taskId, { status: 'running', progress: 42, progressSource: 'provider' }); expect((await query(env)).active[0].progress).toBe(42) })
   it('task_center_returns_independent_progress_without_an_average', async () => { const env = environment(); for (const progress of [20, 60, null]) { const record = await draft(env); await updateWorkRecord({ env }, record.taskId, { status: 'running', progress, progressSource: progress == null ? 'unknown' : 'provider' }) }; expect((await query(env)).summary).toMatchObject({ activeCount: 3, hasUnknownProgress: true }) })
   it('empty_ring_does_not_show_fake_100_percent', async () => { expect((await query(environment())).summary).toMatchObject({ activeCount: 0, trackedTaskId: null }) })

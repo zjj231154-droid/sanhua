@@ -27,6 +27,7 @@ export function unifiedItem(record, tasks = []) {
     draftData: record?.draftData || { ...latest, requirements: latest?.requirements || '', selectedAssetIds: latest?.assets || [] },
     updatedAt: cancelled ? record.updatedAt : [record?.updatedAt, latest?.updatedAt].filter(Boolean).sort().at(-1), completedAt: record?.completedAt || latest?.completedAt || (!activeStatuses.has(status) ? latest?.updatedAt : null) }
 }
+const videoSyncs = new WeakMap()
 export async function centerItems(context, identity, { sync = true, includeArchived = false } = {}) {
   const records = []
   for (let page = 1; ; page++) {
@@ -38,7 +39,20 @@ export async function centerItems(context, identity, { sync = true, includeArchi
   let tasks = (await listTasks(context, taskScope(identity))).filter(task => ownedTask(task, identity))
   if (sync) {
     const { syncVideoTask } = await import('../api/v1/video-tasks/[[path]].js')
-    tasks = await Promise.all(tasks.map(task => task.workspace === 'video' && ['queued', 'running'].includes(task.status) && !records.some(record => record.taskId === task.workRecordId && record.status === 'cancelled') ? syncVideoTask(context, task) : task))
+    // Return the durable snapshot immediately. Upstream polling can take 30s;
+    // it must not hold the whole task list hostage or multiply on each refresh.
+    const bucket = context.env.SANHUA_ASSETS
+    if (!videoSyncs.has(bucket)) videoSyncs.set(bucket, new Map())
+    const inflight = videoSyncs.get(bucket)
+    for (const task of tasks) {
+      if (task.workspace !== 'video' || !['queued', 'running'].includes(task.status) || records.some(record => record.taskId === task.workRecordId && record.status === 'cancelled')) continue
+      const key = `${identity.workspaceId}:${identity.user.id}:${task.id}`
+      if (!inflight.has(key)) {
+        const pending = syncVideoTask(context, task).catch(() => task).finally(() => inflight.delete(key))
+        inflight.set(key, pending)
+        context.waitUntil?.(pending)
+      }
+    }
   }
   const currentRecords = await Promise.all(records.map(record => getWorkRecord(context, record.taskId)))
   const items = currentRecords.filter(record => ownedRecord(record, identity)).map(record => unifiedItem(record, tasks.filter(task => task.workRecordId === record.taskId))), ids = new Set(records.map(record => record.taskId))

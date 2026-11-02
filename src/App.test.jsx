@@ -143,7 +143,7 @@ describe('AI 创作工作台 Demo', () => {
     expect(screen.getByText('水墨茶山海报：保留茶器、留白与品牌印章，延展系列视觉。')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '以此案例开始' }))
-    expect(screen.getByRole('status')).toHaveTextContent('已选中「礼盒包装方案 B」')
+    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('已选中「礼盒包装方案 B」')
     fireEvent.click(screen.getByRole('button', { name: '选择做平面工作流' }))
     expect(screen.getByText('已选择参考素材：礼盒包装方案 B。会作为唯一视觉基准写入提示词。')).toBeInTheDocument()
   })
@@ -441,19 +441,19 @@ describe('AI 创作工作台 Demo', () => {
   it('任务圆环显示统一接口的进度和分组', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ summary: { activeCount: 1, averageProgress: 50 }, active: [{ id: 'live', title: '正在精修', status: 'running', moduleName: '产品精修', progress: 50, progressSource: 'provider' }], recentCompleted: [{ id: 'done', title: '已完成的品牌图', status: 'succeeded', moduleName: '品牌创作' }] }) })))
     render(<TaskProgress />)
-    const ring = await screen.findByRole('button', { name: /进度 50%.*当前 1 个任务/ })
-    fireEvent.click(ring)
+    const ring = await screen.findByRole('status', { name: /进度 50%.*当前 1 个任务/ })
+    fireEvent.click(screen.getByRole('button', { name: '打开任务列表' }))
     expect(await screen.findByText('进行中的任务')).toBeInTheDocument()
     expect(screen.getByText('最近完成的任务')).toBeInTheDocument()
     expect(screen.getByRole('article', { name: '正在精修' })).toBeInTheDocument()
     expect(screen.getByText('已完成的品牌图')).toBeInTheDocument()
   })
 
-  it('任务圆环固定在顶栏安全区，不再允许拖到生成操作区', async () => {
+  it('任务列表入口与右下角进度圆环分开', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ summary: {}, active: [], recentCompleted: [] }) })))
     render(<TaskProgress />)
-    const trigger = screen.getByRole('button', { name: /当前空闲/ })
-    expect(trigger.closest('.task-hub-dock')).toHaveAttribute('aria-label', '任务安全停靠区')
+    const trigger = screen.getByRole('button', { name: '打开任务列表' })
+    expect(screen.getByRole('status', { name: /当前空闲/ }).closest('.task-hub-dock')).toHaveAttribute('aria-label', '右下角任务进度区')
     expect(trigger).not.toHaveAttribute('style')
     fireEvent.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')

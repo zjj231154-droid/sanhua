@@ -1,16 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { taskCenterRequest } from '../lib/task-center-api'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, LoaderCircle, RefreshCw, X } from 'lucide-react'
+import { Check, ListTodo, LoaderCircle, RefreshCw, X } from 'lucide-react'
 
 const activeStates = new Set(['draft', 'ready', 'queued', 'running', 'retrying', 'cancelling'])
 const labels = { draft: '编辑中', ready: '待确认', queued: '排队中', running: '运行中', retrying: '重试中', cancelling: '正在取消', succeeded: '已完成', completed: '已完成', failed: '失败', cancelled: '已取消', archived: '已归档' }
-const messages = { VERSION_CONFLICT: '任务状态已更新，请刷新后重试。', TASK_NOT_FOUND: '无法读取该工作记录，可能已切换工作区。', TASK_NOT_CANCELLABLE: '任务已经结束，不能取消。', TASK_NOT_RETRYABLE: '此记录不能重试。' }
-async function api(path, body, signal) {
-  const response = await fetch(`/api/v1/task-center${path}`, { ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}), signal })
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.hint || messages[data.error] || data.error || '任务请求失败')
-  return data
-}
+const api = taskCenterRequest
 export default function TaskProgress(props) { return <ScopedTaskProgress key={props.scopeKey || 'default'} {...props} /> }
 function ScopedTaskProgress({ onResume, onResult, scopeKey = 'default' }) {
   const [open, setOpen] = useState(false), [data, setData] = useState(null), [error, setError] = useState('')
@@ -19,33 +14,57 @@ function ScopedTaskProgress({ onResume, onResult, scopeKey = 'default' }) {
   const trigger = useRef(null), panel = useRef(null), cancelDialog = useRef(null), controller = useRef(null), alive = useRef(true)
   const preferenceKey = `sanhua-task-tracking:${scopeKey}`
   const [trackedId, setTrackedId] = useState(() => { try { return sessionStorage.getItem(preferenceKey) || '' } catch { return '' } })
-  const actionController = useRef(null)
-  const load = useCallback(async () => {
-    controller.current?.abort()
+  const actionController = useRef(null), pendingLoad = useRef(null), reloadQueued = useRef(false)
+  const [connectionError, setConnectionError] = useState(''), [anchor, setAnchor] = useState(null), [panelPosition, setPanelPosition] = useState({})
+  useLayoutEffect(() => { setAnchor(document.getElementById('global-task-list-anchor')) }, [])
+  const load = useCallback((queue = false) => {
+    if (pendingLoad.current) { if (queue === true) reloadQueued.current = true; return pendingLoad.current }
     const requestController = new AbortController(); controller.current = requestController
     setLoading(true)
-    try { const value = await api(`?active=true&recentCompleted=${limit}`, null, requestController.signal); if (!requestController.signal.aborted && alive.current) { setData(value); setError('') } }
-    catch (reason) { if (!requestController.signal.aborted && alive.current) setError(`任务加载失败：${reason.message}`) }
-    finally { if (!requestController.signal.aborted && alive.current) setLoading(false) }
+    const pending = (async () => {
+      try { const value = await api(`?active=true&recentCompleted=${limit}`, null, requestController.signal); if (!requestController.signal.aborted && alive.current) { setData(value); setConnectionError('') } }
+      catch (reason) { if (!requestController.signal.aborted && alive.current) setConnectionError(`任务加载失败：${reason.message}`) }
+      finally {
+        if (pendingLoad.current === pending) pendingLoad.current = null
+        if (!requestController.signal.aborted && alive.current) {
+          setLoading(false)
+          if (reloadQueued.current) { reloadQueued.current = false; void load() }
+        }
+      }
+    })()
+    pendingLoad.current = pending
+    return pending
   }, [scopeKey, limit])
   useEffect(() => {
     alive.current = true; setData(null); setDetail(null); setError(''); setNotice(''); setConfirmation(null); setOpen(false)
     void load()
-    return () => { alive.current = false; controller.current?.abort(); actionController.current?.abort() }
+    return () => { alive.current = false; controller.current?.abort(); pendingLoad.current = null; reloadQueued.current = false; actionController.current?.abort() }
   }, [scopeKey])
   useEffect(() => {
     const delay = open || data?.summary?.runningCount ? 6000 : 30000
     const interval = setInterval(load, delay)
     return () => clearInterval(interval)
   }, [load, open, data?.summary?.runningCount])
-  useEffect(() => { if (open) void load() }, [open, load])
+  useEffect(() => { if (open) void load(true) }, [open, load])
   useEffect(() => {
     let timer
-    const updated = () => { clearTimeout(timer); timer = setTimeout(load, 180) }
+    const updated = () => { clearTimeout(timer); timer = setTimeout(() => load(true), 180) }
     const show = () => { setOpen(true); void load() }
+    const online = () => { void load(true) }
+    const visible = () => { if (document.visibilityState === 'visible') online() }
+    window.addEventListener('online', online); document.addEventListener('visibilitychange', visible)
     window.addEventListener('sanhua:tasks-updated', updated); window.addEventListener('sanhua:open-task-progress', show)
-    return () => { clearTimeout(timer); window.removeEventListener('sanhua:tasks-updated', updated); window.removeEventListener('sanhua:open-task-progress', show) }
+    return () => { clearTimeout(timer); window.removeEventListener('online', online); document.removeEventListener('visibilitychange', visible); window.removeEventListener('sanhua:tasks-updated', updated); window.removeEventListener('sanhua:open-task-progress', show) }
   }, [load])
+  useLayoutEffect(() => {
+    if (!open) return
+    const position = () => {
+      const rect = trigger.current?.getBoundingClientRect()
+      if (rect) setPanelPosition({ top: Math.max(12, rect.bottom + 8), right: Math.min(Math.max(12, window.innerWidth - rect.right), Math.max(12, window.innerWidth - Math.min(420, window.innerWidth - 32) - 12)), maxHeight: `calc(100dvh - ${Math.max(12, rect.bottom + 8) + 16}px)` })
+    }
+    position(); window.addEventListener('resize', position)
+    return () => window.removeEventListener('resize', position)
+  }, [open])
   const close = () => { setOpen(false); trigger.current?.focus() }
   useEffect(() => {
     if (!open) return
@@ -101,7 +120,7 @@ function ScopedTaskProgress({ onResume, onResult, scopeKey = 'default' }) {
     if (data && trackedId && !active.some(task => task.id === trackedId)) { setTrackedId(''); try { sessionStorage.removeItem(preferenceKey) } catch {} }
   }, [data, trackedId, preferenceKey])
   const track = task => { setTrackedId(task.id); try { sessionStorage.setItem(preferenceKey, task.id) } catch {} }
-  const name = error ? '任务状态暂不可用，打开任务列表重试' : tracked ? `正在跟踪 ${tracked.title || tracked.moduleName}，${ringProgress == null ? labels[tracked.status] || '处理中' : `进度 ${ringProgress}%`}，当前 ${count} 个任务，打开任务列表` : recent.length ? '当前没有进行中任务，打开近期任务列表' : '当前空闲，打开任务列表'
+  const name = tracked ? `正在跟踪 ${tracked.title || tracked.moduleName}，${ringProgress == null ? labels[tracked.status] || '处理中' : `进度 ${ringProgress}%`}，当前 ${count} 个任务` : connectionError && !data ? '任务状态暂不可用' : recent.length ? '当前没有进行中任务' : '当前空闲'
   const card = task => {
     const ongoing = activeStates.has(task.status), known = task.progress != null && task.progressSource === 'provider'
     return <article className={`task-hub-card status-${task.status}`} key={task.id} aria-label={task.title || task.moduleName}>
@@ -123,14 +142,15 @@ function ScopedTaskProgress({ onResume, onResult, scopeKey = 'default' }) {
     </article>
   }
   return <>
-    {createPortal(<div className="task-hub-dock" aria-label="任务安全停靠区"><button ref={trigger} className={`task-hub-ring ${tracked && ringProgress == null ? 'is-processing' : ''}`} aria-label={name} aria-expanded={open} aria-controls="task-hub-panel" onClick={() => setOpen(value => !value)} title={tracked ? `当前跟踪：${tracked.title || tracked.moduleName}` : '任务中心'}>
+    {createPortal(<button ref={trigger} className={`task-hub-list-trigger ${anchor ? '' : 'task-hub-list-fallback'}`} aria-label="打开任务列表" aria-expanded={open} aria-controls="task-hub-panel" onClick={() => setOpen(value => !value)}><ListTodo size={18} /><span>任务</span>{count > 0 && <b>{count}</b>}{(connectionError || summary.hasFailed) && <i className="failure-dot" aria-label={connectionError ? '任务连接暂不可用' : '有失败任务'} />}</button>, anchor || document.body)}
+    {createPortal(<div className="task-hub-dock" aria-label="右下角任务进度区"><div role="status" className={`task-hub-ring ${tracked && ringProgress == null ? 'is-processing' : ''}`} aria-label={name} title={tracked ? `当前跟踪：${tracked.title || tracked.moduleName}` : '任务进度'}>
       <svg viewBox="0 0 64 64" aria-hidden="true"><circle className="track" cx="32" cy="32" r="27" /><circle className="value" cx="32" cy="32" r="27" pathLength="100" strokeDasharray={`${ringProgress ?? 0} 100`} /></svg>
-      <span>{error ? '!' : loading && !data ? <LoaderCircle className="spin-icon" size={21} /> : tracked ? ringProgress == null ? <LoaderCircle className="spin-icon" aria-label="处理中，进度未知" size={22} /> : `${ringProgress}%` : recent.length ? <Check size={24} /> : '空闲'}</span>
-      {count > 0 && <b>{count}</b>}{summary.hasFailed && !summary.runningCount && <i className="failure-dot" aria-label="有失败任务" />}
-    </button>{tracked && <span className="task-hub-current-title" title={tracked.title || tracked.moduleName}>正在跟踪<strong>{tracked.title || tracked.moduleName}</strong></span>}</div>, document.body)}
+      <span>{loading && !data ? <LoaderCircle className="spin-icon" size={21} /> : connectionError && !data ? '离线' : tracked ? ringProgress == null ? <LoaderCircle className="spin-icon" aria-label="处理中，进度未知" size={22} /> : `${ringProgress}%` : recent.length ? <Check size={24} /> : '空闲'}</span>
+    </div>{tracked && <span className="task-hub-current-title" title={tracked.title || tracked.moduleName}>正在跟踪<strong>{tracked.title || tracked.moduleName}</strong></span>}</div>, document.body)}
     {notice && <div className="task-hub-toast" role="status">{notice}<button aria-label="关闭任务提示" onClick={() => setNotice('')}>×</button></div>}
-    {open && createPortal(<section ref={panel} className="task-hub-panel" id="task-hub-panel" aria-label="后台任务进度"><header><div><strong>任务中心</strong><small>{count} 个工作正在进行</small></div><button aria-label="刷新任务进度" disabled={loading} onClick={() => void load()}><RefreshCw size={17} className={loading ? 'spin-icon' : ''} /></button><button aria-label="关闭任务进度" onClick={close}><X size={18} /></button></header>
-      {error && <div className="task-hub-error" role="alert">{error}<button onClick={() => void load()}>重试加载</button></div>}
+    {open && createPortal(<section ref={panel} className="task-hub-panel" style={panelPosition} id="task-hub-panel" aria-label="后台任务进度"><header><div><strong>任务中心</strong><small>{count} 个工作正在进行</small></div><button aria-label="刷新任务进度" disabled={loading} onClick={() => void load()}><RefreshCw size={17} className={loading ? 'spin-icon' : ''} /></button><button aria-label="关闭任务进度" onClick={close}><X size={18} /></button></header>
+      {connectionError && <div className="task-hub-error" role="alert">{connectionError}{data && <p>暂时显示上次读取的记录，连接恢复后自动更新。</p>}<button disabled={loading} onClick={() => void load()}>重试加载</button></div>}
+      {error && <div className="task-hub-error" role="alert">{error}</div>}
       {loading && !data && <p role="status">正在读取任务…</p>}
       {data && <div className="task-hub-scroll"><h3>进行中的任务 <span>{count}</span></h3>{active.map(card)}{!active.length && <p>暂无进行中的任务。开始输入或选择素材后，工作会保存到这里。</p>}<h3>最近完成的任务 <span>{data.recentCompletedTotal ?? recent.length}</span></h3>{recent.map(card)}{!recent.length && <p>暂无近期完成记录。</p>}{data.recentCompletedTotal > recent.length && <button onClick={() => setLimit(value => Math.min(100, value + 8))}>查看更多近期任务</button>}<small>圆环只跟踪一项任务；供应商未返回真实百分比时显示处理中。</small></div>}
     </section>, document.body)}
